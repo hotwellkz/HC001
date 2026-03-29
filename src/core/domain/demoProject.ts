@@ -149,6 +149,7 @@ export function createDemoProject(): Project {
       },
       rightPropertiesCollapsed: false,
       show3dProfileLayers: true,
+      show2dProfileLayers: true,
     },
   };
 

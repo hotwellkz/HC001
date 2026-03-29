@@ -26,3 +26,4 @@ export * from "./profile";
 export * from "./profileOps";
 export * from "./profileMutations";
 export * from "./profileValidation";
+export * from "./wallProfileLayers";

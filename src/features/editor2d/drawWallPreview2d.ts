@@ -1,6 +1,11 @@
 import { Graphics } from "pixi.js";
 
 import {
+  MIN_LAYERED_WALL_SCREEN_THICKNESS_PX,
+  resolveWallProfileLayerStripsMm,
+  type WallProfileLayerStripMm,
+} from "@/core/domain/wallProfileLayers";
+import {
   type LinearProfilePlacementMode,
   computeWallCenterlineFromReferenceLine,
 } from "@/core/geometry/linearPlacementGeometry";
@@ -10,6 +15,10 @@ import {
   fourWallCenterSegmentsFromRect,
 } from "@/core/geometry/rectangleWallGeometry";
 import type { Point2D } from "@/core/geometry/types";
+import type { Profile } from "@/core/domain/profile";
+
+import { fillColor2dForMaterialType } from "./materials2d";
+import { quadCornersAlongWallMm } from "./wallPlanGeometry2d";
 import type { ViewportTransform } from "./viewportTransforms";
 import { worldToScreen } from "./viewportTransforms";
 
@@ -19,6 +28,14 @@ const AXIS_LINE = 0xffffff;
 const REF_LINE = 0xaab8c8;
 const RECT_REF = 0x6b7688;
 const EPS = 1e-6;
+
+export interface WallPreview2dLayeredOptions {
+  /** Профиль черновика стены; послойный preview только при layered + достаточном zoom. */
+  readonly profile: Profile | undefined;
+  readonly show2dProfileLayers: boolean;
+  readonly thicknessMm: number;
+  readonly zoomPixelsPerMm: number;
+}
 
 function drawWallBandFromCenterline(
   g: Graphics,
@@ -55,6 +72,69 @@ function drawWallBandFromCenterline(
   g.stroke({ width: 1, color: PREVIEW_STROKE, alpha: 0.85 });
 }
 
+function drawWallBandLayeredFromCenterline(
+  g: Graphics,
+  centerStart: Point2D,
+  centerEnd: Point2D,
+  thicknessMm: number,
+  strips: readonly WallProfileLayerStripMm[],
+  t: ViewportTransform,
+): void {
+  const sx = centerStart.x;
+  const sy = centerStart.y;
+  const ex = centerEnd.x;
+  const ey = centerEnd.y;
+  const dx = ex - sx;
+  const dy = ey - sy;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-9) {
+    return;
+  }
+  const px = -dy / len;
+  const py = dx / len;
+  const T = thicknessMm;
+  let acc = -T / 2;
+  for (const strip of strips) {
+    const off0 = acc;
+    const off1 = acc + strip.thicknessMm;
+    acc = off1;
+    const corners = quadCornersAlongWallMm(sx, sy, ex, ey, off0, off1);
+    if (!corners) {
+      continue;
+    }
+    const s0 = worldToScreen(corners[0]!.x, corners[0]!.y, t);
+    g.moveTo(s0.x, s0.y);
+    for (let i = 1; i < 4; i++) {
+      const si = worldToScreen(corners[i]!.x, corners[i]!.y, t);
+      g.lineTo(si.x, si.y);
+    }
+    g.closePath();
+    g.fill({ color: fillColor2dForMaterialType(strip.materialType), alpha: 0.32 });
+    g.stroke({ width: 1, color: 0x5aa7ff, alpha: 0.45 });
+  }
+  acc = -T / 2;
+  for (let i = 0; i < strips.length - 1; i++) {
+    acc += strips[i]!.thicknessMm;
+    const off = acc;
+    const p0 = worldToScreen(sx + px * off, sy + py * off, t);
+    const p1 = worldToScreen(ex + px * off, ey + py * off, t);
+    g.moveTo(p0.x, p0.y);
+    g.lineTo(p1.x, p1.y);
+    g.stroke({ width: 1, color: 0x0a0c10, alpha: 0.35, cap: "butt" });
+  }
+}
+
+function resolvePreviewStrips(opts: WallPreview2dLayeredOptions | undefined): WallProfileLayerStripMm[] | null {
+  if (!opts?.profile || !opts.show2dProfileLayers) {
+    return null;
+  }
+  const strokePx = Math.max(2, opts.thicknessMm * opts.zoomPixelsPerMm);
+  if (strokePx < MIN_LAYERED_WALL_SCREEN_THICKNESS_PX) {
+    return null;
+  }
+  return resolveWallProfileLayerStripsMm(opts.thicknessMm, opts.profile);
+}
+
 /**
  * Preview: опорная линия (тонкая, если смещение) + полоса стены по рассчитанной оси.
  */
@@ -65,6 +145,7 @@ export function drawWallPlacementPreview(
   thicknessMm: number,
   mode: LinearProfilePlacementMode,
   t: ViewportTransform,
+  layeredOpts?: WallPreview2dLayeredOptions,
 ): void {
   const frame = computeWallCenterlineFromReferenceLine(refStartMm, refEndMm, thicknessMm, mode);
   if (!frame) {
@@ -80,7 +161,12 @@ export function drawWallPlacementPreview(
     g.stroke({ width: 1, color: REF_LINE, alpha: 0.55 });
   }
 
-  drawWallBandFromCenterline(g, centerStart, centerEnd, thicknessMm, t);
+  const strips = resolvePreviewStrips(layeredOpts);
+  if (strips && strips.length >= 2) {
+    drawWallBandLayeredFromCenterline(g, centerStart, centerEnd, thicknessMm, strips, t);
+  } else {
+    drawWallBandFromCenterline(g, centerStart, centerEnd, thicknessMm, t);
+  }
 
   const a = worldToScreen(centerStart.x, centerStart.y, t);
   const b = worldToScreen(centerEnd.x, centerEnd.y, t);
@@ -99,6 +185,7 @@ export function drawRectangleWallPlacementPreview(
   thicknessMm: number,
   placementMode: LinearProfilePlacementMode,
   t: ViewportTransform,
+  layeredOpts?: WallPreview2dLayeredOptions,
 ): void {
   const ref = axisAlignedRectFromCorners(refA, refB);
   const w = ref.maxX - ref.minX;
@@ -123,8 +210,14 @@ export function drawRectangleWallPlacementPreview(
     return;
   }
   const segs = fourWallCenterSegmentsFromRect(adjusted);
+  const strips = resolvePreviewStrips(layeredOpts);
+  const useLayered = strips && strips.length >= 2;
   for (const seg of segs) {
-    drawWallBandFromCenterline(g, seg.start, seg.end, thicknessMm, t);
+    if (useLayered) {
+      drawWallBandLayeredFromCenterline(g, seg.start, seg.end, thicknessMm, strips, t);
+    } else {
+      drawWallBandFromCenterline(g, seg.start, seg.end, thicknessMm, t);
+    }
     const a = worldToScreen(seg.start.x, seg.start.y, t);
     const b = worldToScreen(seg.end.x, seg.end.y, t);
     g.moveTo(a.x, a.y);

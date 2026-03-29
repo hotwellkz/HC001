@@ -8,6 +8,7 @@ import {
   narrowProjectToLayerSet,
   sortedVisibleContextLayerIds,
 } from "@/core/domain/projectLayerSlice";
+import { getProfileById } from "@/core/domain/profileOps";
 import { useAppStore } from "@/store/useAppStore";
 
 import { computeMarqueeSelection } from "./computeMarqueeSelection";
@@ -129,6 +130,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const t = buildViewportTransform(w, h, viewport2d.panXMm, viewport2d.panYMm, viewport2d.zoomPixelsPerMm);
       const selected = new Set(selectedEntityIds);
       const contextIds = sortedVisibleContextLayerIds(currentProject);
+      const show2dLayers = currentProject.viewState.show2dProfileLayers !== false;
 
       gridG.clear();
       if (currentProject.settings.showGrid) {
@@ -148,6 +150,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         drawWallsAndOpenings2d(wallsG, openingsG, ctxSlice, t, selected, {
           appearance: "context",
           clear: firstDraw,
+          show2dProfileLayers: show2dLayers,
         });
         firstDraw = false;
       }
@@ -155,6 +158,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       drawWallsAndOpenings2d(wallsG, openingsG, layerView, t, selected, {
         appearance: "active",
         clear: firstDraw,
+        show2dProfileLayers: show2dLayers,
       });
 
       previewG.clear();
@@ -166,6 +170,13 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         const placementMode = currentProject.settings.editor2d.linearPlacementMode;
         const shapeMode = currentProject.settings.editor2d.wallShapeMode;
         const thick = wallPlacementSession.draft.thicknessMm;
+        const previewProfile = getProfileById(currentProject, wallPlacementSession.draft.profileId);
+        const layeredPreviewOpts = {
+          profile: previewProfile,
+          show2dProfileLayers: show2dLayers,
+          thicknessMm: thick,
+          zoomPixelsPerMm: viewport2d.zoomPixelsPerMm,
+        };
         if (shapeMode === "rectangle") {
           drawRectangleWallPlacementPreview(
             previewG,
@@ -174,6 +185,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             thick,
             placementMode,
             t,
+            layeredPreviewOpts,
           );
         } else {
           drawWallPlacementPreview(
@@ -183,6 +195,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             thick,
             placementMode,
             t,
+            layeredPreviewOpts,
           );
         }
       }

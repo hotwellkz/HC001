@@ -27,6 +27,11 @@ export interface ViewState {
    * false: одна «сплошная» стена (упрощённо, меньше мешей).
    */
   readonly show3dProfileLayers: boolean;
+  /**
+   * true: layered-профили на 2D-плане как полосы по толщине (при достаточном zoom).
+   * false: одна полоса как раньше.
+   */
+  readonly show2dProfileLayers: boolean;
 }
 
 /** Нормализация viewState из файла (старые проекты без поля). */
@@ -34,6 +39,7 @@ export function normalizeViewState(
   input: Pick<ViewState, "activeTab" | "viewport2d" | "viewport3d"> & {
     readonly rightPropertiesCollapsed?: boolean;
     readonly show3dProfileLayers?: boolean;
+    readonly show2dProfileLayers?: boolean;
   },
 ): ViewState {
   return {
@@ -42,5 +48,6 @@ export function normalizeViewState(
     viewport3d: input.viewport3d,
     rightPropertiesCollapsed: input.rightPropertiesCollapsed === true,
     show3dProfileLayers: input.show3dProfileLayers !== false,
+    show2dProfileLayers: input.show2dProfileLayers !== false,
   };
 }

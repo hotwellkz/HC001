@@ -88,6 +88,7 @@ interface AppActions {
   toggleRightPanel: () => void;
   setRightPropertiesCollapsed: (collapsed: boolean) => void;
   setShow3dProfileLayers: (show: boolean) => void;
+  setShow2dProfileLayers: (show: boolean) => void;
   markClean: () => void;
   undo: () => void;
   redo: () => void;
@@ -275,6 +276,12 @@ export const useAppStore = create<AppStore>((set, get) => {
     setShow3dProfileLayers: (show3dProfileLayers) =>
       set((s) => ({
         currentProject: touchProjectMeta(mergeViewState(s.currentProject, { show3dProfileLayers })),
+        dirty: true,
+      })),
+
+    setShow2dProfileLayers: (show2dProfileLayers) =>
+      set((s) => ({
+        currentProject: touchProjectMeta(mergeViewState(s.currentProject, { show2dProfileLayers })),
         dirty: true,
       })),
 

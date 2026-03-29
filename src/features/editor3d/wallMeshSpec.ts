@@ -1,12 +1,12 @@
 import { getLayerById } from "@/core/domain/layerOps";
-import { getProfileById, sortProfileLayersByOrder } from "@/core/domain/profileOps";
+import { getProfileById } from "@/core/domain/profileOps";
 import type { Profile, ProfileMaterialType } from "@/core/domain/profile";
 import type { Project } from "@/core/domain/project";
 import type { Wall } from "@/core/domain/wall";
+import { resolveWallProfileLayerStripsMm } from "@/core/domain/wallProfileLayers";
 
 const MM_TO_M = 0.001;
 const MIN_LEN_MM = 1;
-const THICK_EPS_MM = 0.5;
 
 /**
  * План XY (мм) → Three.js Y-up: X, план Y → Z, вертикаль → Y.
@@ -95,8 +95,8 @@ function layeredSpecsFromProfile(wall: Wall, project: Project, profile: Profile)
   if (!(wall.thicknessMm > 0) || !(wall.heightMm > 0)) {
     return null;
   }
-  const sorted = sortProfileLayersByOrder([...profile.layers]);
-  if (sorted.length < 2) {
+  const strips = resolveWallProfileLayerStripsMm(wall.thicknessMm, profile);
+  if (!strips || strips.length < 2) {
     return null;
   }
 
@@ -125,21 +125,11 @@ function layeredSpecsFromProfile(wall: Wall, project: Project, profile: Profile)
   const rotationY = Math.atan2(dxM, dzM);
 
   const T = wall.thicknessMm;
-  let raw = sorted.map((l) => Math.max(0, l.thicknessMm));
-  let sum = raw.reduce((a, b) => a + b, 0);
-  if (sum < 1e-6) {
-    return null;
-  }
-  if (Math.abs(sum - T) > THICK_EPS_MM) {
-    const k = T / sum;
-    raw = raw.map((t) => t * k);
-  }
 
   const out: WallRenderMeshSpec[] = [];
   let acc = -T / 2;
-  for (let i = 0; i < sorted.length; i++) {
-    const layer = sorted[i]!;
-    const tMm = raw[i]!;
+  for (const strip of strips) {
+    const tMm = strip.thicknessMm;
     if (tMm < 1e-6) {
       continue;
     }
@@ -150,15 +140,15 @@ function layeredSpecsFromProfile(wall: Wall, project: Project, profile: Profile)
     const cz = cz0 + centerOffMm * MM_TO_M * nz;
 
     out.push({
-      reactKey: `${wall.id}-${layer.id}`,
+      reactKey: `${wall.id}-${strip.layerId}`,
       wallId: wall.id,
-      layerId: layer.id,
+      layerId: strip.layerId,
       position: [cx, cy, cz],
       rotationY,
       width: tMm * MM_TO_M,
       height: heightMm * MM_TO_M,
       depth: lenM,
-      materialType: layer.materialType,
+      materialType: strip.materialType,
     });
   }
 

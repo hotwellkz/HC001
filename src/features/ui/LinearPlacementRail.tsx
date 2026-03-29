@@ -106,6 +106,8 @@ export function LinearPlacementRail() {
   const setSnapV = useAppStore((s) => s.setSnapToVertex);
   const setSnapE = useAppStore((s) => s.setSnapToEdge);
   const setSnapG = useAppStore((s) => s.setSnapToGrid);
+  const show2dLayers = useAppStore((s) => s.currentProject.viewState.show2dProfileLayers);
+  const setShow2dProfileLayers = useAppStore((s) => s.setShow2dProfileLayers);
 
   return (
     <aside className="lpr" aria-label="Режимы построения стены">
@@ -178,6 +180,15 @@ export function LinearPlacementRail() {
           <IconSnapGrid />
         </button>
       </div>
+      <div className="lpr-divider" role="separator" aria-hidden="true" />
+      <label className="lpr-layer-toggle" title="Полосы по толщине для layered-профилей; при сильном отдалении — упрощение">
+        <input
+          type="checkbox"
+          checked={show2dLayers}
+          onChange={(e) => setShow2dProfileLayers(e.target.checked)}
+        />
+        <span className="lpr-layer-toggle__text">Слои 2D</span>
+      </label>
     </aside>
   );
 }

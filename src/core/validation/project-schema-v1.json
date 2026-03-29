@@ -298,6 +298,7 @@
       "properties": {
         "rightPropertiesCollapsed": { "type": "boolean" },
         "show3dProfileLayers": { "type": "boolean" },
+        "show2dProfileLayers": { "type": "boolean" },
         "activeTab": { "type": "string", "enum": ["2d", "3d"] },
         "viewport2d": {
           "type": "object",
