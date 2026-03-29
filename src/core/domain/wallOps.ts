@@ -39,6 +39,9 @@ export interface CreateWallInput {
   readonly heightMm: number;
   readonly baseElevationMm: number;
   readonly placementGroupId?: string;
+  readonly markPrefix?: string;
+  readonly markSequenceNumber?: number;
+  readonly markLabel?: string;
 }
 
 /**
@@ -69,10 +72,24 @@ export function createWallEntity(input: CreateWallInput): Wall | null {
     createdAt: t,
     updatedAt: t,
   };
+  let out: Wall = w;
   if (input.placementGroupId) {
-    return { ...w, placementGroupId: input.placementGroupId };
+    out = { ...out, placementGroupId: input.placementGroupId };
   }
-  return w;
+  if (
+    input.markPrefix != null &&
+    input.markSequenceNumber != null &&
+    input.markLabel != null &&
+    String(input.markLabel).trim() !== ""
+  ) {
+    out = {
+      ...out,
+      markPrefix: input.markPrefix,
+      markSequenceNumber: input.markSequenceNumber,
+      markLabel: input.markLabel.trim(),
+    };
+  }
+  return out;
 }
 
 export function addWallToProject(project: Project, wall: Wall): Project {

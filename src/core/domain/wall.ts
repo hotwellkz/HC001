@@ -15,4 +15,10 @@ export interface Wall {
   readonly updatedAt?: string;
   /** Одинаковый id для стен, созданных одной операцией (например, контур прямоугольника). */
   readonly placementGroupId?: string;
+  /** Префикс марки на момент создания (копия из профиля / effective). */
+  readonly markPrefix?: string;
+  /** Порядковый номер в рамках префикса в проекте. */
+  readonly markSequenceNumber?: number;
+  /** Полная марка, например "1S_3". */
+  readonly markLabel?: string;
 }

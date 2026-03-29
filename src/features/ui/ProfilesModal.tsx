@@ -61,6 +61,7 @@ function createEmptyDraft(): Profile {
         thicknessMm: 10,
       },
     ],
+    markPrefix: "1S",
     createdAt: t,
     updatedAt: t,
   };
@@ -376,6 +377,25 @@ export function ProfilesModal({ open, onClose }: ProfilesModalProps) {
                     </select>
                   </div>
                 </div>
+
+                {draft.category === "wall" ? (
+                  <div className="pm-field">
+                    <label className="pm-label" htmlFor="pm-mark">
+                      Префикс маркировки стены
+                    </label>
+                    <input
+                      id="pm-mark"
+                      className="pm-input"
+                      value={draft.markPrefix ?? ""}
+                      placeholder="1S"
+                      autoComplete="off"
+                      onChange={(e) => updateDraft({ ...draft, markPrefix: e.target.value })}
+                    />
+                    <p className="muted" style={{ margin: "6px 0 0", fontSize: 12, lineHeight: 1.5 }}>
+                      Автоматические марки: 1S_1, 1S_2… по порядку создания стен в проекте.
+                    </p>
+                  </div>
+                ) : null}
 
                 <div className="pm-row2">
                   <div className="pm-field">

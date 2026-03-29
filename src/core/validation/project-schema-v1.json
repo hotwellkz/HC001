@@ -114,7 +114,10 @@
         "baseElevationMm": { "type": "number" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" },
-        "placementGroupId": { "type": "string" }
+        "placementGroupId": { "type": "string" },
+        "markPrefix": { "type": "string" },
+        "markSequenceNumber": { "type": "number" },
+        "markLabel": { "type": "string" }
       }
     },
     "profileMaterialType": {
@@ -165,6 +168,7 @@
         "defaultWidthMm": { "type": "number" },
         "defaultThicknessMm": { "type": "number" },
         "notes": { "type": "string" },
+        "markPrefix": { "type": "string" },
         "layers": {
           "type": "array",
           "items": { "$ref": "#/$defs/profileLayer" }

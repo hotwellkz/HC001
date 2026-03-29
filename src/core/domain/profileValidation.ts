@@ -50,5 +50,14 @@ export function validateProfile(p: Profile): string[] {
     errors.push("Некорректная толщина по умолчанию.");
   }
 
+  if (p.category === "wall") {
+    const mp = String(p.markPrefix ?? "").trim();
+    if (!mp) {
+      errors.push("Укажите префикс маркировки стены (например 1S).");
+    } else if (!/^[\p{L}\p{N}_-]+$/u.test(mp)) {
+      errors.push("Префикс марки: только буквы, цифры, «_» и «-» (без пробелов).");
+    }
+  }
+
   return errors;
 }

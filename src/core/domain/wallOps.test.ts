@@ -17,6 +17,7 @@ function wallProfile(id: string): Profile {
     id,
     name: "Test wall",
     category: "wall",
+    markPrefix: "TST",
     compositionMode: "layered",
     layers: [
       { id: "l1", orderIndex: 0, materialName: "A", materialType: "osb", thicknessMm: 50 },

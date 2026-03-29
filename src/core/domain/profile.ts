@@ -47,6 +47,11 @@ export interface Profile {
   /** Для solid — габарит по глубине/толщине сечения, мм */
   readonly defaultThicknessMm?: number;
   readonly notes?: string;
+  /**
+   * Префикс автоматической маркировки стен (категория wall), например "1S".
+   * Итоговая марка: {markPrefix}_{n}.
+   */
+  readonly markPrefix?: string;
   readonly layers: readonly ProfileLayer[];
   readonly createdAt: string;
   readonly updatedAt: string;

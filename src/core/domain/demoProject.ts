@@ -32,6 +32,7 @@ export function createDemoProject(): Project {
       id: sipProfileId,
       name: "SIP 174 (OSB–EPS–OSB)",
       category: "wall",
+      markPrefix: "1S",
       compositionMode: "layered",
       defaultHeightMm: 2800,
       notes: "Пример для библиотеки профилей",
@@ -61,6 +62,9 @@ export function createDemoProject(): Project {
         thicknessMm: 174,
         heightMm: 2800,
         baseElevationMm: 0,
+        markPrefix: "1S",
+        markSequenceNumber: 1,
+        markLabel: "1S_1",
       },
       {
         id: wallEastId,
@@ -71,6 +75,9 @@ export function createDemoProject(): Project {
         thicknessMm: 174,
         heightMm: 2800,
         baseElevationMm: 0,
+        markPrefix: "1S",
+        markSequenceNumber: 2,
+        markLabel: "1S_2",
       },
       {
         id: wallSouthId,
@@ -81,6 +88,9 @@ export function createDemoProject(): Project {
         thicknessMm: 174,
         heightMm: 2800,
         baseElevationMm: 0,
+        markPrefix: "1S",
+        markSequenceNumber: 3,
+        markLabel: "1S_3",
       },
       {
         id: newEntityId(),
@@ -91,6 +101,9 @@ export function createDemoProject(): Project {
         thicknessMm: 174,
         heightMm: 2800,
         baseElevationMm: 0,
+        markPrefix: "1S",
+        markSequenceNumber: 4,
+        markLabel: "1S_4",
       },
     ],
     openings: [

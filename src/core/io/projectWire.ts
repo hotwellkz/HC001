@@ -1,5 +1,6 @@
 import { PROJECT_SCHEMA_VERSION, PROJECT_UNITS } from "../domain/constants";
 import { normalizeVisibleLayerIds } from "../domain/layerVisibility";
+import type { Profile } from "../domain/profile";
 import type { Project } from "../domain/project";
 import type { ProjectMeta } from "../domain/projectMeta";
 import { normalizeProjectSettings, type ProjectSettingsWire } from "../domain/settings";
@@ -7,6 +8,19 @@ import { normalizeProjectSettings, type ProjectSettingsWire } from "../domain/se
 import { normalizeViewState } from "../domain/viewState";
 
 import { migrateWireV0ToProject } from "./migrateWireV0";
+
+/** Старые проекты без markPrefix у профилей «стена». */
+function normalizeProfilesImported(profiles: readonly Profile[]): Profile[] {
+  return profiles.map((p) => {
+    if (p.category !== "wall") {
+      return p;
+    }
+    if (p.markPrefix != null && String(p.markPrefix).trim() !== "") {
+      return p;
+    }
+    return { ...p, markPrefix: "W" };
+  });
+}
 
 /**
  * Формат файла проекта v1: плоский корень + layers + activeLayerId.
@@ -88,7 +102,7 @@ export function projectFromWireV1(wire: ProjectFileV1): Project {
     dimensions: wire.dimensions,
     settings: normalizeProjectSettings(wire.settings as ProjectSettingsWire),
     viewState: normalizeViewState(wire.viewState),
-    profiles: wire.profiles ?? [],
+    profiles: normalizeProfilesImported(wire.profiles ?? []),
   };
   return {
     ...base,

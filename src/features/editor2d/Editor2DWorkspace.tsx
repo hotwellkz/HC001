@@ -14,6 +14,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { computeMarqueeSelection } from "./computeMarqueeSelection";
 import { drawRectangleWallPlacementPreview, drawWallPlacementPreview } from "./drawWallPreview2d";
 import { buildScreenGridLines } from "./gridGeometry";
+import { appendWallMarkLabels2d, clearWallMarkLabelContainer } from "./wallMarks2dPixi";
 import { drawWallsAndOpenings2d } from "./walls2dPixi";
 import { buildViewportTransform, screenToWorld, worldToScreen } from "./viewportTransforms";
 
@@ -110,6 +111,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
     const gridG = new Graphics();
     const wallsG = new Graphics();
     const openingsG = new Graphics();
+    const wallLabelsC = new Container();
+    wallLabelsC.eventMode = "none";
     const previewG = new Graphics();
     const snapMarkerG = new Graphics();
     const marqueeG = new Graphics();
@@ -144,6 +147,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
 
       wallsG.clear();
       openingsG.clear();
+      clearWallMarkLabelContainer(wallLabelsC);
       let firstDraw = true;
       for (const lid of contextIds) {
         const ctxSlice = narrowProjectToLayerSet(currentProject, new Set([lid]));
@@ -152,6 +156,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           clear: firstDraw,
           show2dProfileLayers: show2dLayers,
         });
+        appendWallMarkLabels2d(wallLabelsC, ctxSlice, t, "context");
         firstDraw = false;
       }
       const layerView = narrowProjectToActiveLayer(currentProject);
@@ -160,6 +165,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         clear: firstDraw,
         show2dProfileLayers: show2dLayers,
       });
+      appendWallMarkLabels2d(wallLabelsC, layerView, t, "active");
 
       previewG.clear();
       if (
@@ -253,6 +259,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       worldRoot.addChild(gridG);
       worldRoot.addChild(wallsG);
       worldRoot.addChild(openingsG);
+      worldRoot.addChild(wallLabelsC);
       worldRoot.addChild(previewG);
       worldRoot.addChild(snapMarkerG);
       worldRoot.addChild(marqueeG);

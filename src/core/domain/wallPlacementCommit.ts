@@ -9,6 +9,7 @@ import type { Point2D } from "../geometry/types";
 import { getProfileById } from "./profileOps";
 import type { Project } from "./project";
 import { addWallsToProject, createWallEntity } from "./wallOps";
+import { allocateNextWallMarks } from "./wallMarking";
 import type { Wall } from "./wall";
 import type { WallPlacementDraft, WallPlacementSession } from "./wallPlacement";
 import type { WallShapeMode } from "./wallShapeMode";
@@ -50,6 +51,11 @@ export function commitWallPlacementSecondPoint(
     if (!frame) {
       return { error: "Не удалось вычислить ось стены (нулевая длина или толщина)." };
     }
+    const marks = allocateNextWallMarks(project, profile, 1);
+    const mark = marks[0];
+    if (!mark) {
+      return { error: "Не удалось выделить марку стены." };
+    }
     const wall = createWallEntity({
       layerId: project.activeLayerId,
       profileId: draft.profileId,
@@ -58,6 +64,9 @@ export function commitWallPlacementSecondPoint(
       thicknessMm: draft.thicknessMm,
       heightMm: draft.heightMm,
       baseElevationMm: draft.baseElevationMm,
+      markPrefix: mark.markPrefix,
+      markSequenceNumber: mark.markSequenceNumber,
+      markLabel: mark.markLabel,
     });
     if (!wall) {
       return { error: "Слишком короткий сегмент — выберите вторую точку дальше." };
@@ -88,8 +97,11 @@ export function commitWallPlacementSecondPoint(
     return { error: "Не удалось построить сегменты контура стен." };
   }
   const groupId = newEntityId();
+  const marks = allocateNextWallMarks(project, profile, segs.length);
   const walls: Wall[] = [];
-  for (const seg of segs) {
+  for (let i = 0; i < segs.length; i++) {
+    const seg = segs[i]!;
+    const mark = marks[i]!;
     const wall = createWallEntity({
       layerId: project.activeLayerId,
       profileId: draft.profileId,
@@ -99,6 +111,9 @@ export function commitWallPlacementSecondPoint(
       heightMm: draft.heightMm,
       baseElevationMm: draft.baseElevationMm,
       placementGroupId: groupId,
+      markPrefix: mark.markPrefix,
+      markSequenceNumber: mark.markSequenceNumber,
+      markLabel: mark.markLabel,
     });
     if (!wall) {
       return { error: "Один из сегментов контура слишком короткий." };
