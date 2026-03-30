@@ -105,6 +105,19 @@ interface AppActions {
   setShow3dProfileLayers: (show: boolean) => void;
   setShow2dProfileLayers: (show: boolean) => void;
   setShow3dCalculation: (show: boolean) => void;
+  /** Видимость категорий 3D (OSB/EPS/каркас; окна/двери — заготовка). */
+  set3dLayerVisibility: (
+    patch: Partial<
+      Pick<
+        Project["viewState"],
+        | "show3dLayerOsb"
+        | "show3dLayerEps"
+        | "show3dLayerFrame"
+        | "show3dLayerWindows"
+        | "show3dLayerDoors"
+      >
+    >,
+  ) => void;
   markClean: () => void;
   undo: () => void;
   redo: () => void;
@@ -341,6 +354,12 @@ export const useAppStore = create<AppStore>((set, get) => {
     setShow3dCalculation: (show3dCalculation) =>
       set((s) => ({
         currentProject: touchProjectMeta(mergeViewState(s.currentProject, { show3dCalculation })),
+        dirty: true,
+      })),
+
+    set3dLayerVisibility: (patch) =>
+      set((s) => ({
+        currentProject: touchProjectMeta(mergeViewState(s.currentProject, patch)),
         dirty: true,
       })),
 

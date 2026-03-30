@@ -513,6 +513,11 @@
         "show3dProfileLayers": { "type": "boolean" },
         "show2dProfileLayers": { "type": "boolean" },
         "show3dCalculation": { "type": "boolean" },
+        "show3dLayerOsb": { "type": "boolean" },
+        "show3dLayerEps": { "type": "boolean" },
+        "show3dLayerFrame": { "type": "boolean" },
+        "show3dLayerWindows": { "type": "boolean" },
+        "show3dLayerDoors": { "type": "boolean" },
         "activeTab": { "type": "string", "enum": ["2d", "3d", "spec"] },
         "viewport2d": {
           "type": "object",

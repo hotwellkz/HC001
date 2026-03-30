@@ -3,6 +3,7 @@ import { Canvas } from "@react-three/fiber";
 
 import { useAppStore } from "@/store/useAppStore";
 
+import { Editor3dVisibilityPanel } from "./Editor3dVisibilityPanel";
 import { ProjectCalculationMeshes } from "./ProjectCalculationMeshes";
 import { ProjectWalls } from "./ProjectWalls";
 import { useEditor3dThemeColors } from "./useEditor3dThemeColors";
@@ -27,6 +28,7 @@ export function Editor3DWorkspace() {
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", minHeight: 0 }}>
+      <Editor3dVisibilityPanel />
       <label
         style={{
           position: "absolute",

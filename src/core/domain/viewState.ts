@@ -37,6 +37,16 @@ export interface ViewState {
    * false: только геометрия стен по профилю.
    */
   readonly show3dCalculation: boolean;
+  /** Видимость оболочки стены: OSB (слои профиля с материалом osb). */
+  readonly show3dLayerOsb: boolean;
+  /** Видимость утеплителя в оболочке и расчётных SIP-зон (eps/xps/insulation + расчёт EPS). */
+  readonly show3dLayerEps: boolean;
+  /** Видимость пиломатериала из расчёта стены (каркас). */
+  readonly show3dLayerFrame: boolean;
+  /** Заготовка: проёмы / окна в 3D (пока без отдельной геометрии). */
+  readonly show3dLayerWindows: boolean;
+  /** Заготовка: двери в 3D. */
+  readonly show3dLayerDoors: boolean;
 }
 
 /** Нормализация viewState из файла (старые проекты без поля). */
@@ -48,6 +58,11 @@ export function normalizeViewState(
     readonly show3dProfileLayers?: boolean;
     readonly show2dProfileLayers?: boolean;
     readonly show3dCalculation?: boolean;
+    readonly show3dLayerOsb?: boolean;
+    readonly show3dLayerEps?: boolean;
+    readonly show3dLayerFrame?: boolean;
+    readonly show3dLayerWindows?: boolean;
+    readonly show3dLayerDoors?: boolean;
   },
 ): ViewState {
   const tab = VALID_TABS.includes(input.activeTab as EditorTab) ? input.activeTab : "2d";
@@ -59,5 +74,10 @@ export function normalizeViewState(
     show3dProfileLayers: input.show3dProfileLayers !== false,
     show2dProfileLayers: input.show2dProfileLayers !== false,
     show3dCalculation: input.show3dCalculation !== false,
+    show3dLayerOsb: input.show3dLayerOsb !== false,
+    show3dLayerEps: input.show3dLayerEps !== false,
+    show3dLayerFrame: input.show3dLayerFrame !== false,
+    show3dLayerWindows: input.show3dLayerWindows !== false,
+    show3dLayerDoors: input.show3dLayerDoors !== false,
   };
 }

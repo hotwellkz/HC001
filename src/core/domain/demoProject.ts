@@ -166,6 +166,11 @@ export function createDemoProject(): Project {
       show3dProfileLayers: true,
       show2dProfileLayers: true,
       show3dCalculation: true,
+      show3dLayerOsb: true,
+      show3dLayerEps: true,
+      show3dLayerFrame: true,
+      show3dLayerWindows: true,
+      show3dLayerDoors: true,
     },
   };
 

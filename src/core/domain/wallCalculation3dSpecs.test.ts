@@ -25,6 +25,7 @@ describe("wallCalculation3dSpecs", () => {
     const proj = { ...p, wallCalculations: [calc] };
     const all = buildCalculationSolidSpecsForProject(proj);
     expect(all.length).toBeGreaterThan(0);
+    expect(all.some((s) => s.source === "lumber_seam")).toBe(true);
   });
 
   it("даёт sip_seam между соседними панелями при стыке на joint_board", () => {

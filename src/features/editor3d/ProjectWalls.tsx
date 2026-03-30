@@ -5,6 +5,7 @@ import type { Project } from "@/core/domain/project";
 
 import { meshStandardPresetForLayerOrDefault } from "./materials3d";
 import { selectWallsForScene3d } from "./selectors/walls3d";
+import { isWallMeshSpecVisible } from "./view3dVisibility";
 import { wallsToMeshSpecs } from "./wallMeshSpec";
 
 interface ProjectWallsProps {
@@ -17,7 +18,8 @@ interface ProjectWallsProps {
 export function ProjectWalls({ project }: ProjectWallsProps) {
   const specs = useMemo(() => {
     const walls = selectWallsForScene3d(project);
-    return wallsToMeshSpecs(project, walls);
+    const all = wallsToMeshSpecs(project, walls);
+    return all.filter((s) => isWallMeshSpecVisible(s, project));
   }, [project]);
 
   return (

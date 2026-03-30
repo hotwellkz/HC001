@@ -9,6 +9,8 @@ const MM_TO_M = 0.001;
 const MIN_LEN_MM = 1;
 /** Тонкая «визуальная» толщина шва панели вдоль стены (мм), без реального зазора. */
 const SIP_SEAM_DEPTH_MM = 1.5;
+/** Торцевые швы досок — чуть тоньше/слабее SIP, тот же принцип тонкого бокса. */
+const LUMBER_SEAM_DEPTH_MM = 1.2;
 /** Минимальная толщина EPS-сегмента (мм), чтобы не порождать пылинки. */
 const EPS_SEGMENT_MIN_MM = 1.5;
 
@@ -20,7 +22,7 @@ export interface CalculationSolidSpec {
   readonly reactKey: string;
   readonly wallId: string;
   readonly calculationId: string;
-  readonly source: "sip" | "lumber" | "sip_seam";
+  readonly source: "sip" | "lumber" | "sip_seam" | "lumber_seam";
   readonly pieceId?: string;
   readonly position: readonly [number, number, number];
   readonly rotationY: number;
@@ -235,7 +237,10 @@ function sipSpecsForWall(
   return out;
 }
 
-/** Визуальные швы между плотно состыкованными SIP-панелями (стык заменён на joint_board в расчёте). */
+/**
+ * Визуальные швы между SIP-панелями: высота по полной стене (как наружные OSB-грани),
+ * а не только по зоне ядра между обвязками — иначе шов обрывается у плит.
+ */
 function sipSeamSpecsForWall(
   wall: Wall,
   calc: WallCalculationResult,
@@ -245,14 +250,13 @@ function sipSeamSpecsForWall(
   uy: number,
   rotationY: number,
   bottomMm: number,
-  plateT: number,
-  vCoreMm: number,
 ): CalculationSolidSpec[] {
   const Tj = calc.settingsSnapshot.jointBoardThicknessMm;
   const tol = 1.2;
   const regions = [...calc.sipRegions].sort((a, b) => a.startOffsetMm - b.startOffsetMm);
   const out: CalculationSolidSpec[] = [];
-  const cy = bottomMm * MM_TO_M + plateT * MM_TO_M + (vCoreMm * MM_TO_M) / 2;
+  const fullH = wall.heightMm * MM_TO_M;
+  const cy = bottomMm * MM_TO_M + fullH / 2;
 
   for (let i = 0; i < regions.length - 1; i++) {
     const a = regions[i]!;
@@ -273,11 +277,115 @@ function sipSeamSpecsForWall(
       position: [cx, cy, cz],
       rotationY,
       width: wall.thicknessMm * MM_TO_M,
-      height: vCoreMm * MM_TO_M,
+      height: fullH,
       depth: SIP_SEAM_DEPTH_MM * MM_TO_M,
       materialType: "eps",
     });
   }
+  return out;
+}
+
+/** Центр бокса детали по Y (м), общий для меша досок и торцевых швов. */
+function lumberPieceCenterYWorld(
+  piece: LumberPiece,
+  wall: Wall,
+  project: Project,
+  bottomMm: number,
+  plateT: number,
+  vCoreMm: number,
+): number {
+  if (piece.orientation === "across_wall") {
+    const height = piece.lengthMm * MM_TO_M;
+    return bottomMm * MM_TO_M + plateT * MM_TO_M + height / 2;
+  }
+  const st = piece.sectionThicknessMm;
+  const height = st * MM_TO_M;
+  const meta = piece.metadata as { openingId?: string } | undefined;
+  if (piece.role === "upper_plate") {
+    return bottomMm * MM_TO_M + wall.heightMm * MM_TO_M - height / 2;
+  }
+  if (piece.role === "lower_plate") {
+    return bottomMm * MM_TO_M + height / 2;
+  }
+  if ((piece.role === "opening_header" || piece.role === "opening_sill") && meta?.openingId) {
+    const op = openingById(project, meta.openingId);
+    if (op && op.wallId === wall.id) {
+      const sill = op.kind === "window" ? (op.sillHeightMm ?? 0) : 0;
+      if (piece.role === "opening_header") {
+        return bottomMm * MM_TO_M + sill * MM_TO_M + op.heightMm * MM_TO_M - height / 2;
+      }
+      return bottomMm * MM_TO_M + sill * MM_TO_M + height / 2;
+    }
+  }
+  return bottomMm * MM_TO_M + plateT * MM_TO_M + (vCoreMm * MM_TO_M) / 2;
+}
+
+/**
+ * Торцевые швы досок (тонкие плоскости ⟂ оси стены), как у SIP-панелей — границы по длине вдоль стены.
+ */
+function lumberSeamSpecsForWall(
+  wall: Wall,
+  project: Project,
+  calc: WallCalculationResult,
+  sx: number,
+  sy: number,
+  ux: number,
+  uy: number,
+  nx: number,
+  nz: number,
+  rotationY: number,
+  bottomMm: number,
+  plateT: number,
+  vCoreMm: number,
+  coreMid: number,
+): CalculationSolidSpec[] {
+  const out: CalculationSolidSpec[] = [];
+  const thinZ = LUMBER_SEAM_DEPTH_MM * MM_TO_M;
+  const minAlong = 2 * LUMBER_SEAM_DEPTH_MM + 0.5;
+
+  for (const piece of calc.lumberPieces) {
+    const s0 = Math.min(piece.startOffsetMm, piece.endOffsetMm);
+    const s1 = Math.max(piece.startOffsetMm, piece.endOffsetMm);
+    const along = s1 - s0;
+    if (along < minAlong) {
+      continue;
+    }
+    const st = piece.sectionThicknessMm;
+    const sd = piece.sectionDepthMm;
+    const cy = lumberPieceCenterYWorld(piece, wall, project, bottomMm, plateT, vCoreMm);
+
+    let faceWidthM: number;
+    let faceHeightM: number;
+    if (piece.orientation === "across_wall") {
+      faceWidthM = sd * MM_TO_M;
+      faceHeightM = piece.lengthMm * MM_TO_M;
+    } else {
+      faceWidthM = sd * MM_TO_M;
+      faceHeightM = st * MM_TO_M;
+    }
+
+    for (let i = 0; i < 2; i++) {
+      const s = i === 0 ? s0 : s1;
+      const p = pointAlongWallMm(sx, sy, ux, uy, s);
+      const cx = (p.x + nx * coreMid) * MM_TO_M;
+      const cz = (p.y + nz * coreMid) * MM_TO_M;
+      const tag = i === 0 ? "a" : "b";
+      out.push({
+        reactKey: `${wall.id}-${calc.id}-lumber-seam-${piece.id}-${tag}`,
+        wallId: wall.id,
+        calculationId: calc.id,
+        source: "lumber_seam",
+        pieceId: piece.id,
+        position: [cx, cy, cz],
+        rotationY,
+        width: faceWidthM,
+        height: faceHeightM,
+        depth: thinZ,
+        materialType: "wood",
+      });
+    }
+  }
+
   return out;
 }
 
@@ -313,7 +421,7 @@ function lumberSpecsForWall(
       const height = piece.lengthMm * MM_TO_M;
       const cx = (p.x + nx * coreMid) * MM_TO_M;
       const cz = (p.y + nz * coreMid) * MM_TO_M;
-      const cy = bottomMm * MM_TO_M + plateT * MM_TO_M + height / 2;
+      const cy = lumberPieceCenterYWorld(piece, wall, project, bottomMm, plateT, vCoreMm);
       out.push({
         reactKey: `${wall.id}-${piece.id}`,
         wallId: wall.id,
@@ -336,28 +444,7 @@ function lumberSpecsForWall(
     const height = st * MM_TO_M;
     const cx = (p.x + nx * coreMid) * MM_TO_M;
     const cz = (p.y + nz * coreMid) * MM_TO_M;
-
-    let cy: number;
-    const meta = piece.metadata as { openingId?: string } | undefined;
-    if (piece.role === "upper_plate") {
-      cy = bottomMm * MM_TO_M + wall.heightMm * MM_TO_M - height / 2;
-    } else if (piece.role === "lower_plate") {
-      cy = bottomMm * MM_TO_M + height / 2;
-    } else if ((piece.role === "opening_header" || piece.role === "opening_sill") && meta?.openingId) {
-      const op = openingById(project, meta.openingId);
-      if (op && op.wallId === wall.id) {
-        const sill = op.kind === "window" ? (op.sillHeightMm ?? 0) : 0;
-        if (piece.role === "opening_header") {
-          cy = bottomMm * MM_TO_M + sill * MM_TO_M + op.heightMm * MM_TO_M - height / 2;
-        } else {
-          cy = bottomMm * MM_TO_M + sill * MM_TO_M + height / 2;
-        }
-      } else {
-        cy = bottomMm * MM_TO_M + plateT * MM_TO_M + (vCoreMm * MM_TO_M) / 2;
-      }
-    } else {
-      cy = bottomMm * MM_TO_M + plateT * MM_TO_M + (vCoreMm * MM_TO_M) / 2;
-    }
+    const cy = lumberPieceCenterYWorld(piece, wall, project, bottomMm, plateT, vCoreMm);
 
     out.push({
       reactKey: `${wall.id}-${piece.id}`,
@@ -424,7 +511,7 @@ export function buildCalculationSolidSpecsForWall(
     offStart,
     offEnd,
   );
-  const seams = sipSeamSpecsForWall(wall, calc, sx, sy, ux, uy, rotationY, bottomMm, plateT, vCoreMm);
+  const seams = sipSeamSpecsForWall(wall, calc, sx, sy, ux, uy, rotationY, bottomMm);
   const lum = lumberSpecsForWall(
     wall,
     project,
@@ -441,7 +528,23 @@ export function buildCalculationSolidSpecsForWall(
     vCoreMm,
     coreMid,
   );
-  return [...sip, ...lum, ...seams];
+  const lumberSeams = lumberSeamSpecsForWall(
+    wall,
+    project,
+    calc,
+    sx,
+    sy,
+    ux,
+    uy,
+    nx,
+    nz,
+    rotationY,
+    bottomMm,
+    plateT,
+    vCoreMm,
+    coreMid,
+  );
+  return [...sip, ...lum, ...seams, ...lumberSeams];
 }
 
 export function buildCalculationSolidSpecsForProject(project: Project): readonly CalculationSolidSpec[] {
@@ -450,6 +553,7 @@ export function buildCalculationSolidSpecsForProject(project: Project): readonly
   let sipCount = 0;
   let seamCount = 0;
   let lumberCount = 0;
+  let lumberSeamCount = 0;
   for (const w of project.walls) {
     const calc = calcByWall.get(w.id);
     if (!calc) {
@@ -463,13 +567,20 @@ export function buildCalculationSolidSpecsForProject(project: Project): readonly
         seamCount++;
       } else if (s.source === "lumber") {
         lumberCount++;
+      } else if (s.source === "lumber_seam") {
+        lumberSeamCount++;
       }
     }
     out.push(...chunk);
   }
   if (import.meta.env.DEV && out.length > 0) {
     // eslint-disable-next-line no-console
-    console.debug("[calc3d] meshes", { epsSegments: sipCount, sipSeams: seamCount, lumber: lumberCount });
+    console.debug("[calc3d] meshes", {
+      epsSegments: sipCount,
+      sipSeams: seamCount,
+      lumber: lumberCount,
+      lumberSeams: lumberSeamCount,
+    });
   }
   return out;
 }
