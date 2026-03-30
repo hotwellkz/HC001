@@ -87,8 +87,22 @@ export function Editor3DWorkspace() {
         style={{ width: "100%", height: "100%", minHeight: 0 }}
       >
         <color attach="background" args={[theme3d.bg]} />
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[14, 18, 12]} intensity={1.05} castShadow />
+        {/* Мягкий fill + нейтральный ключ: меньше «чёрных» провалов на дереве без потери объёма */}
+        <ambientLight intensity={0.58} />
+        <hemisphereLight color="#e8eef4" groundColor="#7a6a58" intensity={0.45} />
+        <directionalLight
+          position={[14, 18, 12]}
+          intensity={0.78}
+          castShadow
+          shadow-mapSize={[2048, 2048]}
+          shadow-camera-far={90}
+          shadow-camera-left={-28}
+          shadow-camera-right={28}
+          shadow-camera-top={28}
+          shadow-camera-bottom={-28}
+          shadow-bias={-0.00015}
+        />
+        <directionalLight position={[-10, 8, -6]} intensity={0.22} />
         <Grid
           infiniteGrid
           fadeDistance={120}

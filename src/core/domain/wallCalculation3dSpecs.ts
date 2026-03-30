@@ -238,8 +238,10 @@ function sipSpecsForWall(
 }
 
 /**
- * Визуальные швы между SIP-панелями: высота по полной стене (как наружные OSB-грани),
- * а не только по зоне ядра между обвязками — иначе шов обрывается у плит.
+ * Визуальные швы между SIP-панелями: только в полосе ядра EPS и с тем же разбиением по нормали,
+ * что и sip-сегменты (вырез вертикальных досок). Иначе тонкий бокс на всю толщину стены
+ * рисуется поверх каркаса и выглядит как «разрез» доски.
+ * Высота — зона ядра между обвязками (как sip), без пересечения плит.
  */
 function sipSeamSpecsForWall(
   wall: Wall,
@@ -248,15 +250,22 @@ function sipSeamSpecsForWall(
   sy: number,
   ux: number,
   uy: number,
+  nx: number,
+  nz: number,
   rotationY: number,
   bottomMm: number,
+  plateT: number,
+  vCoreMm: number,
+  offStart: number,
+  offEnd: number,
+  coreMid: number,
 ): CalculationSolidSpec[] {
   const Tj = calc.settingsSnapshot.jointBoardThicknessMm;
   const tol = 1.2;
   const regions = [...calc.sipRegions].sort((a, b) => a.startOffsetMm - b.startOffsetMm);
   const out: CalculationSolidSpec[] = [];
-  const fullH = wall.heightMm * MM_TO_M;
-  const cy = bottomMm * MM_TO_M + fullH / 2;
+  const height = vCoreMm * MM_TO_M;
+  const cy = bottomMm * MM_TO_M + plateT * MM_TO_M + (vCoreMm * MM_TO_M) / 2;
 
   for (let i = 0; i < regions.length - 1; i++) {
     const a = regions[i]!;
@@ -267,20 +276,42 @@ function sipSeamSpecsForWall(
     }
     const s = a.endOffsetMm;
     const p = pointAlongWallMm(sx, sy, ux, uy, s);
-    const cx = p.x * MM_TO_M;
-    const cz = p.y * MM_TO_M;
-    out.push({
-      reactKey: `${wall.id}-${calc.id}-sip-seam-${i}-${a.index}-${b.index}`,
-      wallId: wall.id,
-      calculationId: calc.id,
-      source: "sip_seam",
-      position: [cx, cy, cz],
-      rotationY,
-      width: wall.thicknessMm * MM_TO_M,
-      height: fullH,
-      depth: SIP_SEAM_DEPTH_MM * MM_TO_M,
-      materialType: "eps",
-    });
+
+    const segments = epsNormalSegmentsForSipRegionMm(
+      a.startOffsetMm,
+      a.endOffsetMm,
+      offStart,
+      offEnd,
+      coreMid,
+      bottomMm,
+      plateT,
+      vCoreMm,
+      calc.lumberPieces,
+    );
+
+    let segIdx = 0;
+    for (const [ta, tb] of segments) {
+      const centerOff = (ta + tb) / 2;
+      const wMm = tb - ta;
+      if (wMm < EPS_SEGMENT_MIN_MM) {
+        continue;
+      }
+      const cx = (p.x + nx * centerOff) * MM_TO_M;
+      const cz = (p.y + nz * centerOff) * MM_TO_M;
+      out.push({
+        reactKey: `${wall.id}-${calc.id}-sip-seam-${i}-${a.index}-${b.index}-n${segIdx}`,
+        wallId: wall.id,
+        calculationId: calc.id,
+        source: "sip_seam",
+        position: [cx, cy, cz],
+        rotationY,
+        width: wMm * MM_TO_M,
+        height,
+        depth: SIP_SEAM_DEPTH_MM * MM_TO_M,
+        materialType: "eps",
+      });
+      segIdx++;
+    }
   }
   return out;
 }
@@ -511,7 +542,23 @@ export function buildCalculationSolidSpecsForWall(
     offStart,
     offEnd,
   );
-  const seams = sipSeamSpecsForWall(wall, calc, sx, sy, ux, uy, rotationY, bottomMm);
+  const seams = sipSeamSpecsForWall(
+    wall,
+    calc,
+    sx,
+    sy,
+    ux,
+    uy,
+    nx,
+    nz,
+    rotationY,
+    bottomMm,
+    plateT,
+    vCoreMm,
+    offStart,
+    offEnd,
+    coreMid,
+  );
   const lum = lumberSpecsForWall(
     wall,
     project,
