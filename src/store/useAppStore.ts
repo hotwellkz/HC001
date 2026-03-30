@@ -30,6 +30,11 @@ import { computeProfileThickness, setProjectOrigin } from "@/core/domain/wallOps
 import { commitWallPlacementSecondPoint } from "@/core/domain/wallPlacementCommit";
 import type { WallPlacementSession } from "@/core/domain/wallPlacement";
 import { initialWallPlacementPhase } from "@/core/domain/wallPlacement";
+import { applyCornerWallJoint, applyTeeWallJoint } from "@/core/domain/wallJointApply";
+import type { WallJointKind } from "@/core/domain/wallJoint";
+import type { WallJointSession } from "@/core/domain/wallJointSession";
+import { pickNearestWallEnd, pickWallSegmentInterior } from "@/core/domain/wallJointPick";
+import { narrowProjectToActiveLayer } from "@/core/domain/projectLayerSlice";
 import type { WallShapeMode } from "@/core/domain/wallShapeMode";
 import type { EditorTab } from "@/core/domain/viewState";
 import { setLastOpenedProjectId } from "@/data/lastOpenedProjectId";
@@ -64,6 +69,9 @@ interface AppState {
   readonly layerParamsModalOpen: boolean;
   readonly profilesModalOpen: boolean;
   readonly addWallModalOpen: boolean;
+  readonly wallJointParamsModalOpen: boolean;
+  /** Ручной инструмент «Угловое соединение» после выбора типа в модалке. */
+  readonly wallJointSession: WallJointSession | null;
   /** Режим постановки стены на 2D (после модалки «Добавить стену»). */
   readonly wallPlacementSession: WallPlacementSession | null;
   readonly wallCoordinateModalOpen: boolean;
@@ -120,6 +128,11 @@ interface AppActions {
   duplicateProfileById: (profileId: string) => void;
   openAddWallModal: () => void;
   closeAddWallModal: () => void;
+  openWallJointParamsModal: () => void;
+  closeWallJointParamsModal: () => void;
+  applyWallJointParamsModal: (kind: WallJointKind) => void;
+  cancelWallJointTool: () => void;
+  wallJointPrimaryClick: (worldMm: { readonly x: number; readonly y: number }, toleranceMm: number) => void;
   applyAddWallModal: (input: {
     readonly profileId: string;
     readonly heightMm: number;
@@ -203,6 +216,8 @@ export const useAppStore = create<AppStore>((set, get) => {
     layerParamsModalOpen: false,
     profilesModalOpen: false,
     addWallModalOpen: false,
+    wallJointParamsModalOpen: false,
+    wallJointSession: null,
     wallPlacementSession: null,
     wallCoordinateModalOpen: false,
     dirty: false,
@@ -243,7 +258,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         activeTool: tool,
         ...(tool === "select"
           ? { wallPlacementSession: null, wallCoordinateModalOpen: false, addWallModalOpen: false }
-          : {}),
+          : { wallJointSession: null, wallJointParamsModalOpen: false }),
       }),
 
     setViewport2d: (v) =>
@@ -265,6 +280,8 @@ export const useAppStore = create<AppStore>((set, get) => {
         activeTab: tab,
         activeTool: tab === "2d" ? "select" : s.activeTool,
         wallPlacementSession: tab === "2d" ? s.wallPlacementSession : null,
+        wallJointSession: tab === "2d" ? s.wallJointSession : null,
+        wallJointParamsModalOpen: tab === "2d" ? s.wallJointParamsModalOpen : false,
         addWallModalOpen: tab === "2d" ? s.addWallModalOpen : false,
         wallCoordinateModalOpen: tab === "2d" ? s.wallCoordinateModalOpen : false,
         currentProject: mergeViewState(s.currentProject, { activeTab: tab }),
@@ -429,9 +446,119 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
     },
 
-    openAddWallModal: () => set({ addWallModalOpen: true }),
+    openAddWallModal: () =>
+      set({ addWallModalOpen: true, wallJointSession: null, wallJointParamsModalOpen: false }),
 
     closeAddWallModal: () => set({ addWallModalOpen: false }),
+
+    openWallJointParamsModal: () =>
+      set({
+        wallJointParamsModalOpen: true,
+        wallPlacementSession: null,
+        wallJointSession: null,
+        wallCoordinateModalOpen: false,
+        addWallModalOpen: false,
+        lastError: null,
+      }),
+
+    closeWallJointParamsModal: () => set({ wallJointParamsModalOpen: false }),
+
+    applyWallJointParamsModal: (kind) => {
+      set({
+        wallJointParamsModalOpen: false,
+        wallJointSession: { kind, phase: "pickFirst" },
+        wallPlacementSession: null,
+        wallCoordinateModalOpen: false,
+        addWallModalOpen: false,
+        selectedEntityIds: [],
+        lastError: null,
+      });
+    },
+
+    cancelWallJointTool: () => set({ wallJointSession: null }),
+
+    wallJointPrimaryClick: (worldMm, toleranceMm) => {
+      const session = get().wallJointSession;
+      if (!session) {
+        return;
+      }
+      const p0 = get().currentProject;
+      const layerSlice = narrowProjectToActiveLayer(p0);
+      const walls = layerSlice.walls;
+
+      if (session.phase === "pickFirst") {
+        const hit = pickNearestWallEnd(worldMm, walls, toleranceMm);
+        if (!hit) {
+          set({ lastError: "Кликните ближе к торцу стены." });
+          return;
+        }
+        set({
+          wallJointSession: {
+            kind: session.kind,
+            phase: "pickSecond",
+            first: { wallId: hit.wallId, end: hit.end },
+          },
+          lastError: null,
+        });
+        return;
+      }
+
+      const first = session.first;
+      if (!first) {
+        set({ wallJointSession: null });
+        return;
+      }
+
+      if (session.kind === "T_ABUTMENT") {
+        const candidates = walls.filter((w) => w.id !== first.wallId);
+        const seg = pickWallSegmentInterior(worldMm, candidates, toleranceMm, 350);
+        if (!seg) {
+          set({ lastError: "Кликните по сегменту основной стены (не у торца)." });
+          return;
+        }
+        const r = applyTeeWallJoint(p0, first.wallId, first.end, seg.wallId, seg.pointMm);
+        if (!r.ok) {
+          set({ lastError: r.error });
+          return;
+        }
+        set({
+          currentProject: r.project,
+          wallJointSession: null,
+          dirty: true,
+          lastError: null,
+        });
+        return;
+      }
+
+      const hit2 = pickNearestWallEnd(worldMm, walls, toleranceMm);
+      if (!hit2) {
+        set({ lastError: "Кликните ближе к торцу второй стены." });
+        return;
+      }
+      if (hit2.wallId === first.wallId) {
+        set({ lastError: "Выберите другую стену." });
+        return;
+      }
+
+      const r = applyCornerWallJoint(
+        p0,
+        session.kind,
+        first.wallId,
+        first.end,
+        hit2.wallId,
+        hit2.end,
+      );
+      if (!r.ok) {
+        set({ lastError: r.error });
+        return;
+      }
+      set({
+        currentProject: r.project,
+        wallJointSession: null,
+        dirty: true,
+        lastError: null,
+      });
+    },
 
     applyAddWallModal: (input) => {
       const p = get().currentProject;
@@ -472,12 +599,15 @@ export const useAppStore = create<AppStore>((set, get) => {
           lastSnapKind: null,
         },
         addWallModalOpen: false,
+        wallJointSession: null,
+        wallJointParamsModalOpen: false,
         selectedEntityIds: [],
         lastError: null,
       });
     },
 
-    cancelWallPlacement: () => set({ wallPlacementSession: null, wallCoordinateModalOpen: false, addWallModalOpen: false }),
+    cancelWallPlacement: () =>
+      set({ wallPlacementSession: null, wallCoordinateModalOpen: false, addWallModalOpen: false }),
 
     wallPlacementBackOrExit: () => {
       const session = get().wallPlacementSession;
@@ -711,6 +841,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           layerParamsModalOpen: false,
           profilesModalOpen: false,
           addWallModalOpen: false,
+          wallJointParamsModalOpen: false,
+          wallJointSession: null,
           wallPlacementSession: null,
           wallCoordinateModalOpen: false,
         });
@@ -747,6 +879,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           layerParamsModalOpen: false,
           profilesModalOpen: false,
           addWallModalOpen: false,
+          wallJointParamsModalOpen: false,
+          wallJointSession: null,
           wallPlacementSession: null,
           wallCoordinateModalOpen: false,
         });
@@ -778,6 +912,8 @@ export const useAppStore = create<AppStore>((set, get) => {
         layerParamsModalOpen: false,
         profilesModalOpen: false,
         addWallModalOpen: false,
+        wallJointParamsModalOpen: false,
+        wallJointSession: null,
         wallPlacementSession: null,
         wallCoordinateModalOpen: false,
       });
@@ -842,6 +978,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           layerParamsModalOpen: false,
           profilesModalOpen: false,
           addWallModalOpen: false,
+          wallJointParamsModalOpen: false,
+          wallJointSession: null,
           wallPlacementSession: null,
           wallCoordinateModalOpen: false,
         });

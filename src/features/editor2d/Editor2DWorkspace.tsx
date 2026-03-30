@@ -8,21 +8,32 @@ import {
   narrowProjectToLayerSet,
   sortedVisibleContextLayerIds,
 } from "@/core/domain/projectLayerSlice";
+import { wallJointHintRu } from "@/core/domain/wallJointSession";
+import { pickNearestWallEnd, pickWallSegmentInterior } from "@/core/domain/wallJointPick";
 import { getProfileById } from "@/core/domain/profileOps";
+import { cssHexToPixiNumber } from "@/shared/cssColor";
 import { useAppStore } from "@/store/useAppStore";
+import { useUiThemeStore } from "@/store/useUiThemeStore";
 
 import { computeMarqueeSelection } from "./computeMarqueeSelection";
 import { drawRectangleWallPlacementPreview, drawWallPlacementPreview } from "./drawWallPreview2d";
 import { buildScreenGridLines } from "./gridGeometry";
 import { appendWallMarkLabels2d, clearWallMarkLabelContainer } from "./wallMarks2dPixi";
+import { drawWallJointPickOverlay, type JointHoverState } from "./wallJointMarkers2dPixi";
+import { drawDimensions2d } from "./dimensions2dPixi";
 import { drawWallsAndOpenings2d } from "./walls2dPixi";
 import { buildViewportTransform, screenToWorld, worldToScreen } from "./viewportTransforms";
 
 import "./wall-placement-hint.css";
 
-/** Согласовано с design tokens: canvasBg, borderSubtle */
-const BG = 0x14171b;
-const GRID_COLOR = 0x2a2f36;
+function readCanvasColorsFromTheme(): { readonly bg: number; readonly grid: number } {
+  const root = document.documentElement;
+  const cs = getComputedStyle(root);
+  const bg = cs.getPropertyValue("--color-canvas-bg").trim() || "#14171b";
+  const grid = cs.getPropertyValue("--color-grid-line").trim() || "#2a2f36";
+  return { bg: cssHexToPixiNumber(bg), grid: cssHexToPixiNumber(grid) };
+}
+
 const MARQUEE_MIN_DRAG_PX = 5;
 
 interface Editor2DWorkspaceProps {
@@ -38,6 +49,7 @@ interface MarqueeDrag {
 
 export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   const wallPlacementSession = useAppStore((s) => s.wallPlacementSession);
+  const jointHoverRef = useRef<JointHoverState>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const cursorCbRef = useRef(onWorldCursorMm);
   cursorCbRef.current = onWorldCursorMm;
@@ -70,6 +82,12 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         if (useAppStore.getState().wallCoordinateModalOpen) {
           e.preventDefault();
           useAppStore.getState().closeWallCoordinateModal();
+          return;
+        }
+        if (useAppStore.getState().wallJointSession) {
+          e.preventDefault();
+          useAppStore.getState().cancelWallJointTool();
+          setWallHintRef.current(null);
           return;
         }
         if (useAppStore.getState().wallPlacementSession) {
@@ -113,6 +131,12 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
     const openingsG = new Graphics();
     const wallLabelsC = new Container();
     wallLabelsC.eventMode = "none";
+    const dimensionsG = new Graphics();
+    dimensionsG.eventMode = "none";
+    const dimensionsLabelC = new Container();
+    dimensionsLabelC.eventMode = "none";
+    const jointPickG = new Graphics();
+    jointPickG.eventMode = "none";
     const previewG = new Graphics();
     const snapMarkerG = new Graphics();
     const marqueeG = new Graphics();
@@ -131,6 +155,10 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const w = app.renderer.width;
       const h = app.renderer.height;
       const t = buildViewportTransform(w, h, viewport2d.panXMm, viewport2d.panYMm, viewport2d.zoomPixelsPerMm);
+      const { bg: canvasBg, grid: GRID_COLOR } = readCanvasColorsFromTheme();
+      if (app.renderer.background) {
+        app.renderer.background.color = canvasBg;
+      }
       const selected = new Set(selectedEntityIds);
       const contextIds = sortedVisibleContextLayerIds(currentProject);
       const show2dLayers = currentProject.viewState.show2dProfileLayers !== false;
@@ -166,6 +194,20 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         show2dProfileLayers: show2dLayers,
       });
       appendWallMarkLabels2d(wallLabelsC, layerView, t, "active");
+
+      drawDimensions2d(dimensionsG, dimensionsLabelC, currentProject, t);
+
+      jointPickG.clear();
+      const jSession = useAppStore.getState().wallJointSession;
+      if (jSession) {
+        drawWallJointPickOverlay(
+          jointPickG,
+          layerView.walls,
+          t,
+          jSession.phase === "pickSecond" ? jSession.first : undefined,
+          jointHoverRef.current,
+        );
+      }
 
       previewG.clear();
       if (
@@ -237,13 +279,15 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
 
     let detachListeners: (() => void) | null = null;
     let unsubStore: (() => void) | null = null;
+    let unsubTheme: (() => void) | null = null;
     let ro: ResizeObserver | null = null;
 
     void (async () => {
       const app = new Application();
+      const initialCanvas = readCanvasColorsFromTheme();
       await app.init({
         resizeTo: host,
-        background: BG,
+        background: initialCanvas.bg,
         antialias: true,
         autoDensity: true,
         resolution: typeof window !== "undefined" ? window.devicePixelRatio : 1,
@@ -260,6 +304,9 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       worldRoot.addChild(wallsG);
       worldRoot.addChild(openingsG);
       worldRoot.addChild(wallLabelsC);
+      worldRoot.addChild(dimensionsG);
+      worldRoot.addChild(dimensionsLabelC);
+      worldRoot.addChild(jointPickG);
       worldRoot.addChild(previewG);
       worldRoot.addChild(snapMarkerG);
       worldRoot.addChild(marqueeG);
@@ -331,7 +378,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const onPointerMove = (ev: FederatedPointerEvent) => {
         const w = app.renderer.width;
         const h = app.renderer.height;
-        const { viewport2d, wallPlacementSession, currentProject } = useAppStore.getState();
+        const { viewport2d, wallPlacementSession, currentProject, wallJointSession } = useAppStore.getState();
         const t = buildViewportTransform(w, h, viewport2d.panXMm, viewport2d.panYMm, viewport2d.zoomPixelsPerMm);
         const p = screenToWorld(ev.global.x, ev.global.y, t);
         cursorCbRef.current({ x: p.x, y: p.y });
@@ -372,6 +419,35 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             });
             setCoordHudRef.current(null);
           }
+        } else if (wallJointSession) {
+          const layerView = narrowProjectToActiveLayer(currentProject);
+          const walls = layerView.walls;
+          const tol = Math.max(14, 22 / viewport2d.zoomPixelsPerMm);
+          const first = wallJointSession.first;
+          let nextHover: JointHoverState = null;
+          if (wallJointSession.phase === "pickFirst") {
+            const hit = pickNearestWallEnd(p, walls, tol);
+            nextHover = hit ? { kind: "end", wallId: hit.wallId, end: hit.end } : null;
+          } else if (wallJointSession.kind === "T_ABUTMENT" && first) {
+            const seg = pickWallSegmentInterior(
+              p,
+              walls.filter((w) => w.id !== first.wallId),
+              tol,
+              350,
+            );
+            nextHover = seg ? { kind: "segment", wallId: seg.wallId, pointMm: seg.pointMm } : null;
+          } else {
+            const hit = pickNearestWallEnd(p, walls, tol);
+            nextHover = hit ? { kind: "end", wallId: hit.wallId, end: hit.end } : null;
+          }
+          jointHoverRef.current = nextHover;
+          setWallHintRef.current({
+            left,
+            top,
+            text: wallJointHintRu(wallJointSession.kind, wallJointSession.phase),
+          });
+          setCoordHudRef.current(null);
+          paint();
         } else {
           setWallHintRef.current(null);
           setCoordHudRef.current(null);
@@ -398,9 +474,25 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const onPointerDown = (ev: FederatedPointerEvent) => {
         const w = app.renderer.width;
         const h = app.renderer.height;
-        const { viewport2d, wallPlacementSession, activeTool } = useAppStore.getState();
+        const { viewport2d, wallPlacementSession, wallJointSession, activeTool } = useAppStore.getState();
         const t = buildViewportTransform(w, h, viewport2d.panXMm, viewport2d.panYMm, viewport2d.zoomPixelsPerMm);
         const worldMm = screenToWorld(ev.global.x, ev.global.y, t);
+
+        if (wallJointSession && ev.button === 2) {
+          ev.preventDefault();
+          useAppStore.getState().cancelWallJointTool();
+          jointHoverRef.current = null;
+          setWallHintRef.current(null);
+          paint();
+          return;
+        }
+
+        if (wallJointSession && ev.button === 0) {
+          const tol = Math.max(14, 22 / viewport2d.zoomPixelsPerMm);
+          useAppStore.getState().wallJointPrimaryClick(worldMm, tol);
+          paint();
+          return;
+        }
 
         if (wallPlacementSession && ev.button === 2) {
           ev.preventDefault();
@@ -441,7 +533,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           panning.zoom = v2.zoomPixelsPerMm;
           return;
         }
-        if (ev.button === 0 && activeTool === "select") {
+        if (ev.button === 0 && activeTool === "select" && !wallJointSession) {
           marquee = { sx: ev.global.x, sy: ev.global.y, cx: ev.global.x, cy: ev.global.y };
           marqueePointerId = ev.pointerId;
           try {
@@ -468,9 +560,14 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const onPointerLeave = () => {
         panning.active = false;
         cursorCbRef.current(null);
-        if (!useAppStore.getState().wallPlacementSession) {
+        jointHoverRef.current = null;
+        const st = useAppStore.getState();
+        if (!st.wallPlacementSession && !st.wallJointSession) {
           setWallHintRef.current(null);
           setCoordHudRef.current(null);
+        }
+        if (st.wallJointSession) {
+          paint();
         }
       };
 
@@ -481,6 +578,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       worldRoot.on("pointerleave", onPointerLeave);
 
       unsubStore = useAppStore.subscribe(paint);
+      unsubTheme = useUiThemeStore.subscribe(paint);
       ro = new ResizeObserver(() => {
         /* Pixi resizeTo слушает только window.resize, не изменение flex/grid — принудительно подгоняем renderer. */
         app.resize();
@@ -506,6 +604,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       setCoordHudRef.current(null);
       detachListeners?.();
       unsubStore?.();
+      unsubTheme?.();
       ro?.disconnect();
       appRef.current?.destroy(true, { children: true });
       appRef.current = null;

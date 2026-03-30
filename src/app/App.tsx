@@ -2,6 +2,7 @@ import { useCallback, useEffect } from "react";
 
 import { initProjectPersistence } from "@/data/projectPersistence";
 import { AppShell } from "@/features/ui/AppShell";
+import { ThemeRoot } from "@/features/ui/ThemeRoot";
 import { useAppStore } from "@/store/useAppStore";
 
 function ErrorBanner() {
@@ -33,7 +34,9 @@ export default function App() {
 
   return (
     <>
-      <AppShell />
+      <ThemeRoot>
+        <AppShell />
+      </ThemeRoot>
       <ErrorBanner />
     </>
   );

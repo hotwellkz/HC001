@@ -52,6 +52,7 @@ export function createDemoProject(): Project {
     layers: [defaultLayer],
     activeLayerId: layerId,
     visibleLayerIds: [],
+    wallJoints: [],
     walls: [
       {
         id: wallNorthId,

@@ -3,6 +3,7 @@ import { useCallback, useState } from "react";
 import "./shell.css";
 
 import { AddWallModal } from "@/features/ui/AddWallModal";
+import { WallJointParamsModal } from "@/features/ui/WallJointParamsModal";
 import { WallCoordinateModal } from "@/features/ui/WallCoordinateModal";
 import { LayerManagerModal } from "@/features/ui/LayerManagerModal";
 import { LayerParamsModal } from "@/features/ui/LayerParamsModal";
@@ -56,6 +57,7 @@ export function AppShell() {
       <LayerParamsHost />
       <ProfilesHost />
       <AddWallModal />
+      <WallJointParamsModal />
       <WallCoordinateModal />
     </div>
   );

@@ -4,7 +4,11 @@ import { createRoot } from "react-dom/client";
 import "@/styles/theme.css";
 import "@/styles/ui-primitives.css";
 
+import { bootstrapThemeFromStorage } from "@/store/useUiThemeStore";
+
 import App from "./app/App";
+
+bootstrapThemeFromStorage();
 
 const el = document.getElementById("root");
 if (!el) {

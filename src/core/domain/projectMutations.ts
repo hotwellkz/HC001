@@ -6,7 +6,11 @@ import { touchProjectMeta } from "./projectFactory";
  */
 export function deleteEntitiesFromProject(project: Project, selectedIds: ReadonlySet<string>): Project {
   const wallsKept = project.walls.filter((w) => !selectedIds.has(w.id));
+  const keptWallIds = new Set(wallsKept.map((w) => w.id));
   const removedWallIds = new Set(project.walls.filter((w) => selectedIds.has(w.id)).map((w) => w.id));
+  const wallJointsKept = project.wallJoints.filter(
+    (j) => keptWallIds.has(j.wallAId) && keptWallIds.has(j.wallBId),
+  );
   const openingsKept = project.openings.filter((o) => {
     if (selectedIds.has(o.id)) {
       return false;
@@ -17,9 +21,18 @@ export function deleteEntitiesFromProject(project: Project, selectedIds: Readonl
     return true;
   });
 
+  const dimensionsKept = project.dimensions.filter((d) => {
+    if (!d.wallIds?.length) {
+      return true;
+    }
+    return !d.wallIds.some((id) => selectedIds.has(id));
+  });
+
   return touchProjectMeta({
     ...project,
     walls: wallsKept,
+    wallJoints: wallJointsKept,
     openings: openingsKept,
+    dimensions: dimensionsKept,
   });
 }

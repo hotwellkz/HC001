@@ -130,6 +130,7 @@ export function deleteLayerAndEntities(project: Project, layerId: string): Proje
 
   const wallIds = new Set(project.walls.filter((w) => w.layerId === layerId).map((w) => w.id));
   const walls = project.walls.filter((w) => w.layerId !== layerId);
+  const wallJoints = project.wallJoints.filter((j) => !wallIds.has(j.wallAId) && !wallIds.has(j.wallBId));
   const openings = project.openings.filter((o) => !wallIds.has(o.wallId));
   const rooms = project.rooms.filter((r) => r.layerId !== layerId);
   const layersLeft = project.layers.filter((l) => l.id !== layerId);
@@ -140,6 +141,7 @@ export function deleteLayerAndEntities(project: Project, layerId: string): Proje
     ...project,
     layers: reindexed,
     walls,
+    wallJoints,
     openings,
     rooms,
     activeLayerId: nextActive,

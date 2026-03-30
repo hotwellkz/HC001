@@ -14,6 +14,7 @@ import type { Wall } from "./wall";
 import type { WallPlacementDraft, WallPlacementSession } from "./wallPlacement";
 import type { WallShapeMode } from "./wallShapeMode";
 import { newEntityId } from "./ids";
+import { appendRectangleOverallDimensions } from "./rectangleWallDimensions";
 
 export interface WallPlacementCommitOk {
   readonly project: Project;
@@ -122,5 +123,6 @@ export function commitWallPlacementSecondPoint(
   }
 
   const next = addWallsToProject(project, walls);
-  return { project: next, createdWallIds: walls.map((w) => w.id) };
+  const withDims = appendRectangleOverallDimensions(next, walls, groupId);
+  return { project: withDims, createdWallIds: walls.map((w) => w.id) };
 }

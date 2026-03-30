@@ -45,6 +45,7 @@ export function createEmptyProject(): Project {
     activeLayerId: layerId,
     visibleLayerIds: [],
     walls: [],
+    wallJoints: [],
     openings: [],
     rooms: [],
     foundation: { type: "none" },

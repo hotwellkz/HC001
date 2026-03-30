@@ -2,6 +2,7 @@ import { PROJECT_SCHEMA_VERSION, PROJECT_UNITS } from "../domain/constants";
 import { normalizeVisibleLayerIds } from "../domain/layerVisibility";
 import type { Profile } from "../domain/profile";
 import type { Project } from "../domain/project";
+import type { WallJoint } from "../domain/wallJoint";
 import type { ProjectMeta } from "../domain/projectMeta";
 import { normalizeProjectSettings, type ProjectSettingsWire } from "../domain/settings";
 
@@ -39,6 +40,8 @@ export interface ProjectFileV1 {
   /** В старых файлах может отсутствовать — подставляется []. */
   readonly visibleLayerIds?: Project["visibleLayerIds"];
   readonly walls: Project["walls"];
+  /** В старых файлах может отсутствовать — []. */
+  readonly wallJoints?: readonly WallJoint[];
   readonly openings: Project["openings"];
   readonly rooms: Project["rooms"];
   readonly foundation: Project["foundation"];
@@ -93,6 +96,7 @@ export function projectFromWireV1(wire: ProjectFileV1): Project {
     activeLayerId: wire.activeLayerId,
     visibleLayerIds: visibleRaw,
     walls: wire.walls,
+    wallJoints: wire.wallJoints ?? [],
     openings: wire.openings,
     rooms: wire.rooms,
     foundation: wire.foundation,

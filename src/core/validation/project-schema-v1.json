@@ -14,6 +14,7 @@
     "activeLayerId",
     "visibleLayerIds",
     "walls",
+    "wallJoints",
     "openings",
     "rooms",
     "foundation",
@@ -49,6 +50,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/wall" }
     },
+    "wallJoints": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/wallJoint" }
+    },
     "openings": {
       "type": "array",
       "items": { "$ref": "#/$defs/opening" }
@@ -83,6 +88,23 @@
       "properties": {
         "x": { "type": "number" },
         "y": { "type": "number" }
+      }
+    },
+    "wallJoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "wallAId", "wallAEnd", "wallBId"],
+      "properties": {
+        "id": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["CORNER_BUTT", "CORNER_MITER", "T_ABUTMENT"]
+        },
+        "wallAId": { "type": "string" },
+        "wallAEnd": { "type": "string", "enum": ["start", "end"] },
+        "wallBId": { "type": "string" },
+        "wallBEnd": { "type": "string", "enum": ["start", "end"] },
+        "teePointOnMainMm": { "$ref": "#/$defs/point2d" }
       }
     },
     "layer": {
@@ -265,7 +287,19 @@
         "id": { "type": "string" },
         "a": { "$ref": "#/$defs/point2d" },
         "b": { "$ref": "#/$defs/point2d" },
-        "offsetMm": { "type": "number" }
+        "offsetMm": { "type": "number" },
+        "kind": {
+          "type": "string",
+          "enum": ["rectangle_outer_horizontal", "rectangle_outer_vertical"]
+        },
+        "placementGroupId": { "type": "string" },
+        "wallIds": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "layerId": { "type": "string" },
+        "textValueMm": { "type": "number" },
+        "extensionOvershootMm": { "type": "number" }
       }
     },
     "settings": {

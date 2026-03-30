@@ -67,7 +67,7 @@ body {
 .ui-btn--primary {
   background: var(--color-accent-soft);
   border-color: var(--color-accent-outline);
-  color: var(--color-text-on-accent);
+  color: var(--color-text-on-accent-soft);
 }
 
 .ui-btn--primary:hover:not(:disabled) {
@@ -134,7 +134,7 @@ body {
   padding: 0 var(--space-md);
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border-subtle);
-  background: #14171b;
+  background: var(--color-input-bg);
   color: var(--color-text-primary);
   font-size: var(--text-body-sm);
   transition:
@@ -249,7 +249,7 @@ body {
   border-radius: var(--radius-md);
   border: 1px solid var(--color-danger-soft);
   background: var(--color-danger-soft);
-  color: #ffd3d6;
+  color: var(--color-danger);
   font-size: var(--text-body-sm);
   z-index: 50;
   box-shadow: var(--shadow-panel);

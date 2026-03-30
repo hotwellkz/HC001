@@ -1,5 +1,6 @@
 import { Editor2DPlanToolbar } from "@/features/ui/Editor2DPlanToolbar";
 import { LayerToolbar } from "@/features/ui/LayerToolbar";
+import { ThemeMenu } from "@/features/ui/ThemeMenu";
 import { projectCommands } from "@/features/project/commands";
 import { APP_NAME } from "@/shared/constants";
 import { useAppStore } from "@/store/useAppStore";
@@ -44,6 +45,7 @@ export function TopBar() {
         ) : null}
       </div>
       <div className="shell-top-right row">
+        <ThemeMenu />
         <button
           type="button"
           className="tb-prof-btn"
