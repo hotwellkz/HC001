@@ -53,6 +53,7 @@ export function createDemoProject(): Project {
     activeLayerId: layerId,
     visibleLayerIds: [],
     wallJoints: [],
+    wallCalculations: [],
     walls: [
       {
         id: wallNorthId,
@@ -164,6 +165,7 @@ export function createDemoProject(): Project {
       rightPropertiesCollapsed: false,
       show3dProfileLayers: true,
       show2dProfileLayers: true,
+      show3dCalculation: true,
     },
   };
 

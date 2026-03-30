@@ -23,6 +23,11 @@ import {
 import { getProfileById } from "@/core/domain/profileOps";
 import { validateProfile } from "@/core/domain/profileValidation";
 import type { Project } from "@/core/domain/project";
+import {
+  DEFAULT_WALL_CALC_STAGE3_OPTIONS,
+  type WallCalculationResult,
+  type WallCalculationStage3Options,
+} from "@/core/domain/wallCalculation";
 import { deleteEntitiesFromProject } from "@/core/domain/projectMutations";
 import { buildViewportTransform, type ViewportTransform } from "@/core/geometry/viewportTransform";
 import { resolveSnap2d } from "@/core/geometry/snap2d";
@@ -35,6 +40,7 @@ import type { WallJointKind } from "@/core/domain/wallJoint";
 import type { WallJointSession } from "@/core/domain/wallJointSession";
 import { pickNearestWallEnd, pickWallSegmentInterior } from "@/core/domain/wallJointPick";
 import { narrowProjectToActiveLayer } from "@/core/domain/projectLayerSlice";
+import { buildWallCalculationForWall, SipWallLayoutError } from "@/core/domain/sipWallLayout";
 import type { WallShapeMode } from "@/core/domain/wallShapeMode";
 import type { EditorTab } from "@/core/domain/viewState";
 import { setLastOpenedProjectId } from "@/data/lastOpenedProjectId";
@@ -75,6 +81,7 @@ interface AppState {
   /** Режим постановки стены на 2D (после модалки «Добавить стену»). */
   readonly wallPlacementSession: WallPlacementSession | null;
   readonly wallCoordinateModalOpen: boolean;
+  readonly wallCalculationModalOpen: boolean;
   readonly dirty: boolean;
   readonly lastError: string | null;
   readonly history: UndoRedoSkeleton;
@@ -97,6 +104,7 @@ interface AppActions {
   setRightPropertiesCollapsed: (collapsed: boolean) => void;
   setShow3dProfileLayers: (show: boolean) => void;
   setShow2dProfileLayers: (show: boolean) => void;
+  setShow3dCalculation: (show: boolean) => void;
   markClean: () => void;
   undo: () => void;
   redo: () => void;
@@ -160,6 +168,12 @@ interface AppActions {
   openWallCoordinateModal: () => void;
   closeWallCoordinateModal: () => void;
   applyWallCoordinateModal: (input: { readonly dxMm: number; readonly dyMm: number }) => void;
+  openWallCalculationModal: () => void;
+  closeWallCalculationModal: () => void;
+  applyWallCalculationModal: (input: {
+    readonly clearWallFirst: boolean;
+    readonly stage3Options?: Partial<WallCalculationStage3Options>;
+  }) => void;
 }
 
 export type AppStore = AppState & AppActions;
@@ -223,6 +237,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     wallJointSession: null,
     wallPlacementSession: null,
     wallCoordinateModalOpen: false,
+    wallCalculationModalOpen: false,
     dirty: false,
     lastError: null,
     history: initialHistory,
@@ -320,6 +335,12 @@ export const useAppStore = create<AppStore>((set, get) => {
     setShow2dProfileLayers: (show2dProfileLayers) =>
       set((s) => ({
         currentProject: touchProjectMeta(mergeViewState(s.currentProject, { show2dProfileLayers })),
+        dirty: true,
+      })),
+
+    setShow3dCalculation: (show3dCalculation) =>
+      set((s) => ({
+        currentProject: touchProjectMeta(mergeViewState(s.currentProject, { show3dCalculation })),
         dirty: true,
       })),
 
@@ -771,6 +792,81 @@ export const useAppStore = create<AppStore>((set, get) => {
       const vp = getViewportForSnapFromStore(get);
       const snap = resolvePlacementSnap(get, raw, vp);
       get().wallPlacementCompleteSecondPoint(snap.point);
+    },
+
+    openWallCalculationModal: () => {
+      const { selectedEntityIds, currentProject } = get();
+      const sel = new Set(selectedEntityIds);
+      if (!currentProject.walls.some((w) => sel.has(w.id))) {
+        return;
+      }
+      set({ wallCalculationModalOpen: true, lastError: null });
+    },
+
+    closeWallCalculationModal: () => set({ wallCalculationModalOpen: false }),
+
+    applyWallCalculationModal: (input) => {
+      const { selectedEntityIds, currentProject } = get();
+      const sel = new Set(selectedEntityIds);
+      const wallIds = currentProject.walls.filter((w) => sel.has(w.id)).map((w) => w.id);
+      if (wallIds.length === 0) {
+        set({ wallCalculationModalOpen: false, lastError: "Выберите хотя бы одну стену." });
+        return;
+      }
+      const target = new Set(wallIds);
+      let proj = currentProject;
+      if (input.clearWallFirst) {
+        proj = {
+          ...proj,
+          wallCalculations: proj.wallCalculations.filter((c) => !target.has(c.wallId)),
+        };
+      }
+      const kept = proj.wallCalculations.filter((c) => !target.has(c.wallId));
+      const newCalcs: WallCalculationResult[] = [];
+      const errors: string[] = [];
+      for (const wid of wallIds) {
+        const wall = proj.walls.find((w) => w.id === wid);
+        if (!wall) {
+          continue;
+        }
+        if (!wall.profileId) {
+          errors.push("Есть стена без профиля — укажите профиль или исключите её из выделения.");
+          continue;
+        }
+        const prof = getProfileById(proj, wall.profileId);
+        if (!prof) {
+          errors.push("Профиль стены не найден в проекте.");
+          continue;
+        }
+        try {
+          newCalcs.push(
+            buildWallCalculationForWall(wall, prof, {
+              openings: proj.openings,
+              wallJoints: proj.wallJoints,
+              options: {
+                ...DEFAULT_WALL_CALC_STAGE3_OPTIONS,
+                ...input.stage3Options,
+              },
+            }),
+          );
+        } catch (e) {
+          const msg = e instanceof SipWallLayoutError ? e.message : "Ошибка расчёта стены.";
+          errors.push(msg);
+        }
+      }
+      if (newCalcs.length === 0) {
+        set({ lastError: errors.length ? errors.join(" ") : "Не удалось выполнить расчёт." });
+        return;
+      }
+      set({
+        currentProject: touchProjectMeta({
+          ...proj,
+          wallCalculations: [...kept, ...newCalcs],
+        }),
+        wallCalculationModalOpen: false,
+        dirty: true,
+        lastError: errors.length ? errors.join(" ") : null,
+      });
     },
 
     setSnapToVertex: (value) =>

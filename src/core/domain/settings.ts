@@ -12,6 +12,8 @@ export interface Editor2dSettings {
   readonly snapToVertex: boolean;
   readonly snapToEdge: boolean;
   readonly snapToGrid: boolean;
+  /** Подписи расчётных досок (JB/EB/обвязка) на 2D-плане — только для отладки. */
+  readonly debugLumberPieceLabels2d: boolean;
 }
 
 /** Настройки проекта (в т.ч. редактор), сериализуются в snapshot. */
@@ -32,9 +34,17 @@ export function normalizeProjectSettings(s: ProjectSettingsWire): ProjectSetting
   const snapToVertex = s.editor2d?.snapToVertex !== false;
   const snapToEdge = s.editor2d?.snapToEdge !== false;
   const snapToGrid = s.editor2d?.snapToGrid !== false;
+  const debugLumberPieceLabels2d = s.editor2d?.debugLumberPieceLabels2d === true;
   return {
     gridStepMm: s.gridStepMm,
     showGrid: s.showGrid,
-    editor2d: { linearPlacementMode, wallShapeMode, snapToVertex, snapToEdge, snapToGrid },
+    editor2d: {
+      linearPlacementMode,
+      wallShapeMode,
+      snapToVertex,
+      snapToEdge,
+      snapToGrid,
+      debugLumberPieceLabels2d,
+    },
   };
 }

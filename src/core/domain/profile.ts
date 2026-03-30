@@ -3,6 +3,8 @@
  * Хранится в проекте; в будущем сущности (стена) смогут ссылаться на profileId.
  */
 
+import type { WallManufacturingSettings } from "./wallManufacturing";
+
 export type ProfileCategory =
   | "wall"
   | "slab"
@@ -46,6 +48,8 @@ export interface Profile {
   readonly defaultWidthMm?: number;
   /** Для solid — габарит по глубине/толщине сечения, мм */
   readonly defaultThicknessMm?: number;
+  /** SIP / производственный расчёт (категория wall). */
+  readonly wallManufacturing?: WallManufacturingSettings;
   readonly notes?: string;
   /**
    * Префикс автоматической маркировки стен (категория wall), например "1S".

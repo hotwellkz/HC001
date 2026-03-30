@@ -1,4 +1,4 @@
-export type EditorTab = "2d" | "3d";
+export type EditorTab = "2d" | "3d" | "spec";
 
 export interface ViewportState2D {
   readonly panXMm: number;
@@ -32,22 +32,32 @@ export interface ViewState {
    * false: одна полоса как раньше.
    */
   readonly show2dProfileLayers: boolean;
+  /**
+   * true: в 3D показывать объёмы из расчёта (SIP-панели, пиломатериалы).
+   * false: только геометрия стен по профилю.
+   */
+  readonly show3dCalculation: boolean;
 }
 
 /** Нормализация viewState из файла (старые проекты без поля). */
+const VALID_TABS: readonly EditorTab[] = ["2d", "3d", "spec"];
+
 export function normalizeViewState(
   input: Pick<ViewState, "activeTab" | "viewport2d" | "viewport3d"> & {
     readonly rightPropertiesCollapsed?: boolean;
     readonly show3dProfileLayers?: boolean;
     readonly show2dProfileLayers?: boolean;
+    readonly show3dCalculation?: boolean;
   },
 ): ViewState {
+  const tab = VALID_TABS.includes(input.activeTab as EditorTab) ? input.activeTab : "2d";
   return {
-    activeTab: input.activeTab,
+    activeTab: tab,
     viewport2d: input.viewport2d,
     viewport3d: input.viewport3d,
     rightPropertiesCollapsed: input.rightPropertiesCollapsed === true,
     show3dProfileLayers: input.show3dProfileLayers !== false,
     show2dProfileLayers: input.show2dProfileLayers !== false,
+    show3dCalculation: input.show3dCalculation !== false,
   };
 }

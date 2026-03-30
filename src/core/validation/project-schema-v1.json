@@ -14,6 +14,7 @@
     "activeLayerId",
     "visibleLayerIds",
     "walls",
+    "wallCalculations",
     "wallJoints",
     "openings",
     "rooms",
@@ -49,6 +50,10 @@
     "walls": {
       "type": "array",
       "items": { "$ref": "#/$defs/wall" }
+    },
+    "wallCalculations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/wallCalculationResult" }
     },
     "wallJoints": {
       "type": "array",
@@ -191,12 +196,181 @@
         "defaultThicknessMm": { "type": "number" },
         "notes": { "type": "string" },
         "markPrefix": { "type": "string" },
+        "wallManufacturing": { "$ref": "#/$defs/wallManufacturingSettings" },
         "layers": {
           "type": "array",
           "items": { "$ref": "#/$defs/profileLayer" }
         },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
+      }
+    },
+    "wallManufacturingSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "panelNominalWidthMm",
+        "minPanelWidthMm",
+        "jointBoardThicknessMm",
+        "jointBoardDepthMm",
+        "plateBoardThicknessMm",
+        "plateBoardDepthMm",
+        "maxBoardLengthMm",
+        "includeEndBoards"
+      ],
+      "properties": {
+        "panelNominalWidthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "minPanelWidthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "jointBoardThicknessMm": { "type": "number", "exclusiveMinimum": 0 },
+        "jointBoardDepthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "plateBoardThicknessMm": { "type": "number", "exclusiveMinimum": 0 },
+        "plateBoardDepthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "maxBoardLengthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "includeEndBoards": { "type": "boolean" },
+        "coreDepthMm": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "wallCalcSettingsSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "panelNominalWidthMm",
+        "minPanelWidthMm",
+        "jointBoardThicknessMm",
+        "jointBoardDepthMm",
+        "plateBoardThicknessMm",
+        "plateBoardDepthMm",
+        "maxBoardLengthMm",
+        "includeEndBoards",
+        "wallLengthMm"
+      ],
+      "properties": {
+        "panelNominalWidthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "minPanelWidthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "jointBoardThicknessMm": { "type": "number", "exclusiveMinimum": 0 },
+        "jointBoardDepthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "plateBoardThicknessMm": { "type": "number", "exclusiveMinimum": 0 },
+        "plateBoardDepthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "maxBoardLengthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "includeEndBoards": { "type": "boolean" },
+        "coreDepthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "wallLengthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "profileId": { "type": "string" },
+        "stage3OpeningFraming": { "type": "boolean" },
+        "stage3WallConnections": { "type": "boolean" }
+      }
+    },
+    "sipPanelRegion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "wallId",
+        "calculationId",
+        "index",
+        "startOffsetMm",
+        "endOffsetMm",
+        "widthMm",
+        "pieceMark",
+        "heightMm",
+        "thicknessMm"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "wallId": { "type": "string" },
+        "calculationId": { "type": "string" },
+        "index": { "type": "number", "minimum": 0 },
+        "startOffsetMm": { "type": "number" },
+        "endOffsetMm": { "type": "number" },
+        "widthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "pieceMark": { "type": "string", "minLength": 1 },
+        "heightMm": { "type": "number", "minimum": 0 },
+        "thicknessMm": { "type": "number", "minimum": 0 }
+      }
+    },
+    "lumberPiece": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "wallId",
+        "calculationId",
+        "role",
+        "sectionThicknessMm",
+        "sectionDepthMm",
+        "startOffsetMm",
+        "endOffsetMm",
+        "lengthMm",
+        "orientation"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "wallId": { "type": "string" },
+        "calculationId": { "type": "string" },
+        "role": {
+          "type": "string",
+          "enum": [
+            "upper_plate",
+            "lower_plate",
+            "joint_board",
+            "edge_board",
+            "opening_left_stud",
+            "opening_right_stud",
+            "opening_header",
+            "opening_sill",
+            "tee_joint_board",
+            "corner_joint_board",
+            "framing_member_generic",
+            "sip_joint_vertical",
+            "plate_top",
+            "plate_bottom",
+            "end_board_vertical"
+          ]
+        },
+        "sectionThicknessMm": { "type": "number", "exclusiveMinimum": 0 },
+        "sectionDepthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "startOffsetMm": { "type": "number" },
+        "endOffsetMm": { "type": "number" },
+        "lengthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "orientation": {
+          "type": "string",
+          "enum": ["along_wall", "across_wall"]
+        },
+        "wallMark": { "type": "string" },
+        "sequenceNumber": { "type": "number", "minimum": 0 },
+        "pieceMark": { "type": "string" },
+        "materialType": { "$ref": "#/$defs/profileMaterialType" },
+        "sortKey": { "type": "number", "minimum": 0 },
+        "displayOrder": { "type": "number", "minimum": 0 },
+        "metadata": { "type": "object" }
+      }
+    },
+    "wallCalculationResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "wallId",
+        "version",
+        "generatedAt",
+        "settingsSnapshot",
+        "sipRegions",
+        "lumberPieces"
+      ],
+      "properties": {
+        "id": { "type": "string" },
+        "wallId": { "type": "string" },
+        "version": { "type": "number", "minimum": 1 },
+        "generatedAt": { "type": "string", "minLength": 1 },
+        "settingsSnapshot": { "$ref": "#/$defs/wallCalcSettingsSnapshot" },
+        "sipRegions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/sipPanelRegion" }
+        },
+        "lumberPieces": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/lumberPiece" }
+        }
       }
     },
     "opening": {
@@ -324,7 +498,8 @@
             },
             "snapToVertex": { "type": "boolean" },
             "snapToEdge": { "type": "boolean" },
-            "snapToGrid": { "type": "boolean" }
+            "snapToGrid": { "type": "boolean" },
+            "debugLumberPieceLabels2d": { "type": "boolean" }
           }
         }
       }
@@ -337,7 +512,8 @@
         "rightPropertiesCollapsed": { "type": "boolean" },
         "show3dProfileLayers": { "type": "boolean" },
         "show2dProfileLayers": { "type": "boolean" },
-        "activeTab": { "type": "string", "enum": ["2d", "3d"] },
+        "show3dCalculation": { "type": "boolean" },
+        "activeTab": { "type": "string", "enum": ["2d", "3d", "spec"] },
         "viewport2d": {
           "type": "object",
           "additionalProperties": false,

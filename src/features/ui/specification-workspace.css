@@ -1,0 +1,131 @@
+.spec-workspace {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-lg, 16px) var(--space-xl, 20px);
+  color: var(--color-text-primary);
+}
+
+.spec-workspace__header {
+  margin-bottom: var(--space-lg, 16px);
+}
+
+.spec-workspace__title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.spec-workspace__intro {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.45;
+}
+
+.spec-workspace__section {
+  margin-bottom: var(--space-xl, 20px);
+}
+
+.spec-workspace__h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.spec-workspace__h4 {
+  margin: 12px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.spec-workspace__subblock {
+  margin-bottom: 14px;
+}
+
+.spec-workspace__subblock:last-child {
+  margin-bottom: 0;
+}
+
+.spec-workspace__h5 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.spec-workspace__empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.spec-workspace__table-wrap {
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm, 10px);
+  overflow: auto;
+  background: var(--color-surface-base);
+}
+
+.spec-workspace__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.spec-workspace__table th,
+.spec-workspace__table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.spec-workspace__table th {
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.spec-workspace__table tr:last-child td {
+  border-bottom: none;
+}
+
+.spec-workspace__table--compact td {
+  padding: 6px 8px;
+}
+
+.spec-workspace__wall-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.spec-workspace__details {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: var(--radius-sm, 10px);
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.spec-workspace__marks-cell {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spec-workspace__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  line-height: 1.45;
+}
+
+.spec-workspace__hint code {
+  font-size: 11px;
+}

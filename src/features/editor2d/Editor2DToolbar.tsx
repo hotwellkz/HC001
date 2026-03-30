@@ -3,12 +3,16 @@ import { useAppStore } from "@/store/useAppStore";
 
 import "./editor2d-toolbar.css";
 
+/** Lucide «mouse-pointer»: узнаваемый силуэт курсора, stroke для читаемости на 18px. */
 function IconSelect() {
   return (
-    <svg className="ed2d-icon" viewBox="0 0 24 24" aria-hidden="true">
+    <svg className="ed2d-icon ed2d-icon--stroke" viewBox="0 0 24 24" aria-hidden="true" fill="none">
       <path
-        fill="currentColor"
-        d="M6 3l12 9.5-5 .75L10.5 21 6 3zm2.2 3.4l3.8 8.1 1.65-4.4 3.2-.48L8.2 6.4z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.25 2.5-2.5 6.25a.5.5 0 0 1-.894.035L4.688 5.288a.495.495 0 0 1-.651-.6z"
       />
     </svg>
   );

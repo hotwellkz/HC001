@@ -13,6 +13,17 @@ function IconWallAdd() {
   );
 }
 
+function IconCalculate() {
+  return (
+    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 7h2v2H7V7zm4 0h6v2h-6V7zM7 11h2v2H7v-2zm4 0h6v2h-6v-2zm-4 4h2v2H7v-2zm4 0h6v2h-6v-2z"
+      />
+    </svg>
+  );
+}
+
 function IconWallJoint() {
   return (
     <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -28,9 +39,14 @@ function IconWallJoint() {
 export function Editor2DPlanToolbar() {
   const open = useAppStore((s) => s.openAddWallModal);
   const openJoint = useAppStore((s) => s.openWallJointParamsModal);
+  const openCalc = useAppStore((s) => s.openWallCalculationModal);
   const wallToolActive = useAppStore((s) => s.wallPlacementSession != null);
   const jointModalOpen = useAppStore((s) => s.wallJointParamsModalOpen);
   const jointSession = useAppStore((s) => s.wallJointSession);
+  const selectedWallCount = useAppStore((s) => {
+    const sel = new Set(s.selectedEntityIds);
+    return s.currentProject.walls.filter((w) => sel.has(w.id)).length;
+  });
 
   return (
     <div className="e2dpt" role="toolbar" aria-label="Построение плана">
@@ -55,6 +71,16 @@ export function Editor2DPlanToolbar() {
         onClick={() => openJoint()}
       >
         <IconWallJoint />
+      </button>
+      <button
+        type="button"
+        className="e2dpt-btn"
+        title={selectedWallCount === 0 ? "Выберите стену" : "Рассчитать"}
+        aria-label="Рассчитать"
+        disabled={selectedWallCount === 0}
+        onClick={() => openCalc()}
+      >
+        <IconCalculate />
       </button>
     </div>
   );

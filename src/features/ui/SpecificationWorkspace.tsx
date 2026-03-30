@@ -1,0 +1,204 @@
+import { useMemo, useState } from "react";
+
+import { buildCutListCandidates } from "@/core/domain/cutListCandidates";
+import {
+  buildProjectLumberSummary,
+  buildProjectWallSpecificationSummaries,
+  buildWallSpecificationDetails,
+  buildWallSpecificationSipPanels,
+} from "@/core/domain/wallSpecification";
+import { useAppStore } from "@/store/useAppStore";
+
+import "./specification-workspace.css";
+
+export function SpecificationWorkspace() {
+  const project = useAppStore((s) => s.currentProject);
+  const [openWallId, setOpenWallId] = useState<string | null>(null);
+
+  const wallSummaries = useMemo(() => buildProjectWallSpecificationSummaries(project), [project]);
+  const lumberSummary = useMemo(() => buildProjectLumberSummary(project), [project]);
+  const cutCount = useMemo(() => buildCutListCandidates(project).length, [project]);
+
+  return (
+    <div className="spec-workspace">
+      <header className="spec-workspace__header">
+        <h2 className="spec-workspace__title">Спецификация и сводка</h2>
+        <p className="spec-workspace__intro">
+          Данные строятся из актуальных расчётов стен. После пересчёта списки обновляются автоматически. Кандидатов
+          под раскрой: <strong>{cutCount}</strong>.
+        </p>
+      </header>
+
+      <section className="spec-workspace__section" aria-labelledby="spec-walls-heading">
+        <h3 id="spec-walls-heading" className="spec-workspace__h3">
+          По стенам
+        </h3>
+        {wallSummaries.length === 0 ? (
+          <p className="spec-workspace__empty">Нет стен с сохранённым расчётом. Выполните «Расчёт элементов стены» для
+            выбранных стен.</p>
+        ) : (
+          <div className="spec-workspace__table-wrap">
+            <table className="spec-workspace__table">
+              <thead>
+                <tr>
+                  <th>Стена</th>
+                  <th>Профиль</th>
+                  <th>Длина, мм</th>
+                  <th>Высота, мм</th>
+                  <th>SIP-панелей</th>
+                  <th>Досок</th>
+                  <th>Проёмы</th>
+                  <th>Узлы</th>
+                </tr>
+              </thead>
+              <tbody>
+                {wallSummaries.map((row) => (
+                  <tr key={row.wallId}>
+                    <td>
+                      <button
+                        type="button"
+                        className="spec-workspace__wall-toggle"
+                        onClick={() => setOpenWallId((id) => (id === row.wallId ? null : row.wallId))}
+                        aria-expanded={openWallId === row.wallId}
+                      >
+                        {row.wallMark}
+                      </button>
+                    </td>
+                    <td>{row.profileName}</td>
+                    <td>{row.lengthMm}</td>
+                    <td>{row.heightMm}</td>
+                    <td>{row.sipPanelCount}</td>
+                    <td>{row.lumberPieceCount}</td>
+                    <td>{row.hasOpenings ? "да" : "—"}</td>
+                    <td>{row.hasJoints ? "да" : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {openWallId &&
+          (() => {
+            const wall = project.walls.find((w) => w.id === openWallId);
+            if (!wall) {
+              return null;
+            }
+            const details = buildWallSpecificationDetails(wall, project);
+            const sipRows = buildWallSpecificationSipPanels(wall, project);
+            return (
+              <div className="spec-workspace__details">
+                <h4 className="spec-workspace__h4">Детали: {wall.markLabel?.trim() ?? wall.id.slice(0, 8)}</h4>
+                {sipRows.length === 0 && details.length === 0 ? (
+                  <p className="spec-workspace__empty">Нет данных расчёта.</p>
+                ) : (
+                  <>
+                    {sipRows.length > 0 && (
+                      <div className="spec-workspace__subblock">
+                        <h5 className="spec-workspace__h5">SIP-панели (марки в данных, не на 2D-плане)</h5>
+                        <div className="spec-workspace__table-wrap">
+                          <table className="spec-workspace__table spec-workspace__table--compact">
+                            <thead>
+                              <tr>
+                                <th>Марка</th>
+                                <th>Ширина, мм</th>
+                                <th>Высота, мм</th>
+                                <th>Толщина, мм</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {sipRows.map((r) => (
+                                <tr key={`sip-${r.sequenceIndex}-${r.pieceMark}`}>
+                                  <td>{r.pieceMark}</td>
+                                  <td>{r.widthMm}</td>
+                                  <td>{r.heightMm}</td>
+                                  <td>{r.thicknessMm}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                    {details.length > 0 && (
+                      <div className="spec-workspace__subblock">
+                        <h5 className="spec-workspace__h5">Каркас и обвязка</h5>
+                        <div className="spec-workspace__table-wrap">
+                          <table className="spec-workspace__table spec-workspace__table--compact">
+                            <thead>
+                              <tr>
+                                <th>Марка</th>
+                                <th>Тип</th>
+                                <th>Сечение</th>
+                                <th>Длина, мм</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {details.map((d) => (
+                                <tr key={d.pieceMark}>
+                                  <td>{d.pieceMark}</td>
+                                  <td>{d.roleLabelRu}</td>
+                                  <td>{d.sectionKey}</td>
+                                  <td>{d.lengthMm}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
+      </section>
+
+      <section className="spec-workspace__section" aria-labelledby="spec-lumber-heading">
+        <h3 id="spec-lumber-heading" className="spec-workspace__h3">
+          Сводка пиломатериалов по проекту
+        </h3>
+        {lumberSummary.length === 0 ? (
+          <p className="spec-workspace__empty">Нет пиломатериалов в расчётах.</p>
+        ) : (
+          <div className="spec-workspace__table-wrap">
+            <table className="spec-workspace__table">
+              <thead>
+                <tr>
+                  <th>Сечение</th>
+                  <th>Длина, мм</th>
+                  <th>Кол-во</th>
+                  <th>Суммарная длина, мм</th>
+                  <th>Стены</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lumberSummary.map((row) => (
+                  <tr key={`${row.sectionKey}-${row.lengthMm}`}>
+                    <td>{row.sectionKey}</td>
+                    <td>{row.lengthMm}</td>
+                    <td>{row.count}</td>
+                    <td>{row.totalLengthMm}</td>
+                    <td className="spec-workspace__marks-cell">
+                      {row.wallMarks.length <= 4 ? row.wallMarks.join(", ") : `${row.wallMarks.length} стен`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="spec-workspace__section" aria-labelledby="spec-cut-heading">
+        <h3 id="spec-cut-heading" className="spec-workspace__h3">
+          База под раскрой
+        </h3>
+        <p className="spec-workspace__hint">
+          Внутренний формат <code>CutListCandidate</code> (pieceId, wallId, сечение, длина, роль) формируется функцией{" "}
+          <code>buildCutListCandidates</code> — без дублирования в проекте; источник — только расчётные детали.
+        </p>
+      </section>
+    </div>
+  );
+}

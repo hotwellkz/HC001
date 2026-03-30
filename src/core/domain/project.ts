@@ -12,6 +12,7 @@ import type { ProjectSettings } from "./settings";
 import type { ViewState } from "./viewState";
 import type { Point2D } from "../geometry/types";
 import type { Wall } from "./wall";
+import type { WallCalculationResult } from "./wallCalculation";
 import type { WallJoint } from "./wallJoint";
 
 export interface Project {
@@ -23,6 +24,8 @@ export interface Project {
   /** Дополнительные слои, показываемые в 2D поверх контекста; активный слой не включается. */
   readonly visibleLayerIds: readonly string[];
   readonly walls: readonly Wall[];
+  /** Результаты производственного расчёта по стенам (SIP-раскладка, пиломатериалы). */
+  readonly wallCalculations: readonly WallCalculationResult[];
   /** Узлы соединения стен (углы, примыкания); персистится в snapshot. */
   readonly wallJoints: readonly WallJoint[];
   readonly openings: readonly Opening[];

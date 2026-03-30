@@ -10,6 +10,12 @@ import App from "./app/App";
 
 bootstrapThemeFromStorage();
 
+if (import.meta.env.DEV) {
+  void import("@/core/domain/lumberCutList").then((m) => {
+    (globalThis as unknown as { __SIP_PRECUT__: typeof m }).__SIP_PRECUT__ = m;
+  });
+}
+
 const el = document.getElementById("root");
 if (!el) {
   throw new Error("root element not found");

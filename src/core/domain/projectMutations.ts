@@ -8,6 +8,7 @@ export function deleteEntitiesFromProject(project: Project, selectedIds: Readonl
   const wallsKept = project.walls.filter((w) => !selectedIds.has(w.id));
   const keptWallIds = new Set(wallsKept.map((w) => w.id));
   const removedWallIds = new Set(project.walls.filter((w) => selectedIds.has(w.id)).map((w) => w.id));
+  const wallCalculationsKept = project.wallCalculations.filter((c) => keptWallIds.has(c.wallId));
   const wallJointsKept = project.wallJoints.filter(
     (j) => keptWallIds.has(j.wallAId) && keptWallIds.has(j.wallBId),
   );
@@ -31,6 +32,7 @@ export function deleteEntitiesFromProject(project: Project, selectedIds: Readonl
   return touchProjectMeta({
     ...project,
     walls: wallsKept,
+    wallCalculations: wallCalculationsKept,
     wallJoints: wallJointsKept,
     openings: openingsKept,
     dimensions: dimensionsKept,

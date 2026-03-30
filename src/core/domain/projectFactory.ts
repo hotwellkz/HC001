@@ -45,6 +45,7 @@ export function createEmptyProject(): Project {
     activeLayerId: layerId,
     visibleLayerIds: [],
     walls: [],
+    wallCalculations: [],
     wallJoints: [],
     openings: [],
     rooms: [],
@@ -76,6 +77,7 @@ export function createEmptyProject(): Project {
       rightPropertiesCollapsed: false,
       show3dProfileLayers: true,
       show2dProfileLayers: true,
+      show3dCalculation: true,
     },
   };
 }

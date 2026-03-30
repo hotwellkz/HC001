@@ -1,3 +1,4 @@
+import { normalizeWallCalculationsInProject } from "../domain/wallCalculationNormalize";
 import { PROJECT_SCHEMA_VERSION, PROJECT_UNITS } from "../domain/constants";
 import type { Layer } from "../domain/layer";
 import type { Project } from "../domain/project";
@@ -62,13 +63,14 @@ export function migrateWireV0ToProject(data: Record<string, unknown>): Project {
     units: PROJECT_UNITS,
   };
 
-  return {
+  return normalizeWallCalculationsInProject({
     meta,
     projectOrigin: null,
     layers,
     activeLayerId,
     visibleLayerIds: [],
     walls,
+    wallCalculations: [],
     wallJoints: [],
     openings: data["openings"] as Project["openings"],
     rooms,
@@ -80,5 +82,5 @@ export function migrateWireV0ToProject(data: Record<string, unknown>): Project {
     settings: normalizeProjectSettings(data["settings"] as ProjectSettingsWire),
     viewState: normalizeViewState(data["viewState"] as Parameters<typeof normalizeViewState>[0]),
     profiles: [],
-  };
+  });
 }

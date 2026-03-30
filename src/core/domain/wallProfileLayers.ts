@@ -41,3 +41,42 @@ export function resolveWallProfileLayerStripsMm(wallThicknessMm: number, profile
     thicknessMm: raw[i]!,
   }));
 }
+
+export function isInsulationCoreMaterial(materialType: ProfileMaterialType): boolean {
+  return materialType === "eps" || materialType === "xps" || materialType === "insulation";
+}
+
+/**
+ * Смещения по нормали (мм) от оси стены для зоны ядра (утеплитель): первая непрерывная
+ * полоса слоёв eps/xps/insulation (если в профиле несколько подряд — объединяются).
+ */
+export function coreLayerNormalOffsetsMm(
+  wallThicknessMm: number,
+  profile: Profile,
+): { readonly offStartMm: number; readonly offEndMm: number } | null {
+  const strips = resolveWallProfileLayerStripsMm(wallThicknessMm, profile);
+  if (!strips || strips.length < 2) {
+    return null;
+  }
+  const T = wallThicknessMm;
+  let acc = -T / 2;
+  let bandStart: number | null = null;
+  let bandEnd: number | null = null;
+  for (const strip of strips) {
+    const off0 = acc;
+    const off1 = acc + strip.thicknessMm;
+    if (isInsulationCoreMaterial(strip.materialType)) {
+      if (bandStart === null) {
+        bandStart = off0;
+      }
+      bandEnd = off1;
+    } else if (bandStart !== null && bandEnd !== null) {
+      return { offStartMm: bandStart, offEndMm: bandEnd };
+    }
+    acc = off1;
+  }
+  if (bandStart !== null && bandEnd !== null) {
+    return { offStartMm: bandStart, offEndMm: bandEnd };
+  }
+  return null;
+}

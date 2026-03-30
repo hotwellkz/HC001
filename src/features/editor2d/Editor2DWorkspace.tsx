@@ -22,10 +22,29 @@ import { buildScreenGridLines } from "./gridGeometry";
 import { appendWallMarkLabels2d, clearWallMarkLabelContainer } from "./wallMarks2dPixi";
 import { drawWallJointPickOverlay, type JointHoverState } from "./wallJointMarkers2dPixi";
 import { drawDimensions2d } from "./dimensions2dPixi";
+import { drawWallCalculationOverlay2d } from "./wallCalculation2dPixi";
+import { appendWallLumberLabels2d } from "./wallLumberLabels2dPixi";
 import { drawWallsAndOpenings2d } from "./walls2dPixi";
 import { buildViewportTransform, screenToWorld, worldToScreen } from "./viewportTransforms";
 
 import "./wall-placement-hint.css";
+
+import type { Project } from "@/core/domain/project";
+
+function collectVisibleWallIds2d(project: Project): Set<string> {
+  const contextIds = sortedVisibleContextLayerIds(project);
+  const visibleWallIds = new Set<string>();
+  for (const lid of contextIds) {
+    const sl = narrowProjectToLayerSet(project, new Set([lid]));
+    for (const w of sl.walls) {
+      visibleWallIds.add(w.id);
+    }
+  }
+  for (const w of narrowProjectToActiveLayer(project).walls) {
+    visibleWallIds.add(w.id);
+  }
+  return visibleWallIds;
+}
 
 function readCanvasColorsFromTheme(): { readonly bg: number; readonly grid: number } {
   const root = document.documentElement;
@@ -129,6 +148,10 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
     const appRef: { current: Application | null } = { current: null };
     const gridG = new Graphics();
     const wallsG = new Graphics();
+    const wallCalcG = new Graphics();
+    wallCalcG.eventMode = "none";
+    const wallCalcLabelC = new Container();
+    wallCalcLabelC.eventMode = "none";
     const openingsG = new Graphics();
     const wallLabelsC = new Container();
     wallLabelsC.eventMode = "none";
@@ -185,7 +208,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           clear: firstDraw,
           show2dProfileLayers: show2dLayers,
         });
-        appendWallMarkLabels2d(wallLabelsC, ctxSlice, t, "context");
+        appendWallMarkLabels2d(wallLabelsC, ctxSlice, t, "context", { dimensionProject: currentProject });
         firstDraw = false;
       }
       const layerView = narrowProjectToActiveLayer(currentProject);
@@ -194,7 +217,11 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         clear: firstDraw,
         show2dProfileLayers: show2dLayers,
       });
-      appendWallMarkLabels2d(wallLabelsC, layerView, t, "active");
+      appendWallMarkLabels2d(wallLabelsC, layerView, t, "active", { dimensionProject: currentProject });
+
+      const visibleWallIds = collectVisibleWallIds2d(currentProject);
+      drawWallCalculationOverlay2d(wallCalcG, currentProject, visibleWallIds, t);
+      appendWallLumberLabels2d(wallCalcLabelC, currentProject, visibleWallIds, t);
 
       drawDimensions2d(dimensionsG, dimensionsLabelC, currentProject, t);
 
@@ -303,6 +330,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       worldRoot.hitArea = app.screen;
       worldRoot.addChild(gridG);
       worldRoot.addChild(wallsG);
+      worldRoot.addChild(wallCalcG);
+      worldRoot.addChild(wallCalcLabelC);
       worldRoot.addChild(openingsG);
       worldRoot.addChild(wallLabelsC);
       worldRoot.addChild(dimensionsG);
@@ -339,6 +368,27 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
 
       const canvas = app.canvas as HTMLCanvasElement;
       canvas.addEventListener("wheel", onWheel, { passive: false });
+
+      /** Capture для панорамы ПКМ в режиме «Выделение». */
+      let panPointerId = 0;
+
+      const onCanvasContextMenu = (e: MouseEvent) => {
+        e.preventDefault();
+      };
+      canvas.addEventListener("contextmenu", onCanvasContextMenu);
+
+      const endPan = () => {
+        if (panPointerId !== 0) {
+          try {
+            canvas.releasePointerCapture(panPointerId);
+          } catch {
+            /* ignore */
+          }
+          panPointerId = 0;
+        }
+        panning.active = false;
+        canvas.style.cursor = "";
+      };
 
       let marqueePointerId = 0;
 
@@ -556,6 +606,24 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           panning.zoom = v2.zoomPixelsPerMm;
           return;
         }
+        if (ev.button === 2 && activeTool === "select" && !wallJointSession && !wallPlacementSession) {
+          ev.preventDefault();
+          const { viewport2d: v2 } = useAppStore.getState();
+          panning.active = true;
+          panning.sx = ev.global.x;
+          panning.sy = ev.global.y;
+          panning.panXMm = v2.panXMm;
+          panning.panYMm = v2.panYMm;
+          panning.zoom = v2.zoomPixelsPerMm;
+          panPointerId = ev.pointerId;
+          canvas.style.cursor = "grabbing";
+          try {
+            canvas.setPointerCapture(ev.pointerId);
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
         if (ev.button === 0 && activeTool === "select" && !wallJointSession) {
           marquee = { sx: ev.global.x, sy: ev.global.y, cx: ev.global.x, cy: ev.global.y };
           marqueePointerId = ev.pointerId;
@@ -568,10 +636,6 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         }
       };
 
-      const endPan = () => {
-        panning.active = false;
-      };
-
       const onPointerUp = () => {
         if (marquee) {
           finalizeMarquee();
@@ -581,7 +645,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       };
 
       const onPointerLeave = () => {
-        panning.active = false;
+        endPan();
         cursorCbRef.current(null);
         jointHoverRef.current = null;
         const st = useAppStore.getState();
@@ -613,6 +677,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
 
       detachListeners = () => {
         canvas.removeEventListener("wheel", onWheel);
+        canvas.removeEventListener("contextmenu", onCanvasContextMenu);
         worldRoot.off("pointermove", onPointerMove);
         worldRoot.off("pointerdown", onPointerDown);
         worldRoot.off("pointerup", onPointerUp);

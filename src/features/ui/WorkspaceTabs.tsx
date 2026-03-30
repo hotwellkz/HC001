@@ -3,6 +3,7 @@ import { Editor2DToolbar } from "@/features/editor2d/Editor2DToolbar";
 import { Editor2DWorkspace } from "@/features/editor2d/Editor2DWorkspace";
 import { LinearPlacementRail } from "@/features/ui/LinearPlacementRail";
 import { Editor3DWorkspace } from "@/features/editor3d/Editor3DWorkspace";
+import { SpecificationWorkspace } from "@/features/ui/SpecificationWorkspace";
 import { useAppStore } from "@/store/useAppStore";
 
 interface WorkspaceTabsProps {
@@ -35,6 +36,15 @@ export function WorkspaceTabs({ onWorldCursorMm }: WorkspaceTabsProps) {
           >
             3D вид
           </button>
+          <button
+            type="button"
+            role="tab"
+            data-active={tab === "spec"}
+            aria-selected={tab === "spec"}
+            onClick={() => setTab("spec")}
+          >
+            Спецификация
+          </button>
         </div>
       </div>
       <div
@@ -61,8 +71,10 @@ export function WorkspaceTabs({ onWorldCursorMm }: WorkspaceTabsProps) {
               <LinearPlacementRail />
             </div>
           </>
-        ) : (
+        ) : tab === "3d" ? (
           <Editor3DWorkspace />
+        ) : (
+          <SpecificationWorkspace />
         )}
       </div>
     </div>

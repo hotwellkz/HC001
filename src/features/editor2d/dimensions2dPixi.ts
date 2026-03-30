@@ -15,6 +15,46 @@ function readDimensionThemeColors(): { readonly line: number; readonly text: num
   return { line: cssHexToPixiNumber(line), text: cssHexToPixiNumber(text) };
 }
 
+/** Центр подписи размера в мировых мм (на размерной линии). */
+export function dimensionLabelCenterWorldMm(d: Dimension): { readonly mx: number; readonly my: number } | null {
+  const offsetMm = d.offsetMm ?? 420;
+  const { nx, ny } = outwardNormalForDimLine(d);
+  const ax = d.a.x;
+  const ay = d.a.y;
+  const bx = d.b.x;
+  const by = d.b.y;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) {
+    return null;
+  }
+  const aOffX = ax + nx * offsetMm;
+  const aOffY = ay + ny * offsetMm;
+  const bOffX = bx + nx * offsetMm;
+  const bOffY = by + ny * offsetMm;
+  return { mx: (aOffX + bOffX) / 2, my: (aOffY + bOffY) / 2 };
+}
+
+/** Экранные позиции центров подписей размеров (для анти-наложения с марками стен). */
+export function collectDimensionLabelScreenPositions(
+  project: Project,
+  t: ViewportTransform,
+): readonly { readonly x: number; readonly y: number }[] {
+  const layerId = project.activeLayerId;
+  const dims = project.dimensions.filter((d) => !d.layerId || d.layerId === layerId);
+  const out: { x: number; y: number }[] = [];
+  for (const d of dims) {
+    const c = dimensionLabelCenterWorldMm(d);
+    if (!c) {
+      continue;
+    }
+    const s = worldToScreen(c.mx, c.my, t);
+    out.push({ x: s.x, y: s.y });
+  }
+  return out;
+}
+
 /** Единичная нормаль «наружу» от линии измерения к размерной линии (мировые координаты). */
 function outwardNormalForDimLine(d: Dimension): { readonly nx: number; readonly ny: number } {
   if (d.kind === "rectangle_outer_horizontal") {
@@ -76,7 +116,6 @@ export function drawDimensions2d(
   const textAlpha = 0.95;
 
   for (const d of dims) {
-    const offsetMm = d.offsetMm ?? 420;
     const overshootMm = d.extensionOvershootMm ?? 72;
     const { nx, ny } = outwardNormalForDimLine(d);
     const ax = d.a.x;
@@ -92,6 +131,7 @@ export function drawDimensions2d(
     const ux = dx / len;
     const uy = dy / len;
 
+    const offsetMm = d.offsetMm ?? 420;
     const aOffX = ax + nx * offsetMm;
     const aOffY = ay + ny * offsetMm;
     const bOffX = bx + nx * offsetMm;
@@ -125,9 +165,11 @@ export function drawDimensions2d(
     drawCadEndTicks(linesG, aExt1.x, aExt1.y, ux, uy, tickPx, LINE, lineAlpha);
     drawCadEndTicks(linesG, bExt1.x, bExt1.y, ux, uy, tickPx, LINE, lineAlpha);
 
-    const mx = (aOffX + bOffX) / 2;
-    const my = (aOffY + bOffY) / 2;
-    const ms = worldToScreen(mx, my, t);
+    const center = dimensionLabelCenterWorldMm(d);
+    if (!center) {
+      continue;
+    }
+    const ms = worldToScreen(center.mx, center.my, t);
     const ang = Math.atan2(uy, ux);
     const label = String(d.textValueMm ?? Math.round(len));
     const fs = Math.max(10, Math.min(11.5, 8 + t.zoomPixelsPerMm * 0.02));

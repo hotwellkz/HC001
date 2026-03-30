@@ -44,6 +44,17 @@
   box-shadow: var(--shadow-accent-glow);
 }
 
+.e2dpt-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  color: var(--color-text-muted);
+}
+
+.e2dpt-btn:disabled:hover {
+  background: transparent;
+  color: var(--color-text-muted);
+}
+
 .e2dpt-icon {
   width: 18px;
   height: 18px;

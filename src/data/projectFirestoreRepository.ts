@@ -15,6 +15,7 @@ import {
 import type { Project } from "@/core/domain/project";
 import { projectFromWire, projectToWire, type ProjectFileV1 } from "@/core/io/projectWire";
 import { validateProjectSchema } from "@/core/validation/validateProjectSchema";
+import { stripUndefinedDeep } from "@/shared/stripUndefinedDeep";
 
 export const PROJECTS_COLLECTION = "projects";
 
@@ -35,7 +36,7 @@ function wireFromPayload(raw: unknown): ProjectFileV1 {
 }
 
 export async function createProjectInDb(db: Firestore, project: Project): Promise<void> {
-  const wire = projectToWire(project);
+  const wire = stripUndefinedDeep(projectToWire(project));
   const { ok, errors } = validateProjectSchema(project);
   if (!ok) {
     throw new Error(errors?.map((e) => e.message).join("; ") ?? "Схема проекта не прошла проверку");
@@ -52,7 +53,7 @@ export async function createProjectInDb(db: Firestore, project: Project): Promis
 }
 
 export async function updateProjectSnapshot(db: Firestore, project: Project): Promise<void> {
-  const wire = projectToWire(project);
+  const wire = stripUndefinedDeep(projectToWire(project));
   const { ok, errors } = validateProjectSchema(project);
   if (!ok) {
     throw new Error(errors?.map((e) => e.message).join("; ") ?? "Схема проекта не прошла проверку");

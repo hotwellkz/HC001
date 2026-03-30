@@ -141,6 +141,7 @@ export function deleteLayerAndEntities(project: Project, layerId: string): Proje
     ...project,
     layers: reindexed,
     walls,
+    wallCalculations: project.wallCalculations.filter((c) => !wallIds.has(c.wallId)),
     wallJoints,
     openings,
     rooms,

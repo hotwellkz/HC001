@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { createDemoProject } from "@/core/domain/demoProject";
 import { createEmptyProject } from "@/core/domain/projectFactory";
+import { buildWallCalculationForWall } from "@/core/domain/sipWallLayout";
 
 import { wallToMeshSpec, wallToRenderSpecs } from "./wallMeshSpec";
 
@@ -50,5 +51,20 @@ describe("wallToRenderSpecs (послойно)", () => {
     const specs = wallToRenderSpecs(w, p, false);
     expect(specs.length).toBe(1);
     expect(specs[0]!.width).toBeCloseTo(w.thicknessMm * 0.001, 6);
+  });
+
+  it("при сохранённом расчёте стены и show3dCalculation не показывает непрерывный EPS слой оболочки", () => {
+    const p = createDemoProject();
+    const w = p.walls[0]!;
+    const profile = p.profiles[0]!;
+    const calc = buildWallCalculationForWall(w, profile);
+    const proj = {
+      ...p,
+      wallCalculations: [calc],
+      viewState: { ...p.viewState, show3dCalculation: true },
+    };
+    const specs = wallToRenderSpecs(w, proj, true);
+    expect(specs.some((s) => s.materialType === "eps")).toBe(false);
+    expect(specs.filter((s) => s.materialType === "osb").length).toBe(2);
   });
 });

@@ -8,6 +8,7 @@ import { normalizeProjectSettings, type ProjectSettingsWire } from "../domain/se
 
 import { normalizeViewState } from "../domain/viewState";
 
+import { normalizeWallCalculationsInProject } from "../domain/wallCalculationNormalize";
 import { migrateWireV0ToProject } from "./migrateWireV0";
 
 /** Старые проекты без markPrefix у профилей «стена». */
@@ -40,6 +41,8 @@ export interface ProjectFileV1 {
   /** В старых файлах может отсутствовать — подставляется []. */
   readonly visibleLayerIds?: Project["visibleLayerIds"];
   readonly walls: Project["walls"];
+  /** В старых файлах может отсутствовать — []. */
+  readonly wallCalculations?: Project["wallCalculations"];
   /** В старых файлах может отсутствовать — []. */
   readonly wallJoints?: readonly WallJoint[];
   readonly openings: Project["openings"];
@@ -96,6 +99,7 @@ export function projectFromWireV1(wire: ProjectFileV1): Project {
     activeLayerId: wire.activeLayerId,
     visibleLayerIds: visibleRaw,
     walls: wire.walls,
+    wallCalculations: wire.wallCalculations ?? [],
     wallJoints: wire.wallJoints ?? [],
     openings: wire.openings,
     rooms: wire.rooms,
@@ -108,10 +112,11 @@ export function projectFromWireV1(wire: ProjectFileV1): Project {
     viewState: normalizeViewState(wire.viewState),
     profiles: normalizeProfilesImported(wire.profiles ?? []),
   };
-  return {
+  const withVis = {
     ...base,
     visibleLayerIds: [...normalizeVisibleLayerIds(base)],
   };
+  return normalizeWallCalculationsInProject(withVis);
 }
 
 export function projectFromWire(wire: ProjectFileV1 | Record<string, unknown>): Project {

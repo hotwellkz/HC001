@@ -3,7 +3,11 @@ import { getProfileById } from "@/core/domain/profileOps";
 import type { Profile, ProfileMaterialType } from "@/core/domain/profile";
 import type { Project } from "@/core/domain/project";
 import type { Wall } from "@/core/domain/wall";
-import { resolveWallProfileLayerStripsMm } from "@/core/domain/wallProfileLayers";
+import {
+  coreLayerNormalOffsetsMm,
+  isInsulationCoreMaterial,
+  resolveWallProfileLayerStripsMm,
+} from "@/core/domain/wallProfileLayers";
 
 const MM_TO_M = 0.001;
 const MIN_LEN_MM = 1;
@@ -91,6 +95,39 @@ function singleSolidSpec(
 /**
  * Профиль layered + включённый режим: отдельный бокс на каждый слой, без зазоров, сумма толщин = толщина стены.
  */
+function wallHasSavedCalculation(project: Project, wallId: string): boolean {
+  return project.wallCalculations.some((c) => c.wallId === wallId);
+}
+
+/**
+ * При показе расчёта в 3D убираем непрерывный слой EPS из оболочки — его заменяют сегменты из wallCalculation.
+ */
+function shouldHideCoreInsulationStrip(
+  project: Project,
+  wall: Wall,
+  profile: Profile,
+  stripMaterial: ProfileMaterialType,
+  stripOff0Mm: number,
+  stripOff1Mm: number,
+): boolean {
+  if (project.viewState.show3dCalculation === false) {
+    return false;
+  }
+  if (!wallHasSavedCalculation(project, wall.id)) {
+    return false;
+  }
+  if (!isInsulationCoreMaterial(stripMaterial)) {
+    return false;
+  }
+  const core = coreLayerNormalOffsetsMm(wall.thicknessMm, profile);
+  if (!core) {
+    return false;
+  }
+  const inter = Math.max(0, Math.min(stripOff1Mm, core.offEndMm) - Math.max(stripOff0Mm, core.offStartMm));
+  const stripW = stripOff1Mm - stripOff0Mm;
+  return stripW > 1e-6 && inter / stripW >= 0.45;
+}
+
 function layeredSpecsFromProfile(wall: Wall, project: Project, profile: Profile): WallRenderMeshSpec[] | null {
   if (!(wall.thicknessMm > 0) || !(wall.heightMm > 0)) {
     return null;
@@ -133,8 +170,14 @@ function layeredSpecsFromProfile(wall: Wall, project: Project, profile: Profile)
     if (tMm < 1e-6) {
       continue;
     }
+    const stripOff0Mm = acc;
+    const stripOff1Mm = acc + tMm;
     const centerOffMm = acc + tMm / 2;
     acc += tMm;
+
+    if (shouldHideCoreInsulationStrip(project, wall, profile, strip.materialType, stripOff0Mm, stripOff1Mm)) {
+      continue;
+    }
 
     const cx = cx0 + centerOffMm * MM_TO_M * nx;
     const cz = cz0 + centerOffMm * MM_TO_M * nz;
