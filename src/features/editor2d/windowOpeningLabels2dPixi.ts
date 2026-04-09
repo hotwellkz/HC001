@@ -39,6 +39,27 @@ function isClearOfDimLabels(
   return true;
 }
 
+function windowOrderMap(project: Project): ReadonlyMap<string, number> {
+  const windows = project.openings
+    .filter((o): o is typeof o & { wallId: string; offsetFromStartMm: number } => {
+      return o.kind === "window" && o.wallId != null && o.offsetFromStartMm != null;
+    })
+    .sort((a, b) => {
+      if (a.wallId !== b.wallId) {
+        return a.wallId.localeCompare(b.wallId);
+      }
+      if (a.offsetFromStartMm !== b.offsetFromStartMm) {
+        return a.offsetFromStartMm - b.offsetFromStartMm;
+      }
+      return a.id.localeCompare(b.id);
+    });
+  const out = new Map<string, number>();
+  for (let i = 0; i < windows.length; i++) {
+    out.set(windows[i]!.id, i + 1);
+  }
+  return out;
+}
+
 /**
  * Подписи ОК-n и ширина/высота у проёма; снаружи полосы стены по внешней нормали.
  * Перед кадром контейнер нужно очистить (как для марок стен).
@@ -55,6 +76,7 @@ export function appendWindowOpeningLabels2d(
   const dimProject = options?.dimensionProject;
   const dimCenters = dimProject ? collectDimensionLabelScreenPositions(dimProject, t) : [];
   const allWalls = project.walls;
+  const numberById = windowOrderMap(project);
 
   for (const o of project.openings) {
     if (o.kind !== "window" || o.wallId == null || o.offsetFromStartMm == null) {
@@ -64,10 +86,8 @@ export function appendWindowOpeningLabels2d(
     if (!wall) {
       continue;
     }
-    const mark = o.markLabel?.trim();
-    if (!mark) {
-      continue;
-    }
+    const num = numberById.get(o.id) ?? 0;
+    const line1 = `OK_${num}`;
     const center = openingCenterOnWallMm(wall, o);
     const dx = wall.end.x - wall.start.x;
     const dy = wall.end.y - wall.start.y;
@@ -75,15 +95,13 @@ export function appendWindowOpeningLabels2d(
     if (len < 1e-9) {
       continue;
     }
-    const ux = dx / len;
-    const uy = dy / len;
     const { nx, ny } = exteriorNormalForWallLabelMm(wall, allWalls, allWalls);
     const halfT = wall.thicknessMm / 2;
-    const ang = Math.atan2(dy, dx);
     const strokePx = Math.max(2, wall.thicknessMm * t.zoomPixelsPerMm);
     const fs = Math.max(7.2, Math.min(9.2, strokePx * 0.2 + 6.5));
-    const lineGapMm = 4.5;
-    const outsetMm = halfT + Math.max(55, 420 / t.zoomPixelsPerMm);
+    /** Фиксируем отступ в экранных px, чтобы подпись не улетала при любом zoom. */
+    const lineGapMm = 16 / Math.max(0.01, t.zoomPixelsPerMm);
+    const outsetMm = halfT + 14 / Math.max(0.01, t.zoomPixelsPerMm);
 
     const wMm = Math.round(o.widthMm);
     const hMm = Math.round(o.heightMm);
@@ -93,42 +111,41 @@ export function appendWindowOpeningLabels2d(
       const oMm = outsetMm * scale;
       const bx = center.x + nx * oMm;
       const by = center.y + ny * oMm;
-      const offAlongWorld = (lineGapMm * 0.55) / t.zoomPixelsPerMm;
-      const t1 = worldToScreen(bx - uy * offAlongWorld, by + ux * offAlongWorld, t);
-      const t2 = worldToScreen(bx + uy * offAlongWorld, by - ux * offAlongWorld, t);
-      const mid = { x: (t1.x + t2.x) / 2, y: (t1.y + t2.y) / 2 };
+      const mid = worldToScreen(bx, by, t);
       const rApprox = Math.max(12, fs * 2.2);
       if (!isClearOfDimLabels(mid, dimCenters, rApprox)) {
         return null;
       }
-      return { mid1: t1, mid2: t2 };
+      return { mid };
     };
 
-    const pos = tryOutset(1) ?? tryOutset(1.35) ?? tryOutset(1.85);
-    if (!pos) {
-      continue;
-    }
-
-    const mkText = (text: string, x: number, y: number) => {
-      const txt = new Text({
-        text,
-        style: {
-          fontFamily: "ui-sans-serif, system-ui, sans-serif",
-          fontSize: fs,
-          fill: fillCol,
-          fontWeight: "600",
-          stroke: { color: outlineCol, width: Math.max(1, fs * 0.1) },
-        },
-      });
-      txt.anchor.set(0.5);
-      txt.x = x;
-      txt.y = y;
-      txt.rotation = ang;
-      txt.alpha = ctx ? 0.4 : 0.94;
-      container.addChild(txt);
-    };
-
-    mkText(mark, pos.mid1.x, pos.mid1.y);
-    mkText(line2, pos.mid2.x, pos.mid2.y);
+    /** Если все «чистые» позиции заняты, всё равно рисуем рядом с окном (не скрываем подпись). */
+    const fallbackPos = (() => {
+      const bx = center.x + nx * outsetMm;
+      const by = center.y + ny * outsetMm;
+      return {
+        mid: worldToScreen(bx, by, t),
+      };
+    })();
+    const pos = tryOutset(1) ?? tryOutset(1.2) ?? tryOutset(1.45) ?? fallbackPos;
+    const label = new Text({
+      text: `${line1}\n${line2}`,
+      style: {
+        fontFamily: "ui-sans-serif, system-ui, sans-serif",
+        fontSize: fs,
+        lineHeight: fs + Math.max(2, lineGapMm * t.zoomPixelsPerMm * 0.15),
+        align: "center",
+        fill: fillCol,
+        fontWeight: "600",
+        stroke: { color: outlineCol, width: Math.max(1, fs * 0.1) },
+      },
+    });
+    label.anchor.set(0.5);
+    label.x = pos.mid.x;
+    label.y = pos.mid.y;
+    /** В чертежном плане держим подпись горизонтально для стабильной читаемости. */
+    label.rotation = 0;
+    label.alpha = ctx ? 0.4 : 0.94;
+    container.addChild(label);
   }
 }

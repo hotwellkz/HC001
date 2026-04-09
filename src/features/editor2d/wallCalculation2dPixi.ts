@@ -121,6 +121,10 @@ export function drawWallCalculationOverlay2d(
       if (!isLumberRoleDrawnInPlan2d(piece.role)) {
         continue;
       }
+      /** В 2D после расчёта показываем только вертикальные элементы каркаса. */
+      if (piece.orientation !== "across_wall") {
+        continue;
+      }
       const along = clampAlongWallRangeMm(piece.startOffsetMm, piece.endOffsetMm, L);
       if (!along) {
         continue;
