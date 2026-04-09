@@ -12,6 +12,8 @@ function testBoardProfile(id: string): Profile {
     name: "145×45 тест",
     category: "board",
     compositionMode: "layered",
+    createdAt: "t",
+    updatedAt: "t",
     layers: [
       { id: `${id}-l0`, orderIndex: 0, materialName: "wood", materialType: "wood", thicknessMm: 45 },
     ],

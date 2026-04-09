@@ -1,6 +1,9 @@
 import { OrbitControls, Grid } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
+import { useMemo, useState } from "react";
 
+import type { Opening3dMeshSpec } from "@/core/domain/opening3dAssemblySpecs";
+import { buildCalculationSolidSpecsForProject } from "@/core/domain/wallCalculation3dSpecs";
 import { useAppStore } from "@/store/useAppStore";
 
 import { Editor3dVisibilityPanel } from "./Editor3dVisibilityPanel";
@@ -9,14 +12,36 @@ import { ProjectOpeningMeshes } from "./ProjectOpeningMeshes";
 import { ProjectWalls } from "./ProjectWalls";
 import { useEditor3dThemeColors } from "./useEditor3dThemeColors";
 
-function SceneFromProject() {
+type Selected3d =
+  | { kind: "calc"; reactKey: string; spec: ReturnType<typeof buildCalculationSolidSpecsForProject>[number] }
+  | { kind: "opening"; reactKey: string; spec: Opening3dMeshSpec }
+  | null;
+
+function SceneFromProject({
+  selected,
+  onSelectCalculation,
+  onSelectOpening,
+}: {
+  readonly selected: Selected3d;
+  readonly onSelectCalculation: (s: ReturnType<typeof buildCalculationSolidSpecsForProject>[number]) => void;
+  readonly onSelectOpening: (s: Opening3dMeshSpec) => void;
+}) {
   const project = useAppStore((s) => s.currentProject);
   const showCalc = project.viewState.show3dCalculation !== false;
   return (
     <>
       <ProjectWalls project={project} />
-      <ProjectCalculationMeshes project={project} visible={showCalc} />
-      <ProjectOpeningMeshes project={project} />
+      <ProjectCalculationMeshes
+        project={project}
+        visible={showCalc}
+        selectedReactKey={selected?.kind === "calc" ? selected.reactKey : null}
+        onSelect={onSelectCalculation}
+      />
+      <ProjectOpeningMeshes
+        project={project}
+        selectedReactKey={selected?.kind === "opening" ? selected.reactKey : null}
+        onSelect={onSelectOpening}
+      />
     </>
   );
 }
@@ -27,6 +52,46 @@ export function Editor3DWorkspace() {
   const showCalc = useAppStore((s) => s.currentProject.viewState.show3dCalculation);
   const setShow3dCalculation = useAppStore((s) => s.setShow3dCalculation);
   const theme3d = useEditor3dThemeColors();
+  const project = useAppStore((s) => s.currentProject);
+  const [selected3d, setSelected3d] = useState<Selected3d>(null);
+
+  const selectedInfo = useMemo(() => {
+    if (!selected3d) {
+      return null;
+    }
+    if (selected3d.kind === "opening") {
+      const s = selected3d.spec;
+      return {
+        title: "Окно/обрамление",
+        rows: [
+          ["ID", s.reactKey],
+          ["Тип", s.kind],
+          ["Стенa", s.wallId],
+          ["Проём", s.openingId],
+          ["Ширина", `${Math.round(s.width * 1000)} мм`],
+          ["Высота", `${Math.round(s.height * 1000)} мм`],
+          ["Длина", `${Math.round(s.depth * 1000)} мм`],
+        ] as const,
+      };
+    }
+    const s = selected3d.spec;
+    const calc = project.wallCalculations.find((c) => c.id === s.calculationId);
+    const piece = s.pieceId ? calc?.lumberPieces.find((p) => p.id === s.pieceId) : undefined;
+    return {
+      title: "Расчётный элемент",
+      rows: [
+        ["ID", s.reactKey],
+        ["Категория", s.source],
+        ["Стенa", s.wallId],
+        ["Расчёт", s.calculationId],
+        ["Деталь", piece?.pieceMark ?? s.pieceId ?? "—"],
+        ["Роль", piece?.role ?? "—"],
+        ["Ширина", `${Math.round(s.width * 1000)} мм`],
+        ["Высота", `${Math.round(s.height * 1000)} мм`],
+        ["Длина", `${Math.round(s.depth * 1000)} мм`],
+      ] as const,
+    };
+  }, [project.wallCalculations, selected3d]);
 
   return (
     <div style={{ position: "relative", width: "100%", height: "100%", minHeight: 0 }}>
@@ -87,6 +152,7 @@ export function Editor3DWorkspace() {
         shadows
         camera={{ position: [12, 9, 12], fov: 45, near: 0.1, far: 500 }}
         style={{ width: "100%", height: "100%", minHeight: 0 }}
+        onPointerMissed={() => setSelected3d(null)}
       >
         <color attach="background" args={[theme3d.bg]} />
         {/* Мягкий fill + нейтральный ключ: меньше «чёрных» провалов на дереве без потери объёма */}
@@ -115,9 +181,39 @@ export function Editor3DWorkspace() {
           position={[0, 0, 0]}
         />
         <axesHelper args={[4]} />
-        <SceneFromProject />
+        <SceneFromProject
+          selected={selected3d}
+          onSelectCalculation={(s) => setSelected3d({ kind: "calc", reactKey: s.reactKey, spec: s })}
+          onSelectOpening={(s) => setSelected3d({ kind: "opening", reactKey: s.reactKey, spec: s })}
+        />
         <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
       </Canvas>
+      {selectedInfo ? (
+        <div
+          style={{
+            position: "absolute",
+            right: 12,
+            top: 10,
+            zIndex: 2,
+            width: 280,
+            borderRadius: 8,
+            border: "1px solid var(--color-border-subtle)",
+            background: theme3d.overlayBg,
+            color: theme3d.overlayText,
+            padding: "10px 12px",
+            fontSize: 12,
+            lineHeight: 1.35,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>{selectedInfo.title}</div>
+          {selectedInfo.rows.map(([k, v]) => (
+            <div key={k} style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+              <div style={{ opacity: 0.74, minWidth: 70 }}>{k}</div>
+              <div style={{ wordBreak: "break-word" }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

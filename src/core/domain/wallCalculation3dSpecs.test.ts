@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createDemoProject } from "./demoProject";
+import type { Opening } from "./opening";
 import { buildWallCalculationForWall } from "./sipWallLayout";
 import { buildCalculationSolidSpecsForProject, buildCalculationSolidSpecsForWall } from "./wallCalculation3dSpecs";
 
@@ -39,5 +40,74 @@ describe("wallCalculation3dSpecs", () => {
     if (calc.sipRegions.length >= 2) {
       expect(seams.length).toBeGreaterThan(0);
     }
+  });
+
+  it("строит EPS вплотную к граням центрированной joint_board на прямом стыке", () => {
+    const p = createDemoProject();
+    const wall = p.walls[0]!;
+    const profile = p.profiles[0]!;
+    const calc = buildWallCalculationForWall(wall, profile, {
+      openings: [],
+      wallJoints: [],
+      options: { includeOpeningFraming: false, includeWallConnectionElements: false },
+    });
+    const proj = { ...p, openings: [], wallCalculations: [calc] };
+    const specs = buildCalculationSolidSpecsForWall(wall, proj, calc);
+    const eps = specs.filter((s) => s.source === "sip");
+    const jb = calc.lumberPieces.find((x) => x.role === "joint_board");
+    expect(jb).toBeTruthy();
+    const boardThickness = jb!.sectionThicknessMm;
+    const boardLeftFace = jb!.startOffsetMm - boardThickness / 2;
+    const boardRightFace = jb!.endOffsetMm - boardThickness / 2;
+    const seamCenter = (boardLeftFace + boardRightFace) / 2;
+    const epsAlong = eps.map((s) => {
+      const cMm = s.position[0] / 0.001;
+      const dMm = s.depth / 0.001;
+      return { start: cMm - dMm / 2, end: cMm + dMm / 2 };
+    });
+    const leftEnd = Math.max(...epsAlong.filter((r) => r.end <= seamCenter + 1).map((r) => r.end));
+    const rightStart = Math.min(...epsAlong.filter((r) => r.start >= seamCenter - 1).map((r) => r.start));
+    expect(leftEnd).toBeCloseTo(boardLeftFace, 3);
+    expect(rightStart).toBeCloseTo(boardRightFace, 3);
+  });
+
+  it("сохраняет ту же логику EPS у центрированной joint_board рядом с окном", () => {
+    const p = createDemoProject();
+    const wall = p.walls[0]!;
+    const profile = p.profiles[0]!;
+    const opening: Opening = {
+      id: "eps-joint-window-case",
+      wallId: wall.id,
+      kind: "window",
+      offsetFromStartMm: 3000,
+      widthMm: 1200,
+      heightMm: 1400,
+      sillHeightMm: 900,
+    };
+    const calc = buildWallCalculationForWall(wall, profile, {
+      openings: [opening],
+      wallJoints: [],
+      options: { includeOpeningFraming: true, includeWallConnectionElements: false },
+    });
+    const proj = { ...p, openings: [opening], wallCalculations: [calc] };
+    const specs = buildCalculationSolidSpecsForWall(wall, proj, calc);
+    const eps = specs.filter((s) => s.source === "sip");
+    const jb = calc.lumberPieces.find((x) => x.role === "joint_board" && x.endOffsetMm < opening.offsetFromStartMm!);
+    expect(jb).toBeTruthy();
+    const boardThickness = jb!.sectionThicknessMm;
+    const boardLeftFace = jb!.startOffsetMm - boardThickness / 2;
+    const boardRightFace = jb!.endOffsetMm - boardThickness / 2;
+    const seamCenter = (boardLeftFace + boardRightFace) / 2;
+    const epsAlong = eps
+      .filter((s) => s.height > 0.2)
+      .map((s) => {
+        const cMm = s.position[0] / 0.001;
+        const dMm = s.depth / 0.001;
+        return { start: cMm - dMm / 2, end: cMm + dMm / 2 };
+      });
+    const leftEnd = Math.max(...epsAlong.filter((r) => r.end <= seamCenter + 1).map((r) => r.end));
+    const rightStart = Math.min(...epsAlong.filter((r) => r.start >= seamCenter - 1).map((r) => r.start));
+    expect(leftEnd).toBeCloseTo(boardLeftFace, 3);
+    expect(rightStart).toBeCloseTo(boardRightFace, 3);
   });
 });

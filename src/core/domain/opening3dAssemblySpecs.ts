@@ -78,7 +78,7 @@ export function buildWindowAssemblySpecsForOpening(wall: Wall, opening: Opening,
   const sy = wall.start.y;
   const ex = wall.end.x;
   const ey = wall.end.y;
-  const { lenMm, ux, uy } = thicknessNormalUnit(sx, sy, ex, ey);
+  const { nx, nz, lenMm, ux, uy } = thicknessNormalUnit(sx, sy, ex, ey);
   if (lenMm < MIN_LEN) {
     return [];
   }
@@ -93,6 +93,7 @@ export function buildWindowAssemblySpecsForOpening(wall: Wall, opening: Opening,
   const W = opening.widthMm;
   const T = wall.thicknessMm;
   const frameDepthMm = Math.min(90, Math.max(40, T * 0.42));
+  const windowNormalOffsetMm = Math.max(0, T / 2 - frameDepthMm / 2 - 4);
   const innerW = Math.max(40, W - 2 * FRAME_MM);
   const innerH = Math.max(40, H - 2 * FRAME_MM);
 
@@ -107,8 +108,8 @@ export function buildWindowAssemblySpecsForOpening(wall: Wall, opening: Opening,
   const placeCenter = (uMid: number, yMid: number): [number, number, number] => {
     const px = sx + ux * uMid;
     const py = sy + uy * uMid;
-    const cx = px * MM_TO_M;
-    const cz = py * MM_TO_M;
+    const cx = (px + nx * windowNormalOffsetMm) * MM_TO_M;
+    const cz = (py + nz * windowNormalOffsetMm) * MM_TO_M;
     const cy = bottomMm * MM_TO_M + yMid * MM_TO_M;
     return [cx, cy, cz];
   };

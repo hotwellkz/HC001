@@ -9,6 +9,8 @@ import { isOpening3dMeshVisible } from "./view3dVisibility";
 
 interface ProjectOpeningMeshesProps {
   readonly project: Project;
+  readonly selectedReactKey: string | null;
+  readonly onSelect: (spec: Opening3dMeshSpec) => void;
 }
 
 function materialForKind(kind: Opening3dMeshKind): {
@@ -39,32 +41,57 @@ function materialForKind(kind: Opening3dMeshKind): {
   }
 }
 
-function OpeningMesh({ spec }: { readonly spec: Opening3dMeshSpec }) {
+function OpeningMesh({
+  spec,
+  selected,
+  onSelect,
+}: {
+  readonly spec: Opening3dMeshSpec;
+  readonly selected: boolean;
+  readonly onSelect: (spec: Opening3dMeshSpec) => void;
+}) {
   const m = materialForKind(spec.kind);
   return (
-    <mesh position={spec.position} rotation={[0, spec.rotationY, 0]} castShadow receiveShadow>
-      <boxGeometry args={[spec.width, spec.height, spec.depth]} />
-      {m.physical ? (
-        <meshPhysicalMaterial
-          color={m.color}
-          roughness={m.roughness}
-          metalness={m.metalness}
-          transmission={m.transmission ?? 0.9}
-          thickness={0.2}
-          transparent
-          opacity={m.opacity ?? 0.9}
-          depthWrite={m.depthWrite !== false}
-          side={DoubleSide}
-        />
-      ) : (
-        <meshStandardMaterial
-          color={m.color}
-          roughness={m.roughness}
-          metalness={m.metalness}
-          side={DoubleSide}
-        />
-      )}
-    </mesh>
+    <group>
+      <mesh
+        position={spec.position}
+        rotation={[0, spec.rotationY, 0]}
+        castShadow
+        receiveShadow
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          onSelect(spec);
+        }}
+      >
+        <boxGeometry args={[spec.width, spec.height, spec.depth]} />
+        {m.physical ? (
+          <meshPhysicalMaterial
+            color={m.color}
+            roughness={m.roughness}
+            metalness={m.metalness}
+            transmission={m.transmission ?? 0.9}
+            thickness={0.2}
+            transparent
+            opacity={m.opacity ?? 0.9}
+            depthWrite={m.depthWrite !== false}
+            side={DoubleSide}
+          />
+        ) : (
+          <meshStandardMaterial
+            color={m.color}
+            roughness={m.roughness}
+            metalness={m.metalness}
+            side={DoubleSide}
+          />
+        )}
+      </mesh>
+      {selected ? (
+        <mesh position={spec.position} rotation={[0, spec.rotationY, 0]}>
+          <boxGeometry args={[spec.width * 1.015, spec.height * 1.015, spec.depth * 1.015]} />
+          <meshBasicMaterial color={0xf2c94c} wireframe transparent opacity={0.95} depthTest={false} />
+        </mesh>
+      ) : null}
+    </group>
   );
 }
 
@@ -72,7 +99,7 @@ function OpeningMesh({ spec }: { readonly spec: Opening3dMeshSpec }) {
  * Оконные блоки (рама, стекло, импосты) и элементы обрамления из openingFramingPieces.
  * Зависит только от project — синхронизация с 2D через store.
  */
-export function ProjectOpeningMeshes({ project }: ProjectOpeningMeshesProps) {
+export function ProjectOpeningMeshes({ project, selectedReactKey, onSelect }: ProjectOpeningMeshesProps) {
   const specs = useMemo(() => {
     return buildOpening3dSpecsForProject(project).filter((s) => isOpening3dMeshVisible(s, project));
   }, [project]);
@@ -84,7 +111,7 @@ export function ProjectOpeningMeshes({ project }: ProjectOpeningMeshesProps) {
   return (
     <group name="project-openings-3d">
       {specs.map((s) => (
-        <OpeningMesh key={s.reactKey} spec={s} />
+        <OpeningMesh key={s.reactKey} spec={s} selected={selectedReactKey === s.reactKey} onSelect={onSelect} />
       ))}
     </group>
   );

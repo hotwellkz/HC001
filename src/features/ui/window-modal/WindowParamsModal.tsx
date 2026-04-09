@@ -141,29 +141,6 @@ export function WindowParamsModal() {
     setError(null);
   }, [edit?.openingId, edit?.initialTab, project.openings, project.profiles]);
 
-  const open = addOpen || editMode;
-
-  if (!open) {
-    return null;
-  }
-
-  const widthMm = parsePositiveMm(widthStr);
-  const heightMm = parsePositiveMm(heightStr);
-  const sillMm = Number(String(sillStr).replace(",", ".").trim());
-  const sillOk = Number.isFinite(sillMm) && sillMm >= 0;
-  const offsetAlongMm = parseNonNegativeMm(offsetAlongStr);
-  const sillLevelMm = parseNonNegativeMm(sillLevelStr);
-
-  const positionSpec =
-    offsetAlongMm !== null && sillLevelMm !== null
-      ? {
-          anchorAlongWall,
-          offsetAlongWallMm: offsetAlongMm,
-          alignment,
-          sillLevelMm,
-        }
-      : null;
-
   const sipConstruction = useMemo(
     (): OpeningSipConstructionSpec => ({
       aboveProfileId: sipAboveId || null,
@@ -192,6 +169,29 @@ export function WindowParamsModal() {
       sipBelowDouble,
     ],
   );
+
+  const open = addOpen || editMode;
+
+  if (!open) {
+    return null;
+  }
+
+  const widthMm = parsePositiveMm(widthStr);
+  const heightMm = parsePositiveMm(heightStr);
+  const sillMm = Number(String(sillStr).replace(",", ".").trim());
+  const sillOk = Number.isFinite(sillMm) && sillMm >= 0;
+  const offsetAlongMm = parseNonNegativeMm(offsetAlongStr);
+  const sillLevelMm = parseNonNegativeMm(sillLevelStr);
+
+  const positionSpec =
+    offsetAlongMm !== null && sillLevelMm !== null
+      ? {
+          anchorAlongWall,
+          offsetAlongWallMm: offsetAlongMm,
+          alignment,
+          sillLevelMm,
+        }
+      : null;
 
   const buildPayload = (): SaveWindowParamsPayload | null => {
     const w = parsePositiveMm(widthStr);

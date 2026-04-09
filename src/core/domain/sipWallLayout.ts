@@ -106,6 +106,7 @@ function distributePanelWidths(S: number, n: number, Wmin: number, Wn: number): 
 }
 
 const EPS = 1e-3;
+const OPENING_NODE_SHIFT_MM = 45;
 
 function intervalsOverlap(a0: number, a1: number, b0: number, b1: number): boolean {
   return a0 < b1 - EPS && a1 > b0 + EPS;
@@ -374,36 +375,63 @@ export function buildWallCalculationForWall(
       if (o1 - o0 < 2 * Tj + EPS) {
         continue;
       }
-      const midSpan = o1 - o0 - 2 * Tj;
-      const headerLen = Math.max(0, Math.round(midSpan));
+      const middleShiftLeft = -OPENING_NODE_SHIFT_MM;
+      const middleShiftRight = OPENING_NODE_SHIFT_MM;
+      const spanStart = o0 + middleShiftLeft;
+      const spanEnd = o1 + middleShiftRight;
+      const headerLen = Math.max(0, Math.round(spanEnd - spanStart));
       const metaBase = { openingId: o.id, kind: o.kind };
 
-      verticalDrafts.push({
-        id: newEntityId(),
-        wallId: wall.id,
-        calculationId,
-        role: "opening_left_stud",
-        sectionThicknessMm: m.jointBoardThicknessMm,
-        sectionDepthMm: m.jointBoardDepthMm,
-        startOffsetMm: o0,
-        endOffsetMm: o0 + Tj,
-        lengthMm: verticalBetweenPlatesMm,
-        orientation: "across_wall",
-        metadata: metaBase,
-      });
-      verticalDrafts.push({
-        id: newEntityId(),
-        wallId: wall.id,
-        calculationId,
-        role: "opening_right_stud",
-        sectionThicknessMm: m.jointBoardThicknessMm,
-        sectionDepthMm: m.jointBoardDepthMm,
-        startOffsetMm: o1 - Tj,
-        endOffsetMm: o1,
-        lengthMm: verticalBetweenPlatesMm,
-        orientation: "across_wall",
-        metadata: metaBase,
-      });
+      const sill = o.kind === "window" ? Math.max(0, o.sillHeightMm ?? 0) : 0;
+      const splitLower = o.kind === "window" ? Math.max(0, sill - OPENING_NODE_SHIFT_MM) : sill;
+      const openTop = o.kind === "window" ? sill + o.heightMm : Math.round(verticalBetweenPlatesMm * 0.72);
+      const horT = m.plateBoardThicknessMm;
+      const topGap = OPENING_NODE_SHIFT_MM;
+      const lowerSegLen = Math.max(0, Math.min(verticalBetweenPlatesMm, splitLower - horT));
+      const middleSegLen = Math.max(0, Math.min(verticalBetweenPlatesMm - lowerSegLen, openTop - splitLower - horT));
+      const upperSegLen = Math.max(0, verticalBetweenPlatesMm - lowerSegLen - middleSegLen - horT - topGap);
+
+      const pushStudSegment = (
+        role: "opening_left_stud" | "opening_right_stud",
+        startOffsetMm: number,
+        endOffsetMm: number,
+        segment: "top" | "middle" | "bottom",
+        lengthMm: number,
+      ) => {
+        if (lengthMm < EPS) {
+          return;
+        }
+        const middleShift =
+          segment === "middle"
+            ? role === "opening_left_stud"
+              ? -OPENING_NODE_SHIFT_MM
+              : OPENING_NODE_SHIFT_MM
+            : 0;
+        verticalDrafts.push({
+          id: newEntityId(),
+          wallId: wall.id,
+          calculationId,
+          role,
+          sectionThicknessMm: m.jointBoardThicknessMm,
+          sectionDepthMm: m.jointBoardDepthMm,
+          startOffsetMm: startOffsetMm + middleShift,
+          endOffsetMm: endOffsetMm + middleShift,
+          lengthMm: Math.round(lengthMm),
+          orientation: "across_wall",
+          metadata: { ...metaBase, studSegment: segment, middleShiftMm: middleShift },
+        });
+      };
+
+      const leftA = o0;
+      const leftB = o0 + Tj;
+      const rightA = o1 - Tj;
+      const rightB = o1;
+      pushStudSegment("opening_left_stud", leftA - Tj / 2, leftA + Tj / 2, "top", upperSegLen);
+      pushStudSegment("opening_left_stud", leftA, leftB, "middle", middleSegLen);
+      pushStudSegment("opening_left_stud", leftA - Tj / 2, leftA + Tj / 2, "bottom", lowerSegLen);
+      pushStudSegment("opening_right_stud", rightB - Tj / 2, rightB + Tj / 2, "top", upperSegLen);
+      pushStudSegment("opening_right_stud", rightA, rightB, "middle", middleSegLen);
+      pushStudSegment("opening_right_stud", rightB - Tj / 2, rightB + Tj / 2, "bottom", lowerSegLen);
       verticalDrafts.push({
         id: newEntityId(),
         wallId: wall.id,
@@ -411,8 +439,8 @@ export function buildWallCalculationForWall(
         role: "opening_header",
         sectionThicknessMm: m.plateBoardThicknessMm,
         sectionDepthMm: m.plateBoardDepthMm,
-        startOffsetMm: o0 + Tj,
-        endOffsetMm: o1 - Tj,
+        startOffsetMm: spanStart,
+        endOffsetMm: spanEnd,
         lengthMm: headerLen,
         orientation: "along_wall",
         metadata: metaBase,
@@ -425,11 +453,11 @@ export function buildWallCalculationForWall(
           role: "opening_sill",
           sectionThicknessMm: m.plateBoardThicknessMm,
           sectionDepthMm: m.plateBoardDepthMm,
-          startOffsetMm: o0 + Tj,
-          endOffsetMm: o1 - Tj,
+          startOffsetMm: spanStart,
+          endOffsetMm: spanEnd,
           lengthMm: headerLen,
           orientation: "along_wall",
-          metadata: { ...metaBase, note: "Подоконная зона (упрощённо)" },
+          metadata: { ...metaBase, note: "Подоконная зона (упрощённо)", splitLowerMm: splitLower, sillLevelMm: sill },
         });
       }
     }

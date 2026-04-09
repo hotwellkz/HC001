@@ -2,7 +2,6 @@ import { getLayerById } from "./layerOps";
 import type { ProfileMaterialType } from "./profile";
 import type { Project } from "./project";
 import type { Wall } from "./wall";
-import { subtractIntervalsFromRange } from "./wallCalculationIntervals";
 import { boardCoreNormalOffsetsMm } from "./wallLumberBoard2dOffsets";
 import type { LumberPiece, WallCalculationResult } from "./wallCalculation";
 
@@ -14,6 +13,84 @@ const SIP_SEAM_DEPTH_MM = 1.5;
 const LUMBER_SEAM_DEPTH_MM = 1.2;
 /** Минимальная толщина EPS-сегмента (мм), чтобы не порождать пылинки. */
 const EPS_SEGMENT_MIN_MM = 1.5;
+const OPENING_NODE_SHIFT_MM = 45;
+
+function alongShiftForPieceMm(piece: LumberPiece): number {
+  /** Обычные стыковочные доски центрируем по линии стыка SIP/OSB. */
+  if (piece.role === "joint_board") {
+    return -piece.sectionThicknessMm / 2;
+  }
+  return 0;
+}
+
+interface RectYN {
+  readonly y0: number;
+  readonly y1: number;
+  readonly n0: number;
+  readonly n1: number;
+}
+
+function subtractRectFromRects(base: readonly RectYN[], cut: RectYN): RectYN[] {
+  const out: RectYN[] = [];
+  for (const r of base) {
+    const iy0 = Math.max(r.y0, cut.y0);
+    const iy1 = Math.min(r.y1, cut.y1);
+    const in0 = Math.max(r.n0, cut.n0);
+    const in1 = Math.min(r.n1, cut.n1);
+    if (iy1 - iy0 < 1e-6 || in1 - in0 < 1e-6) {
+      out.push(r);
+      continue;
+    }
+    /** left / right strips by normal */
+    if (r.n0 < in0) {
+      out.push({ y0: r.y0, y1: r.y1, n0: r.n0, n1: in0 });
+    }
+    if (in1 < r.n1) {
+      out.push({ y0: r.y0, y1: r.y1, n0: in1, n1: r.n1 });
+    }
+    /** middle band: top / bottom by vertical */
+    const mn0 = Math.max(r.n0, in0);
+    const mn1 = Math.min(r.n1, in1);
+    if (mn1 - mn0 > 1e-6) {
+      if (r.y0 < iy0) {
+        out.push({ y0: r.y0, y1: iy0, n0: mn0, n1: mn1 });
+      }
+      if (iy1 < r.y1) {
+        out.push({ y0: iy1, y1: r.y1, n0: mn0, n1: mn1 });
+      }
+    }
+  }
+  return out.filter((r) => r.y1 - r.y0 > 1e-6 && r.n1 - r.n0 > 1e-6);
+}
+
+function pieceAlongIntervalMm(piece: LumberPiece): [number, number] {
+  const shift = alongShiftForPieceMm(piece);
+  return [Math.min(piece.startOffsetMm, piece.endOffsetMm) + shift, Math.max(piece.startOffsetMm, piece.endOffsetMm) + shift];
+}
+
+function pieceVerticalIntervalMm(
+  piece: LumberPiece,
+  wall: Wall,
+  project: Project,
+  bottomMm: number,
+  plateT: number,
+  vCoreMm: number,
+): [number, number] {
+  const cyM = lumberPieceCenterYWorld(piece, wall, project, bottomMm, plateT, vCoreMm);
+  const cyMm = cyM / MM_TO_M;
+  const hMm = piece.orientation === "across_wall" ? piece.lengthMm : piece.sectionThicknessMm;
+  return [cyMm - hMm / 2, cyMm + hMm / 2];
+}
+
+function pieceNormalIntervalMm(piece: LumberPiece, offStart: number, offEnd: number, coreMid: number): [number, number] | null {
+  const sd = piece.sectionDepthMm;
+  const t0 = Math.max(offStart, coreMid - sd / 2);
+  const t1 = Math.min(offEnd, coreMid + sd / 2);
+  if (t1 - t0 < 1e-6) {
+    return null;
+  }
+  return [t0, t1];
+}
 
 /**
  * Один объём расчёта для 3D (центр в мировых координатах, размеры как в wallMeshSpec:
@@ -129,11 +206,39 @@ function subtractIntervalsFromBase(baseLo: number, baseHi: number, cuts: readonl
   return remaining;
 }
 
+function expandSipRegionAlongForCenteredJointBoard(
+  regions: readonly { startOffsetMm: number; endOffsetMm: number }[],
+  regionIndex: number,
+  jointThicknessMm: number,
+): [number, number] {
+  const region = regions[regionIndex]!;
+  let s0 = region.startOffsetMm;
+  let s1 = region.endOffsetMm;
+  const tol = 0.5;
+  const prev = regionIndex > 0 ? regions[regionIndex - 1] : null;
+  const next = regionIndex + 1 < regions.length ? regions[regionIndex + 1] : null;
+  if (prev) {
+    const leftGap = region.startOffsetMm - prev.endOffsetMm;
+    if (Math.abs(leftGap - jointThicknessMm) <= tol) {
+      s0 -= jointThicknessMm / 2;
+    }
+  }
+  if (next) {
+    const rightGap = next.startOffsetMm - region.endOffsetMm;
+    if (Math.abs(rightGap - jointThicknessMm) <= tol) {
+      s1 += jointThicknessMm / 2;
+    }
+  }
+  return [s0, s1];
+}
+
 /**
  * Внутри плоскости ядра по нормали от оси: вырезать объёмы вертикальных досок (across_wall),
  * пересекающих данную SIP-зону по длине стены и по высоте ядра.
  */
 function epsNormalSegmentsForSipRegionMm(
+  wall: Wall,
+  project: Project,
   sipS0: number,
   sipS1: number,
   offStart: number,
@@ -151,21 +256,49 @@ function epsNormalSegmentsForSipRegionMm(
     if (piece.orientation !== "across_wall") {
       continue;
     }
-    const z0 = Math.min(piece.startOffsetMm, piece.endOffsetMm);
-    const z1 = Math.max(piece.startOffsetMm, piece.endOffsetMm);
+    const [z0, z1] = pieceAlongIntervalMm(piece);
     if (z1 <= sipS0 + 1e-3 || z0 >= sipS1 - 1e-3) {
       continue;
     }
-    const pLo = bottomMm + plateT;
-    const pHi = bottomMm + plateT + piece.lengthMm;
+    let pLo = bottomMm + plateT;
+    let pHi = bottomMm + plateT + piece.lengthMm;
+    if (piece.orientation === "across_wall") {
+      const meta = piece.metadata as { openingId?: string; studSegment?: "top" | "middle" | "bottom" } | undefined;
+      if (
+        (piece.role === "opening_left_stud" || piece.role === "opening_right_stud") &&
+        meta?.openingId
+      ) {
+        const op = openingById(project, meta.openingId);
+        if (op && op.wallId === wall.id) {
+          const sill = op.kind === "window" ? (op.sillHeightMm ?? op.position?.sillLevelMm ?? 0) : 0;
+          const splitLower = Math.max(0, sill - OPENING_NODE_SHIFT_MM);
+          const openTop = op.kind === "window" ? sill + op.heightMm : Math.round(vCoreMm * 0.72);
+          const horT = plateT;
+          const segBottomLo = bottomMm + plateT;
+          const segBottomHi = bottomMm + plateT + Math.max(0, splitLower - horT);
+          const segMiddleLo = bottomMm + plateT + splitLower;
+          const segMiddleHi = bottomMm + plateT + Math.max(splitLower, openTop - horT);
+          const segTopLo = bottomMm + plateT + openTop;
+          const segTopHi = bottomMm + plateT + vCoreMm;
+          if (meta.studSegment === "bottom") {
+            pLo = segBottomLo;
+            pHi = segBottomHi;
+          } else if (meta.studSegment === "middle") {
+            pLo = segMiddleLo;
+            pHi = segMiddleHi;
+          } else if (meta.studSegment === "top") {
+            pLo = segTopLo;
+            pHi = segTopHi;
+          }
+        }
+      }
+    }
     if (pHi <= yLo + 1e-3 || pLo >= yHi - 1e-3) {
       continue;
     }
-    const sd = piece.sectionDepthMm;
-    const t0 = Math.max(offStart, coreMid - sd / 2);
-    const t1 = Math.min(offEnd, coreMid + sd / 2);
-    if (t1 - t0 > 1e-3) {
-      cuts.push([t0, t1]);
+    const nIv = pieceNormalIntervalMm(piece, offStart, offEnd, coreMid);
+    if (nIv) {
+      cuts.push(nIv);
     }
   }
   return subtractIntervalsFromBase(offStart, offEnd, cuts);
@@ -173,6 +306,7 @@ function epsNormalSegmentsForSipRegionMm(
 
 function sipSpecsForWall(
   wall: Wall,
+  project: Project,
   calc: WallCalculationResult,
   sx: number,
   sy: number,
@@ -189,50 +323,115 @@ function sipSpecsForWall(
   offEnd: number,
 ): CalculationSolidSpec[] {
   const out: CalculationSolidSpec[] = [];
-  const cy = bottomMm * MM_TO_M + plateT * MM_TO_M + (vCoreMm * MM_TO_M) / 2;
+  const coreBaseY = bottomMm + plateT;
+  const pieces = calc.lumberPieces;
 
-  for (const r of calc.sipRegions) {
-    const s0 = r.startOffsetMm;
-    const s1 = r.endOffsetMm;
-    const sMid = (s0 + s1) / 2;
-    const p = pointAlongWallMm(sx, sy, ux, uy, sMid);
-    const depth = (s1 - s0) * MM_TO_M;
-    const height = vCoreMm * MM_TO_M;
-
-    const segments = epsNormalSegmentsForSipRegionMm(
-      s0,
-      s1,
-      offStart,
-      offEnd,
-      coreMid,
-      bottomMm,
-      plateT,
-      vCoreMm,
-      calc.lumberPieces,
-    );
-
-    let segIdx = 0;
-    for (const [ta, tb] of segments) {
-      const centerOff = (ta + tb) / 2;
-      const wMm = tb - ta;
-      if (wMm < EPS_SEGMENT_MIN_MM) {
+  const pushResidualChunk = (reactKey: string, s0: number, s1: number, y0Core: number, y1Core: number) => {
+    const y0 = Math.max(0, Math.min(vCoreMm, y0Core));
+    const y1 = Math.max(0, Math.min(vCoreMm, y1Core));
+    if (s1 - s0 < 1e-3 || y1 - y0 < 1e-3) {
+      return;
+    }
+    /** 1) Режем по Along по всем доскам, чтобы остаток EPS строился по фактическим границам препятствий. */
+    const alongPoints = new Set<number>([s0, s1]);
+    for (const p of pieces) {
+      const [a0, a1] = pieceAlongIntervalMm(p);
+      if (a1 <= s0 + 1e-3 || a0 >= s1 - 1e-3) {
         continue;
       }
-      const cx = (p.x + nx * centerOff) * MM_TO_M;
-      const cz = (p.y + nz * centerOff) * MM_TO_M;
-      out.push({
-        reactKey: `${wall.id}-${calc.id}-sip-${r.index}-${segIdx}`,
-        wallId: wall.id,
-        calculationId: calc.id,
-        source: "sip",
-        position: [cx, cy, cz],
-        rotationY,
-        width: wMm * MM_TO_M,
-        height,
-        depth,
-        materialType: "eps",
-      });
-      segIdx++;
+      alongPoints.add(Math.max(s0, a0));
+      alongPoints.add(Math.min(s1, a1));
+    }
+    const along = [...alongPoints].sort((a, b) => a - b);
+    let segIdx = 0;
+    for (let ai = 0; ai < along.length - 1; ai++) {
+      const a0 = along[ai]!;
+      const a1 = along[ai + 1]!;
+      if (a1 - a0 < 1e-3) {
+        continue;
+      }
+      const alongMid = (a0 + a1) / 2;
+      /** 2) В срезе along строим остаток в плоскости Y×N: base - obstacles. */
+      let residual: RectYN[] = [{ y0, y1, n0: offStart, n1: offEnd }];
+      for (const p of pieces) {
+        const [pA0, pA1] = pieceAlongIntervalMm(p);
+        if (alongMid < pA0 - 1e-3 || alongMid > pA1 + 1e-3) {
+          continue;
+        }
+        const [pY0Abs, pY1Abs] = pieceVerticalIntervalMm(p, wall, project, bottomMm, plateT, vCoreMm);
+        const nIv = pieceNormalIntervalMm(p, offStart, offEnd, coreMid);
+        if (!nIv) {
+          continue;
+        }
+        const cut: RectYN = {
+          y0: Math.max(y0, pY0Abs - coreBaseY),
+          y1: Math.min(y1, pY1Abs - coreBaseY),
+          n0: nIv[0],
+          n1: nIv[1],
+        };
+        if (cut.y1 - cut.y0 < 1e-6 || cut.n1 - cut.n0 < 1e-6) {
+          continue;
+        }
+        residual = subtractRectFromRects(residual, cut);
+        if (!residual.length) {
+          break;
+        }
+      }
+      const p = pointAlongWallMm(sx, sy, ux, uy, alongMid);
+      const depth = (a1 - a0) * MM_TO_M;
+      for (const r of residual) {
+        if (r.y1 - r.y0 < 1e-3 || r.n1 - r.n0 < EPS_SEGMENT_MIN_MM) {
+          continue;
+        }
+        const cy = bottomMm * MM_TO_M + plateT * MM_TO_M + ((r.y0 + r.y1) / 2) * MM_TO_M;
+        const centerOff = (r.n0 + r.n1) / 2;
+        const cx = (p.x + nx * centerOff) * MM_TO_M;
+        const cz = (p.y + nz * centerOff) * MM_TO_M;
+        out.push({
+          reactKey: `${reactKey}-a${ai}-r${segIdx++}`,
+          wallId: wall.id,
+          calculationId: calc.id,
+          source: "sip",
+          position: [cx, cy, cz],
+          rotationY,
+          width: (r.n1 - r.n0) * MM_TO_M,
+          height: (r.y1 - r.y0) * MM_TO_M,
+          depth,
+          materialType: "eps",
+        });
+      }
+    }
+  };
+
+  const regionsSorted = [...calc.sipRegions].sort((a, b) => a.startOffsetMm - b.startOffsetMm);
+  const jointT = calc.settingsSnapshot.jointBoardThicknessMm;
+  for (let i = 0; i < regionsSorted.length; i++) {
+    const r = regionsSorted[i]!;
+    const [s0, s1] = expandSipRegionAlongForCenteredJointBoard(regionsSorted, i, jointT);
+    pushResidualChunk(`${wall.id}-${calc.id}-sip-${r.index}`, s0, s1, 0, vCoreMm);
+  }
+
+  const Tj = calc.settingsSnapshot.jointBoardThicknessMm;
+  const horT = calc.settingsSnapshot.plateBoardThicknessMm;
+  for (const o of project.openings) {
+    if (o.wallId !== wall.id || o.offsetFromStartMm == null || o.kind !== "window") {
+      continue;
+    }
+    /** Над/под окном берём диапазон между внутренними гранями боковых стоек, а не суженный "оконный блок". */
+    const o0 = o.offsetFromStartMm + Tj / 2;
+    const o1 = o.offsetFromStartMm + o.widthMm - Tj / 2;
+    if (o1 - o0 < 1e-3) {
+      continue;
+    }
+    const sill = Math.max(0, o.sillHeightMm ?? o.position?.sillLevelMm ?? 0);
+    const openTop = sill + o.heightMm;
+    const belowTop = Math.max(0, sill - horT - OPENING_NODE_SHIFT_MM);
+    const aboveBottom = Math.max(0, Math.min(vCoreMm, openTop + horT - OPENING_NODE_SHIFT_MM));
+    if (belowTop > 1e-3) {
+      pushResidualChunk(`${wall.id}-${calc.id}-sip-win-${o.id}-below`, o0, o1, 0, belowTop);
+    }
+    if (aboveBottom < vCoreMm - 1e-3) {
+      pushResidualChunk(`${wall.id}-${calc.id}-sip-win-${o.id}-above`, o0, o1, aboveBottom, vCoreMm);
     }
   }
   return out;
@@ -246,6 +445,7 @@ function sipSpecsForWall(
  */
 function sipSeamSpecsForWall(
   wall: Wall,
+  project: Project,
   calc: WallCalculationResult,
   sx: number,
   sy: number,
@@ -279,6 +479,8 @@ function sipSeamSpecsForWall(
     const p = pointAlongWallMm(sx, sy, ux, uy, s);
 
     const segments = epsNormalSegmentsForSipRegionMm(
+      wall,
+      project,
       a.startOffsetMm,
       a.endOffsetMm,
       offStart,
@@ -326,13 +528,38 @@ function lumberPieceCenterYWorld(
   plateT: number,
   vCoreMm: number,
 ): number {
+  const meta = piece.metadata as { openingId?: string; studSegment?: "top" | "middle" | "bottom" } | undefined;
+  if (
+    piece.orientation === "across_wall" &&
+    (piece.role === "opening_left_stud" || piece.role === "opening_right_stud") &&
+    meta?.openingId
+  ) {
+    const op = openingById(project, meta.openingId);
+    if (op && op.wallId === wall.id) {
+      const sill = op.kind === "window" ? (op.sillHeightMm ?? 0) : 0;
+      const openTop = op.kind === "window" ? sill + op.heightMm : Math.round(vCoreMm * 0.72);
+      const horT = plateT;
+      const len = piece.lengthMm;
+      const midCenter = bottomMm + sill + len / 2;
+      const topCenter = bottomMm + openTop + horT + len / 2;
+      const botCenter = bottomMm + (sill - horT) - len / 2;
+      if (meta.studSegment === "top") {
+        return topCenter * MM_TO_M;
+      }
+      if (meta.studSegment === "middle") {
+        return midCenter * MM_TO_M;
+      }
+      if (meta.studSegment === "bottom") {
+        return botCenter * MM_TO_M;
+      }
+    }
+  }
   if (piece.orientation === "across_wall") {
     const height = piece.lengthMm * MM_TO_M;
     return bottomMm * MM_TO_M + plateT * MM_TO_M + height / 2;
   }
   const st = piece.sectionThicknessMm;
   const height = st * MM_TO_M;
-  const meta = piece.metadata as { openingId?: string } | undefined;
   if (piece.role === "upper_plate") {
     return bottomMm * MM_TO_M + wall.heightMm * MM_TO_M - height / 2;
   }
@@ -343,10 +570,14 @@ function lumberPieceCenterYWorld(
     const op = openingById(project, meta.openingId);
     if (op && op.wallId === wall.id) {
       const sill = op.kind === "window" ? (op.sillHeightMm ?? 0) : 0;
+      const sillFromMeta =
+        typeof (meta as { sillLevelMm?: unknown })?.sillLevelMm === "number"
+          ? ((meta as { sillLevelMm: number }).sillLevelMm ?? sill)
+          : sill;
       if (piece.role === "opening_header") {
-        return bottomMm * MM_TO_M + sill * MM_TO_M + op.heightMm * MM_TO_M - height / 2;
+        return bottomMm * MM_TO_M + sill * MM_TO_M + op.heightMm * MM_TO_M + height / 2;
       }
-      return bottomMm * MM_TO_M + sill * MM_TO_M + height / 2;
+      return bottomMm * MM_TO_M + sillFromMeta * MM_TO_M - height / 2;
     }
   }
   return bottomMm * MM_TO_M + plateT * MM_TO_M + (vCoreMm * MM_TO_M) / 2;
@@ -376,8 +607,9 @@ function lumberSeamSpecsForWall(
   const minAlong = 2 * LUMBER_SEAM_DEPTH_MM + 0.5;
 
   for (const piece of calc.lumberPieces) {
-    const s0 = Math.min(piece.startOffsetMm, piece.endOffsetMm);
-    const s1 = Math.max(piece.startOffsetMm, piece.endOffsetMm);
+    const zShift = alongShiftForPieceMm(piece);
+    const s0 = Math.min(piece.startOffsetMm, piece.endOffsetMm) + zShift;
+    const s1 = Math.max(piece.startOffsetMm, piece.endOffsetMm) + zShift;
     const along = s1 - s0;
     if (along < minAlong) {
       continue;
@@ -396,8 +628,9 @@ function lumberSeamSpecsForWall(
       faceHeightM = st * MM_TO_M;
     }
 
+    const alongShiftMm = piece.role === "joint_board" ? -piece.sectionThicknessMm / 2 : 0;
     for (let i = 0; i < 2; i++) {
-      const s = i === 0 ? s0 : s1;
+      const s = (i === 0 ? s0 : s1) + alongShiftMm;
       const p = pointAlongWallMm(sx, sy, ux, uy, s);
       const cx = (p.x + nx * coreMid) * MM_TO_M;
       const cz = (p.y + nz * coreMid) * MM_TO_M;
@@ -441,7 +674,8 @@ function lumberSpecsForWall(
   const wood: ProfileMaterialType = "wood";
 
   for (const piece of calc.lumberPieces) {
-    const sMid = (piece.startOffsetMm + piece.endOffsetMm) / 2;
+    const alongShiftMm = alongShiftForPieceMm(piece);
+    const sMid = (piece.startOffsetMm + piece.endOffsetMm) / 2 + alongShiftMm;
     const p = pointAlongWallMm(sx, sy, ux, uy, sMid);
     const along = Math.max(1e-3, piece.endOffsetMm - piece.startOffsetMm);
     const st = piece.sectionThicknessMm;
@@ -467,52 +701,6 @@ function lumberSpecsForWall(
         depth,
         materialType: wood,
       });
-      continue;
-    }
-
-    /** Верхняя/нижняя обвязка: разрезать по проёмам, чтобы не проходить через отверстие. */
-    if (
-      piece.orientation === "along_wall" &&
-      (piece.role === "upper_plate" || piece.role === "lower_plate")
-    ) {
-      const s0 = Math.min(piece.startOffsetMm, piece.endOffsetMm);
-      const s1 = Math.max(piece.startOffsetMm, piece.endOffsetMm);
-      const blocks = project.openings
-        .filter(
-          (o): o is typeof o & { offsetFromStartMm: number } =>
-            o.wallId === wall.id && o.offsetFromStartMm != null,
-        )
-        .map((o) => ({ lo: o.offsetFromStartMm, hi: o.offsetFromStartMm + o.widthMm }));
-      const segs = subtractIntervalsFromRange(s0, s1, blocks);
-      let segIdx = 0;
-      for (const [a, b] of segs) {
-        const alongSeg = b - a;
-        if (alongSeg < 1e-3) {
-          continue;
-        }
-        const sMid = (a + b) / 2;
-        const pSeg = pointAlongWallMm(sx, sy, ux, uy, sMid);
-        const depthSeg = alongSeg * MM_TO_M;
-        const widthSeg = sd * MM_TO_M;
-        const heightSeg = st * MM_TO_M;
-        const cx = (pSeg.x + nx * coreMid) * MM_TO_M;
-        const cz = (pSeg.y + nz * coreMid) * MM_TO_M;
-        const cy = lumberPieceCenterYWorld(piece, wall, project, bottomMm, plateT, vCoreMm);
-        out.push({
-          reactKey: `${wall.id}-${piece.id}-seg${segIdx}`,
-          wallId: wall.id,
-          calculationId: calc.id,
-          source: "lumber",
-          pieceId: piece.id,
-          position: [cx, cy, cz],
-          rotationY,
-          width: widthSeg,
-          height: heightSeg,
-          depth: depthSeg,
-          materialType: wood,
-        });
-        segIdx += 1;
-      }
       continue;
     }
 
@@ -574,6 +762,7 @@ export function buildCalculationSolidSpecsForWall(
 
   const sip = sipSpecsForWall(
     wall,
+    project,
     calc,
     sx,
     sy,
@@ -591,6 +780,7 @@ export function buildCalculationSolidSpecsForWall(
   );
   const seams = sipSeamSpecsForWall(
     wall,
+    project,
     calc,
     sx,
     sy,
