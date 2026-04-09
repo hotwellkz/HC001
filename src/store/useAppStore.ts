@@ -144,6 +144,8 @@ interface AppState {
   readonly viewportCanvas2dPx: { readonly width: number; readonly height: number } | null;
   /** Режим редактирования смещения выбранного проёма по размерным линиям. */
   readonly openingMoveModeActive: boolean;
+  /** Выбранная стена для режима «Вид стены». */
+  readonly wallDetailWallId: string | null;
 }
 
 interface AppActions {
@@ -226,6 +228,8 @@ interface AppActions {
   applyOpeningRepositionLeftEdge: (openingId: string, leftEdgeMm: number) => boolean;
   setOpeningMoveModeActive: (active: boolean) => void;
   toggleOpeningMoveMode: () => void;
+  openWallDetail: (wallId: string) => void;
+  closeWallDetail: () => void;
   openWallJointParamsModal: () => void;
   closeWallJointParamsModal: () => void;
   applyWallJointParamsModal: (kind: WallJointKind) => void;
@@ -342,6 +346,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     firestoreEnabled: false,
     viewportCanvas2dPx: null,
     openingMoveModeActive: false,
+    wallDetailWallId: null,
 
     setViewportCanvas2dPx: (width, height) =>
       set({
@@ -416,6 +421,10 @@ export const useAppStore = create<AppStore>((set, get) => {
           windowEditModal: tab === "2d" ? s.windowEditModal : null,
           wallCoordinateModalOpen: tab === "2d" ? s.wallCoordinateModalOpen : false,
           openingMoveModeActive: tab === "2d" ? s.openingMoveModeActive : false,
+          wallDetailWallId:
+            tab === "wall"
+              ? s.wallDetailWallId ?? s.currentProject.walls.find((w) => s.selectedEntityIds.includes(w.id))?.id ?? null
+              : s.wallDetailWallId,
           currentProject: mergeViewState(tab !== "2d" && s.pendingWindowPlacement ? proj : s.currentProject, {
             activeTab: tab,
           }),
@@ -831,6 +840,24 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
     setOpeningMoveModeActive: (active) => set({ openingMoveModeActive: active }),
     toggleOpeningMoveMode: () => set((s) => ({ openingMoveModeActive: !s.openingMoveModeActive })),
+    openWallDetail: (wallId) =>
+      set((s) => {
+        const wall = s.currentProject.walls.find((w) => w.id === wallId);
+        if (!wall) return {};
+        return {
+          activeTab: "wall",
+          wallDetailWallId: wallId,
+          selectedEntityIds: [wallId],
+          currentProject: mergeViewState(s.currentProject, { activeTab: "wall" }),
+          dirty: true,
+        };
+      }),
+    closeWallDetail: () =>
+      set((s) => ({
+        activeTab: "2d",
+        currentProject: mergeViewState(s.currentProject, { activeTab: "2d" }),
+        dirty: true,
+      })),
 
     openWallJointParamsModal: () =>
       set({

@@ -3,7 +3,9 @@ import { Canvas } from "@react-three/fiber";
 import { useMemo, useState } from "react";
 
 import type { Opening3dMeshSpec } from "@/core/domain/opening3dAssemblySpecs";
+import { formatLumberDisplayMark, lumberDisplayIndexByPieceId } from "@/core/domain/pieceDisplayMark";
 import { buildCalculationSolidSpecsForProject } from "@/core/domain/wallCalculation3dSpecs";
+import { lumberRoleLabelRu } from "@/core/domain/wallSpecification";
 import { useAppStore } from "@/store/useAppStore";
 
 import { Editor3dVisibilityPanel } from "./Editor3dVisibilityPanel";
@@ -102,6 +104,13 @@ export function Editor3DWorkspace() {
     const s = selected3d.spec;
     const calc = project.wallCalculations.find((c) => c.id === s.calculationId);
     const piece = s.pieceId ? calc?.lumberPieces.find((p) => p.id === s.pieceId) : undefined;
+    const lumberIdx = calc && piece ? lumberDisplayIndexByPieceId(calc.lumberPieces).get(piece.id) : undefined;
+    const detailLabel =
+      piece && lumberIdx != null
+        ? formatLumberDisplayMark(piece.wallMark, lumberIdx)
+        : s.source === "sip"
+          ? "—"
+          : s.pieceId ?? "—";
     return {
       title: "Расчётный элемент",
       rows: [
@@ -109,8 +118,8 @@ export function Editor3DWorkspace() {
         ["Категория", s.source],
         ["Стенa", s.wallId],
         ["Расчёт", s.calculationId],
-        ["Деталь", piece?.pieceMark ?? s.pieceId ?? "—"],
-        ["Роль", piece?.role ?? "—"],
+        ["Деталь", detailLabel],
+        ["Роль", piece ? lumberRoleLabelRu(piece.role) : "—"],
         ["Ширина", `${Math.round(s.width * 1000)} мм`],
         ["Высота", `${Math.round(s.height * 1000)} мм`],
         ["Длина", `${Math.round(s.depth * 1000)} мм`],

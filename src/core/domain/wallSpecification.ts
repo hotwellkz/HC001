@@ -4,6 +4,7 @@ import type { Project } from "./project";
 import type { Wall } from "./wall";
 import type { LumberRole } from "./wallCalculation";
 import { groupLumberBySectionAndLength, sectionKeyForLumber, getProjectLumberPieces } from "./lumberCutList";
+import { lumberPiecesSortedForDisplay, sipRegionsSortedForDisplay } from "./pieceDisplayMark";
 
 /** Сводная строка по стене для спецификации. */
 export interface WallSpecificationSummary {
@@ -21,6 +22,8 @@ export interface WallSpecificationSummary {
 /** Строка детали в спецификации стены. */
 export interface WallSpecificationDetailRow {
   readonly pieceMark: string;
+  /** Марка стены из расчёта (как у детали), для UI-подписей. */
+  readonly wallMark: string;
   readonly role: LumberRole;
   readonly roleLabelRu: string;
   readonly sectionKey: string;
@@ -142,8 +145,9 @@ export function buildWallSpecificationDetails(wall: Wall, project: Project): rea
   if (!calc) {
     return [];
   }
-  return calc.lumberPieces.map((p) => ({
+  return lumberPiecesSortedForDisplay(calc.lumberPieces).map((p) => ({
     pieceMark: p.pieceMark,
+    wallMark: p.wallMark,
     role: p.role,
     roleLabelRu: lumberRoleLabelRu(p.role),
     sectionKey: sectionKeyForLumber(p),
@@ -157,15 +161,13 @@ export function buildWallSpecificationSipPanels(wall: Wall, project: Project): r
   if (!calc) {
     return [];
   }
-  return [...calc.sipRegions]
-    .sort((a, b) => a.index - b.index)
-    .map((r) => ({
-      pieceMark: r.pieceMark,
-      widthMm: Math.round(r.widthMm),
-      heightMm: Math.round(r.heightMm),
-      thicknessMm: Math.round(r.thicknessMm),
-      sequenceIndex: r.index,
-    }));
+  return sipRegionsSortedForDisplay(calc.sipRegions).map((r) => ({
+    pieceMark: r.pieceMark,
+    widthMm: Math.round(r.widthMm),
+    heightMm: Math.round(r.heightMm),
+    thicknessMm: Math.round(r.thicknessMm),
+    sequenceIndex: r.index,
+  }));
 }
 
 export function buildOpeningSpecificationRows(project: Project): readonly OpeningSpecificationRow[] {

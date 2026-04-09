@@ -5,7 +5,8 @@ import type { Wall } from "@/core/domain/wall";
 import { shouldShowLumberPieceLabels2d } from "@/core/domain/wallCalculationPlan2dLabelPolicy";
 import { isLumberRoleLabeledInPlan2d } from "@/core/domain/wallCalculationPlan2dPolicy";
 import { clampAlongWallRangeMm } from "@/core/domain/wallLumberPlan2dGeometry";
-import { lumberRoleToMarkCode, type LumberPiece } from "@/core/domain/wallCalculation";
+import { formatLumberDisplayMark, lumberDisplayIndexByPieceId } from "@/core/domain/pieceDisplayMark";
+import type { LumberPiece } from "@/core/domain/wallCalculation";
 
 import type { ViewportTransform } from "./viewportTransforms";
 import { worldToScreen } from "./viewportTransforms";
@@ -86,6 +87,8 @@ export function appendWallLumberLabels2d(
       continue;
     }
 
+    const lumberIdx = lumberDisplayIndexByPieceId(calc.lumberPieces);
+
     for (const piece of calc.lumberPieces) {
       if (!isLumberRoleLabeledInPlan2d(piece.role)) {
         continue;
@@ -95,13 +98,10 @@ export function appendWallLumberLabels2d(
         continue;
       }
       const lenStr = String(Math.round(piece.lengthMm));
-      let text: string;
-      if (!detail || spanPx < MIN_SEG_PX) {
-        const short = `${lumberRoleToMarkCode(piece.role)}-${piece.sequenceNumber}`;
-        text = spanPx < MIN_SEG_PX * 0.85 ? lenStr : `${short}\n${lenStr}`;
-      } else {
-        text = `${piece.pieceMark}\n${lenStr}`;
-      }
+      const disp = lumberIdx.get(piece.id) ?? 1;
+      const mark = formatLumberDisplayMark(piece.wallMark, disp);
+      const text =
+        (!detail || spanPx < MIN_SEG_PX) && spanPx < MIN_SEG_PX * 0.85 ? lenStr : `${mark}\n${lenStr}`;
 
       const txt = new Text({
         text,

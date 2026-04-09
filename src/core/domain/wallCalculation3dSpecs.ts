@@ -65,9 +65,40 @@ function subtractRectFromRects(base: readonly RectYN[], cut: RectYN): RectYN[] {
   return out.filter((r) => r.y1 - r.y0 > 1e-6 && r.n1 - r.n0 > 1e-6);
 }
 
-function pieceAlongIntervalMm(piece: LumberPiece): [number, number] {
+export function pieceAlongIntervalMm(piece: LumberPiece): [number, number] {
   const shift = alongShiftForPieceMm(piece);
   return [Math.min(piece.startOffsetMm, piece.endOffsetMm) + shift, Math.max(piece.startOffsetMm, piece.endOffsetMm) + shift];
+}
+
+/**
+ * Ось стыка SIP/OSB вдоль стены (мм) — центр вертикальной joint_board, та же логика, что и 3D (`alongShiftForPieceMm`).
+ * Не относится к tee/corner_joint_board и к торцевым edge_board.
+ */
+export function jointBoardSeamCenterAlongMm(piece: LumberPiece): number | null {
+  if (piece.role !== "joint_board" || piece.orientation !== "across_wall") {
+    return null;
+  }
+  const [a0, a1] = pieceAlongIntervalMm(piece);
+  return (a0 + a1) / 2;
+}
+
+/** Уникальные центры внутренних стыков между SIP-панелями по расчёту (для фасада / вида стены). */
+export function internalWallJointSeamCentersAlongMm(calc: WallCalculationResult): number[] {
+  const centers: number[] = [];
+  for (const p of calc.lumberPieces) {
+    const c = jointBoardSeamCenterAlongMm(p);
+    if (c != null) {
+      centers.push(c);
+    }
+  }
+  centers.sort((a, b) => a - b);
+  const out: number[] = [];
+  for (const x of centers) {
+    if (out.length === 0 || Math.abs(x - out[out.length - 1]!) > 0.5) {
+      out.push(x);
+    }
+  }
+  return out;
 }
 
 function pieceVerticalIntervalMm(
@@ -82,6 +113,29 @@ function pieceVerticalIntervalMm(
   const cyMm = cyM / MM_TO_M;
   const hMm = piece.orientation === "across_wall" ? piece.lengthMm : piece.sectionThicknessMm;
   return [cyMm - hMm / 2, cyMm + hMm / 2];
+}
+
+/**
+ * Прямоугольник детали на фасаде стены (мм): вдоль стены [x0,x1], по высоте от низа стены [b0,b1] (b0<b1).
+ * Тот же источник геометрии, что и 3D-меши каркаса (`pieceAlongIntervalMm` + `pieceVerticalIntervalMm`).
+ */
+export function lumberPieceWallElevationRectMm(
+  piece: LumberPiece,
+  wall: Wall,
+  project: Project,
+  calc: WallCalculationResult,
+): { readonly x0: number; readonly x1: number; readonly b0: number; readonly b1: number } {
+  const bottomMm = wallBottomElevationMm(wall, project);
+  const plateT = calc.settingsSnapshot.plateBoardThicknessMm;
+  const vCoreMm = verticalCoreSpanMm(wall, calc);
+  const [x0, x1] = pieceAlongIntervalMm(piece);
+  const [y0, y1] = pieceVerticalIntervalMm(piece, wall, project, bottomMm, plateT, vCoreMm);
+  return {
+    x0,
+    x1,
+    b0: y0 - bottomMm,
+    b1: y1 - bottomMm,
+  };
 }
 
 function pieceNormalIntervalMm(piece: LumberPiece, offStart: number, offEnd: number, coreMid: number): [number, number] | null {

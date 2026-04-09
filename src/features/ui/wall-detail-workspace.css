@@ -1,0 +1,251 @@
+.wd-root {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  background: var(--color-app-bg);
+}
+
+.wd-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-base);
+}
+
+.wd-title {
+  text-align: center;
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--color-text-primary);
+}
+
+.wd-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.wd-canvas-wrap {
+  position: relative;
+  overflow: hidden;
+  border-right: 1px solid var(--color-border-subtle);
+  background: #fff;
+}
+
+.wd-canvas {
+  width: 100%;
+  height: 100%;
+  /* См. также wallDetailDimensionsSvg.tsx — отступы/засечки в px для стабильности при zoom. */
+}
+
+.wd-wall {
+  fill: #eef3f8;
+  stroke: #4a6280;
+  stroke-width: 1;
+}
+
+/** Заливка ядра SIP между обвязками (без контура — границы отдельно). */
+.wd-sip {
+  fill: #e8f5eb;
+  stroke: none;
+}
+
+/**
+ * Пунктир границы панели / стык SIP (рисуется поверх заливки и досок в «Вид стены»).
+ * Контрастнее фона SIP и коричневых стоек.
+ */
+.wd-sip-seam {
+  fill: none;
+  stroke: #3f5d4a;
+  stroke-width: 1.15;
+  stroke-dasharray: 5 6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.98;
+  vector-effect: non-scaling-stroke;
+}
+
+/** Линии штриховки внутри панели (заливка pattern). */
+.wd-sip-hatch-line {
+  stroke: #64748b;
+  stroke-opacity: 0.14;
+  stroke-width: 0.55;
+  vector-effect: non-scaling-stroke;
+}
+
+.wd-panel-outline {
+  fill: none;
+  stroke: #94a3b8;
+  stroke-width: 1;
+  opacity: 0.65;
+}
+
+.wd-sip-hatch-layer {
+  pointer-events: none;
+}
+
+.wd-panel-mark {
+  font-size: 12px;
+  fill: #0f172a;
+  text-anchor: middle;
+}
+
+.wd-piece {
+  fill: #8b5e34;
+  stroke: #4b2e12;
+  stroke-width: 1;
+}
+
+.wd-piece-n {
+  font-size: 10px;
+  font-weight: 700;
+  fill: #fff;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.wd-opening {
+  fill: #fff;
+  stroke: #1f2937;
+  stroke-width: 1.5;
+}
+
+.wd-open-label {
+  font-size: 12px;
+  text-anchor: middle;
+  fill: #111827;
+}
+
+/** Размерные линии «Вид стены»: единая толщина и цвет. */
+.wd-dim-line {
+  stroke: #64748b;
+  stroke-width: 1;
+  stroke-linecap: butt;
+}
+
+/** Поперечные засечки на концах (не стрелки). */
+.wd-dim-cap {
+  stroke: #64748b;
+  stroke-width: 1;
+  stroke-linecap: butt;
+}
+
+.wd-dim-group {
+  pointer-events: none;
+}
+
+.wd-dim-text {
+  font-size: 14px;
+  fill: #1f2937;
+  text-anchor: middle;
+}
+
+/** Вертикальный размер: текст вдоль линии (rotate −90°), центр по середине цепочки. */
+.wd-dim-text-v {
+  font-size: 14px;
+  fill: #1f2937;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+
+.wd-dim-text-out {
+  font-size: 14px;
+  fill: #1f2937;
+  text-anchor: start;
+}
+
+.wd-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  fill: #475569;
+}
+
+.wd-top-wall {
+  fill: #f5f5dc;
+  stroke: #64748b;
+  stroke-width: 1;
+}
+
+.wd-top-sip {
+  fill: rgba(134, 239, 172, 0.35);
+  stroke: #6aa269;
+  stroke-width: 1;
+}
+
+.wd-top-open {
+  fill: #fff;
+  stroke: #334155;
+  stroke-width: 1;
+}
+
+.wd-wall-title {
+  font-size: 28px;
+  font-weight: 700;
+  text-anchor: middle;
+  fill: #1e293b;
+}
+
+.wd-side {
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wd-card {
+  background: var(--color-surface-base);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.wd-card h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.wd-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.wd-table th,
+.wd-table td {
+  border-bottom: 1px solid var(--color-border-subtle);
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.wd-table tfoot td {
+  font-weight: 700;
+}
+
+.wd-empty,
+.wd-empty-note,
+.wd-hint {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.wd-empty {
+  padding: 16px;
+}
+
+.wd-hint {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 4px 8px;
+}

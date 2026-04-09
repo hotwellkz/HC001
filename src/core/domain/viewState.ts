@@ -1,4 +1,4 @@
-export type EditorTab = "2d" | "3d" | "spec";
+export type EditorTab = "2d" | "3d" | "spec" | "wall";
 
 export interface ViewportState2D {
   readonly panXMm: number;
@@ -50,7 +50,7 @@ export interface ViewState {
 }
 
 /** Нормализация viewState из файла (старые проекты без поля). */
-const VALID_TABS: readonly EditorTab[] = ["2d", "3d", "spec"];
+const VALID_TABS: readonly EditorTab[] = ["2d", "3d", "spec", "wall"];
 
 export function normalizeViewState(
   input: Pick<ViewState, "activeTab" | "viewport2d" | "viewport3d"> & {

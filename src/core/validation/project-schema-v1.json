@@ -644,7 +644,7 @@
         "show3dLayerFrame": { "type": "boolean" },
         "show3dLayerWindows": { "type": "boolean" },
         "show3dLayerDoors": { "type": "boolean" },
-        "activeTab": { "type": "string", "enum": ["2d", "3d", "spec"] },
+        "activeTab": { "type": "string", "enum": ["2d", "3d", "spec", "wall"] },
         "viewport2d": {
           "type": "object",
           "additionalProperties": false,

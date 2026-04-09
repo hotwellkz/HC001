@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { buildCutListCandidates } from "@/core/domain/cutListCandidates";
+import { formatLumberDisplayMark, formatSipPanelDisplayMark } from "@/core/domain/pieceDisplayMark";
 import {
   buildOpeningFramingSpecificationRows,
   buildOpeningSpecificationRows,
@@ -99,7 +100,7 @@ export function SpecificationWorkspace() {
                   <>
                     {sipRows.length > 0 && (
                       <div className="spec-workspace__subblock">
-                        <h5 className="spec-workspace__h5">SIP-панели (марки в данных, не на 2D-плане)</h5>
+                        <h5 className="spec-workspace__h5">SIP-панели</h5>
                         <div className="spec-workspace__table-wrap">
                           <table className="spec-workspace__table spec-workspace__table--compact">
                             <thead>
@@ -111,9 +112,9 @@ export function SpecificationWorkspace() {
                               </tr>
                             </thead>
                             <tbody>
-                              {sipRows.map((r) => (
+                              {sipRows.map((r, i) => (
                                 <tr key={`sip-${r.sequenceIndex}-${r.pieceMark}`}>
-                                  <td>{r.pieceMark}</td>
+                                  <td>{formatSipPanelDisplayMark(wall.markLabel?.trim() || wall.id.slice(0, 8), i)}</td>
                                   <td>{r.widthMm}</td>
                                   <td>{r.heightMm}</td>
                                   <td>{r.thicknessMm}</td>
@@ -138,9 +139,9 @@ export function SpecificationWorkspace() {
                               </tr>
                             </thead>
                             <tbody>
-                              {details.map((d) => (
-                                <tr key={d.pieceMark}>
-                                  <td>{d.pieceMark}</td>
+                              {details.map((d, i) => (
+                                <tr key={`${d.pieceMark}-${i}`}>
+                                  <td>{formatLumberDisplayMark(d.wallMark, i + 1)}</td>
                                   <td>{d.roleLabelRu}</td>
                                   <td>{d.sectionKey}</td>
                                   <td>{d.lengthMm}</td>

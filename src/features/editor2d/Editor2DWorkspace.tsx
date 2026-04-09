@@ -196,6 +196,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   /** Клик/перетаскивание размещённого окна по стене (инструмент «Выделение»). */
   const openingPointerRef = useRef<OpeningPointerSession | null>(null);
   const lastOpeningClickRef = useRef<{ readonly id: string; readonly t: number } | null>(null);
+  const lastWallClickRef = useRef<{ readonly id: string; readonly t: number } | null>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   const cursorCbRef = useRef(onWorldCursorMm);
   cursorCbRef.current = onWorldCursorMm;
@@ -1199,6 +1200,28 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               store.setSelectedEntityIds([...s]);
             } else {
               store.setSelectedEntityIds([hitOp.id]);
+            }
+            paint();
+            return;
+          }
+          const wallHit = pickClosestWallAlongPoint(worldMm, layerView.walls, Math.max(14, 22 / viewport2d.zoomPixelsPerMm));
+          if (wallHit) {
+            const store = useAppStore.getState();
+            if (ev.shiftKey) {
+              const s = new Set(store.selectedEntityIds);
+              if (s.has(wallHit.wallId)) s.delete(wallHit.wallId);
+              else s.add(wallHit.wallId);
+              store.setSelectedEntityIds([...s]);
+            } else {
+              store.setSelectedEntityIds([wallHit.wallId]);
+            }
+            const now = Date.now();
+            const prev = lastWallClickRef.current;
+            if (prev && prev.id === wallHit.wallId && now - prev.t < 480) {
+              useAppStore.getState().openWallDetail(wallHit.wallId);
+              lastWallClickRef.current = null;
+            } else {
+              lastWallClickRef.current = { id: wallHit.wallId, t: now };
             }
             paint();
             return;
