@@ -132,7 +132,7 @@ function thicknessNormalUnit(
   const ux = dxMm / lenMm;
   const uy = dyMm / lenMm;
   const nx = -dyMm / lenMm;
-  const nz = dxMm / lenMm;
+  const nz = -dxMm / lenMm;
   return { nx, nz, lenMm, ux, uy };
 }
 
@@ -387,7 +387,7 @@ function sipSpecsForWall(
         const cy = bottomMm * MM_TO_M + plateT * MM_TO_M + ((r.y0 + r.y1) / 2) * MM_TO_M;
         const centerOff = (r.n0 + r.n1) / 2;
         const cx = (p.x + nx * centerOff) * MM_TO_M;
-        const cz = (p.y + nz * centerOff) * MM_TO_M;
+        const cz = (-p.y + nz * centerOff) * MM_TO_M;
         out.push({
           reactKey: `${reactKey}-a${ai}-r${segIdx++}`,
           wallId: wall.id,
@@ -504,7 +504,7 @@ function sipSeamSpecsForWall(
         continue;
       }
       const cx = (p.x + nx * centerOff) * MM_TO_M;
-      const cz = (p.y + nz * centerOff) * MM_TO_M;
+      const cz = (-p.y + nz * centerOff) * MM_TO_M;
       out.push({
         reactKey: `${wall.id}-${calc.id}-sip-seam-${i}-${a.index}-${b.index}-n${segIdx}`,
         wallId: wall.id,
@@ -643,7 +643,7 @@ function lumberSeamSpecsForWall(
       const s = (i === 0 ? s0 : s1) + alongShiftMm;
       const p = pointAlongWallMm(sx, sy, ux, uy, s);
       const cx = (p.x + nx * coreMid) * MM_TO_M;
-      const cz = (p.y + nz * coreMid) * MM_TO_M;
+      const cz = (-p.y + nz * coreMid) * MM_TO_M;
       const tag = i === 0 ? "a" : "b";
       out.push({
         reactKey: `${wall.id}-${calc.id}-lumber-seam-${piece.id}-${tag}`,
@@ -696,7 +696,7 @@ function lumberSpecsForWall(
       const depth = along * MM_TO_M;
       const height = piece.lengthMm * MM_TO_M;
       const cx = (p.x + nx * coreMid) * MM_TO_M;
-      const cz = (p.y + nz * coreMid) * MM_TO_M;
+      const cz = (-p.y + nz * coreMid) * MM_TO_M;
       const cy = lumberPieceCenterYWorld(piece, wall, project, bottomMm, plateT, vCoreMm);
       out.push({
         reactKey: `${wall.id}-${piece.id}`,
@@ -719,7 +719,7 @@ function lumberSpecsForWall(
     const width = sd * MM_TO_M;
     const height = st * MM_TO_M;
     const cx = (p.x + nx * coreMid) * MM_TO_M;
-    const cz = (p.y + nz * coreMid) * MM_TO_M;
+    const cz = (-p.y + nz * coreMid) * MM_TO_M;
     const cy = lumberPieceCenterYWorld(piece, wall, project, bottomMm, plateT, vCoreMm);
 
     out.push({
@@ -759,7 +759,7 @@ export function buildCalculationSolidSpecsForWall(
   }
 
   const dxM = (ex - sx) * MM_TO_M;
-  const dzM = (ey - sy) * MM_TO_M;
+  const dzM = -(ey - sy) * MM_TO_M;
   const rotationY = Math.atan2(dxM, dzM);
 
   const bottomMm = wallBottomElevationMm(wall, project);

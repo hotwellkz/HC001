@@ -70,7 +70,7 @@ function seamSpecsForProject(project: Project): readonly OsbSeamSpec[] {
     const ux = dx / L;
     const uy = dy / L;
     const nx = -dy / L;
-    const nz = dx / L;
+    const nz = -dx / L;
     const bottomMm = wall.baseElevationMm ?? 0;
     const jT = calc.settingsSnapshot.jointBoardThicknessMm;
     const regions = [...calc.sipRegions].sort((a, b) => a.startOffsetMm - b.startOffsetMm);
@@ -93,9 +93,9 @@ function seamSpecsForProject(project: Project): readonly OsbSeamSpec[] {
             position: [
               (px + nx * off) * MM_TO_M,
               (bottomMm + yMid) * MM_TO_M,
-              (py + nz * off) * MM_TO_M,
+              (-py + nz * off) * MM_TO_M,
             ],
-            rotationY: Math.atan2(dx * MM_TO_M, dy * MM_TO_M),
+            rotationY: Math.atan2(dx * MM_TO_M, -dy * MM_TO_M),
             width: SEAM_WIDTH_MM * MM_TO_M,
             height: h * MM_TO_M,
             depth: SEAM_DEPTH_MM * MM_TO_M,

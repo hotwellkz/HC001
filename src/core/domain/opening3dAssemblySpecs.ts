@@ -56,7 +56,7 @@ function thicknessNormalUnit(
   const ux = dxMm / lenMm;
   const uy = dyMm / lenMm;
   const nx = -dyMm / lenMm;
-  const nz = dxMm / lenMm;
+  const nz = -dxMm / lenMm;
   return { nx, nz, lenMm, ux, uy };
 }
 
@@ -101,7 +101,7 @@ export function buildWindowAssemblySpecsForOpening(wall: Wall, opening: Opening,
     return [];
   }
   const dxM = (ex - sx) * MM_TO_M;
-  const dzM = (ey - sy) * MM_TO_M;
+  const dzM = -(ey - sy) * MM_TO_M;
   const rotationY = Math.atan2(dxM, dzM);
 
   const o0 = opening.offsetFromStartMm;
@@ -127,7 +127,7 @@ export function buildWindowAssemblySpecsForOpening(wall: Wall, opening: Opening,
     const px = sx + ux * uMid;
     const py = sy + uy * uMid;
     const cx = (px + nx * windowNormalOffsetMm) * MM_TO_M;
-    const cz = (py + nz * windowNormalOffsetMm) * MM_TO_M;
+    const cz = (-py + nz * windowNormalOffsetMm) * MM_TO_M;
     const cy = bottomMm * MM_TO_M + yMid * MM_TO_M;
     return [cx, cy, cz];
   };
@@ -312,7 +312,7 @@ export function buildDoorAssemblySpecsForOpening(wall: Wall, opening: Opening, p
     return [];
   }
   const dxM = (ex - sx) * MM_TO_M;
-  const dzM = (ey - sy) * MM_TO_M;
+  const dzM = -(ey - sy) * MM_TO_M;
   const rotationY = Math.atan2(dxM, dzM);
   const bottomMm = wallBottomElevationMm(wall, project);
   const o0 = opening.offsetFromStartMm;
@@ -333,7 +333,7 @@ export function buildDoorAssemblySpecsForOpening(wall: Wall, opening: Opening, p
     const px = sx + ux * uMid;
     const py = sy + uy * uMid;
     const cx = (px + nx * normalOffsetMm) * MM_TO_M;
-    const cz = (py + nz * normalOffsetMm) * MM_TO_M;
+    const cz = (-py + nz * normalOffsetMm) * MM_TO_M;
     const cy = bottomMm * MM_TO_M + yMid * MM_TO_M;
     return [cx, cy, cz];
   };
@@ -436,7 +436,7 @@ export function buildOpeningFramingPieceSpecs(wall: Wall, project: Project): rea
     return [];
   }
   const dxM = (ex - sx) * MM_TO_M;
-  const dzM = (ey - sy) * MM_TO_M;
+  const dzM = -(ey - sy) * MM_TO_M;
   const rotationY = Math.atan2(dxM, dzM);
   const bottomMm = wallBottomElevationMm(wall, project);
 
@@ -513,7 +513,7 @@ export function buildOpeningFramingPieceSpecs(wall: Wall, project: Project): rea
       const px = sx + ux * uMid;
       const py = sy + uy * uMid;
       const cx = px * MM_TO_M;
-      const cz = py * MM_TO_M;
+      const cz = -py * MM_TO_M;
       const cy = bottomMm * MM_TO_M + yMid * MM_TO_M;
       out.push({
         reactKey: `${piece.id}-3d`,

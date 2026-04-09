@@ -54,7 +54,7 @@ function thicknessNormalUnit(
   const ux = dxMm / lenMm;
   const uy = dyMm / lenMm;
   const nx = -dyMm / lenMm;
-  const nz = dxMm / lenMm;
+  const nz = -dxMm / lenMm;
   return { nx, nz, lenMm, ux, uy };
 }
 
@@ -97,7 +97,7 @@ function singleSolidSpecs(
   const dxMm = ex - sx;
   const dyMm = ey - sy;
   const dxM = dxMm * MM_TO_M;
-  const dzM = dyMm * MM_TO_M;
+  const dzM = -dyMm * MM_TO_M;
   const bottomMm = wallBottomElevationMm(wall, project);
   const heightMm = wall.heightMm;
   const bottomM = bottomMm * MM_TO_M;
@@ -113,7 +113,7 @@ function singleSolidSpecs(
     const px = sx + ux * uMid;
     const py = sy + uy * uMid;
     const cx = px * MM_TO_M;
-    const cz = py * MM_TO_M;
+    const cz = -py * MM_TO_M;
     const cy = bottomM + yMid * MM_TO_M;
     const depth = (r.u1 - r.u0) * MM_TO_M;
     const h = (r.y1 - r.y0) * MM_TO_M;
@@ -188,7 +188,7 @@ function layeredSpecsFromProfile(wall: Wall, project: Project, profile: Profile)
   const dxMm = ex - sx;
   const dyMm = ey - sy;
   const dxM = dxMm * MM_TO_M;
-  const dzM = dyMm * MM_TO_M;
+  const dzM = -dyMm * MM_TO_M;
   const bottomMm = wallBottomElevationMm(wall, project);
   const heightMm = wall.heightMm;
   const bottomM = bottomMm * MM_TO_M;
@@ -223,7 +223,7 @@ function layeredSpecsFromProfile(wall: Wall, project: Project, profile: Profile)
       const px = sx + ux * uMid;
       const py = sy + uy * uMid;
       const cx = px * MM_TO_M + centerOffMm * MM_TO_M * nx;
-      const cz = py * MM_TO_M + centerOffMm * MM_TO_M * nz;
+      const cz = -py * MM_TO_M + centerOffMm * MM_TO_M * nz;
       const cySub = bottomM + yMid * MM_TO_M;
       const depth = (r.u1 - r.u0) * MM_TO_M;
       const h = (r.y1 - r.y0) * MM_TO_M;
