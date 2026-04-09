@@ -419,6 +419,10 @@
           "anyOf": [{ "$ref": "#/$defs/openingSipConstructionSpec" }, { "type": "null" }]
         },
         "windowSequenceNumber": { "type": "integer", "minimum": 1 },
+        "doorSequenceNumber": { "type": "integer", "minimum": 1 },
+        "doorType": { "type": "string", "enum": ["single"] },
+        "doorSwing": { "type": "string", "enum": ["in_right", "in_left", "out_right", "out_left"] },
+        "doorTrimMm": { "type": "number", "minimum": 0 },
         "markLabel": { "type": "string" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }

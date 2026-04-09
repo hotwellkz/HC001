@@ -8,6 +8,7 @@ import { AddWallModal } from "@/features/ui/AddWallModal";
 import { WallJointParamsModal } from "@/features/ui/WallJointParamsModal";
 import { WallCalculationModal } from "@/features/ui/WallCalculationModal";
 import { WindowParamsModal } from "@/features/ui/window-modal/WindowParamsModal";
+import { DoorParamsModal } from "@/features/ui/window-modal/DoorParamsModal";
 import { WallCoordinateModal } from "@/features/ui/WallCoordinateModal";
 import { LayerManagerModal } from "@/features/ui/LayerManagerModal";
 import { LayerParamsModal } from "@/features/ui/LayerParamsModal";
@@ -67,6 +68,7 @@ export function AppShell() {
       <WallCoordinateModal />
       <WallCalculationModal />
       <WindowParamsModal />
+      <DoorParamsModal />
     </div>
   );
 }

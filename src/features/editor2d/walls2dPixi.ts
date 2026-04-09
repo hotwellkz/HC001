@@ -23,6 +23,7 @@ const OPENING_SLOT_FILL = 0x5aa7ff;
 const OPENING_SLOT_EMPTY = 0x8b939e;
 const OPENING_SLOT_STROKE = 0x2563eb;
 const OPENING_SLOT_STROKE_SEL = 0xe7b65c;
+const DOOR_ARC = 0x1f2937;
 
 export type Draw2dLayerAppearance = "active" | "context";
 
@@ -32,6 +33,78 @@ export interface DrawWalls2dOptions {
   readonly clear?: boolean;
   /** false — одна полоса (как раньше); true — послойно при достаточном zoom. */
   readonly show2dProfileLayers?: boolean;
+}
+
+function drawDoorSwing2d(
+  g: Graphics,
+  wall: Wall,
+  leftAlongMm: number,
+  widthMm: number,
+  swing: "in_right" | "in_left" | "out_right" | "out_left",
+  t: ViewportTransform,
+): void {
+  const dx = wall.end.x - wall.start.x;
+  const dy = wall.end.y - wall.start.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) {
+    return;
+  }
+  const ux = dx / len;
+  const uy = dy / len;
+  const nx = -uy;
+  const ny = ux;
+  const hingeAtStart = swing.endsWith("left");
+  /** "in" = внутрь помещения, "out" = наружу; для нашей нормали знак должен быть инвертирован. */
+  const inward = swing.startsWith("in");
+  const sideSign = inward ? -1 : 1;
+  const leafLenMm = Math.max(120, widthMm);
+  const halfT = Math.max(1, wall.thicknessMm * 0.5);
+  const normalInsetMm = Math.max(2, Math.min(halfT - 1, 5));
+  const hingeNormalMm = sideSign * Math.max(0, halfT - normalInsetMm);
+  const hingeAlong = hingeAtStart ? leftAlongMm : leftAlongMm + widthMm;
+  const closedAlongDir = hingeAtStart ? 1 : -1;
+
+  const hx = wall.start.x + ux * hingeAlong + nx * hingeNormalMm;
+  const hy = wall.start.y + uy * hingeAlong + ny * hingeNormalMm;
+  const cdx = ux * closedAlongDir;
+  const cdy = uy * closedAlongDir;
+  const cex = hx + cdx * leafLenMm;
+  const cey = hy + cdy * leafLenMm;
+  /** Открытое полотно = поворот закрытого на +/-90° вокруг петли. */
+  const odx = sideSign > 0 ? -cdy : cdy;
+  const ody = sideSign > 0 ? cdx : -cdx;
+  const oex = hx + odx * leafLenMm;
+  const oey = hy + ody * leafLenMm;
+
+  const hs = worldToScreen(hx, hy, t);
+  const os = worldToScreen(oex, oey, t);
+
+  /** Рисуем только одно положение полотна (открытое), чтобы не было эффекта "двойного открытия". */
+  g.moveTo(hs.x, hs.y);
+  g.lineTo(os.x, os.y);
+  g.stroke({ width: 1.5, color: DOOR_ARC, alpha: 0.96 });
+
+  g.circle(hs.x, hs.y, Math.max(1.8, 1.8 + 0.2 * t.zoomPixelsPerMm));
+  g.fill({ color: DOOR_ARC, alpha: 0.9 });
+
+  /** Дуга строится в world-space тем же знаком поворота, что и открытое полотно. */
+  const turn = sideSign > 0 ? Math.PI / 2 : -Math.PI / 2;
+  const steps = 20;
+  g.moveTo(worldToScreen(cex, cey, t).x, worldToScreen(cex, cey, t).y);
+  for (let i = 1; i <= steps; i++) {
+    const a = (turn * i) / steps;
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    const vx = cdx * leafLenMm;
+    const vy = cdy * leafLenMm;
+    const rx = vx * ca - vy * sa;
+    const ry = vx * sa + vy * ca;
+    const px = hx + rx;
+    const py = hy + ry;
+    const sp = worldToScreen(px, py, t);
+    g.lineTo(sp.x, sp.y);
+  }
+  g.stroke({ width: 1.05, color: DOOR_ARC, alpha: 0.6 });
 }
 
 function fillQuadMm(g: Graphics, corners: readonly { readonly x: number; readonly y: number }[], t: ViewportTransform, color: number, alpha: number): void {
@@ -251,6 +324,9 @@ export function drawWallsAndOpenings2d(
       openingsG.moveTo(s0.x, s0.y);
       openingsG.lineTo(s1.x, s1.y);
       openingsG.stroke({ width: 1, color: 0x2a3038, alpha: 0.5 });
+    }
+    if (!ctx && o.kind === "door" && !empty) {
+      drawDoorSwing2d(openingsG, wall, o.offsetFromStartMm, o.widthMm, o.doorSwing ?? "in_right", t);
     }
   }
 }

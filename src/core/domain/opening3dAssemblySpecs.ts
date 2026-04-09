@@ -1,4 +1,5 @@
 import { getLayerById } from "./layerOps";
+import { openingSillLevelMm, openingTopLevelMmForShell } from "./doorGeometry";
 import { isOpeningPlacedOnWall, type Opening } from "./opening";
 import type { OpeningFramingPiece, OpeningFramingPieceKind } from "./openingFramingPiece";
 import { getProfileById } from "./profileOps";
@@ -11,7 +12,14 @@ import { viewPresetByKey, type WindowViewPresetKey } from "./windowFormCatalog";
 const MM_TO_M = 0.001;
 const MIN_LEN = 1;
 
-export type Opening3dMeshKind = "window_frame" | "window_glass" | "window_mullion" | "opening_framing";
+export type Opening3dMeshKind =
+  | "window_frame"
+  | "window_glass"
+  | "window_mullion"
+  | "door_leaf"
+  | "door_handle"
+  | "door_frame"
+  | "opening_framing";
 
 /** Объём для 3D-сцены: те же оси, что и wallMeshSpec (width ⟂ стены, height ↑, depth вдоль стены). */
 export interface Opening3dMeshSpec {
@@ -68,6 +76,16 @@ function profileDepthAlongNormalMm(profile: Profile | undefined): number {
 }
 
 const FRAME_MM = 55;
+const DOOR_LEAF_THICKNESS_MM = 40;
+const DOOR_FRAME_FACE_MM = 32;
+const DOOR_CLEARANCE_MM = 10;
+const DOOR_HANDLE_BACKSET_MM = 80;
+const DOOR_HANDLE_HEIGHT_MM = 1050;
+const DOOR_HANDLE_PLATE_W_MM = 22;
+const DOOR_HANDLE_PLATE_H_MM = 140;
+const DOOR_HANDLE_PLATE_T_MM = 6;
+const DOOR_HANDLE_GRIP_LEN_MM = 90;
+const DOOR_HANDLE_GRIP_D_MM = 12;
 
 /** Оконный блок (рама + стекло + импосты). Пустой проём — не генерируется. */
 export function buildWindowAssemblySpecsForOpening(wall: Wall, opening: Opening, project: Project): readonly Opening3dMeshSpec[] {
@@ -280,6 +298,133 @@ export function buildWindowAssemblySpecsForOpening(wall: Wall, opening: Opening,
   return out;
 }
 
+/** Дверной блок (полотно + простая коробка). Пустой проём — не генерируется. */
+export function buildDoorAssemblySpecsForOpening(wall: Wall, opening: Opening, project: Project): readonly Opening3dMeshSpec[] {
+  if (!isOpeningPlacedOnWall(opening) || opening.kind !== "door" || opening.isEmptyOpening) {
+    return [];
+  }
+  const sx = wall.start.x;
+  const sy = wall.start.y;
+  const ex = wall.end.x;
+  const ey = wall.end.y;
+  const { nx, nz, lenMm, ux, uy } = thicknessNormalUnit(sx, sy, ex, ey);
+  if (lenMm < MIN_LEN) {
+    return [];
+  }
+  const dxM = (ex - sx) * MM_TO_M;
+  const dzM = (ey - sy) * MM_TO_M;
+  const rotationY = Math.atan2(dxM, dzM);
+  const bottomMm = wallBottomElevationMm(wall, project);
+  const o0 = opening.offsetFromStartMm;
+  const o1 = o0 + opening.widthMm;
+  const sill = openingSillLevelMm(opening);
+  const openTop = openingTopLevelMmForShell(opening);
+  const W = Math.max(200, opening.widthMm);
+  const T = Math.max(60, wall.thicknessMm);
+  const frameDepthMm = Math.max(26, Math.min(60, T * 0.35));
+  const frameFaceMm = Math.max(20, Math.min(DOOR_FRAME_FACE_MM, W * 0.1, Math.max(200, openTop - sill) * 0.1));
+  const leafDepthMm = Math.max(24, Math.min(DOOR_LEAF_THICKNESS_MM, frameDepthMm - 4));
+  const leafWmm = Math.max(120, W - 2 * DOOR_CLEARANCE_MM);
+  const clearHmm = Math.max(200, openTop - sill);
+  const leafHmm = Math.max(180, clearHmm - 2 * DOOR_CLEARANCE_MM);
+  const leafNormalOffsetMm = Math.max(0, T / 2 - leafDepthMm / 2 - 8);
+
+  const placeCenter = (uMid: number, yMid: number, normalOffsetMm = 0): [number, number, number] => {
+    const px = sx + ux * uMid;
+    const py = sy + uy * uMid;
+    const cx = (px + nx * normalOffsetMm) * MM_TO_M;
+    const cz = (py + nz * normalOffsetMm) * MM_TO_M;
+    const cy = bottomMm * MM_TO_M + yMid * MM_TO_M;
+    return [cx, cy, cz];
+  };
+
+  const out: Opening3dMeshSpec[] = [];
+  let k = 0;
+  const key = (suffix: string) => `${opening.id}-door-${suffix}-${k++}`;
+  const uC = (o0 + o1) / 2;
+  const yC = sill + clearHmm / 2;
+
+  out.push({
+    reactKey: key("leaf"),
+    kind: "door_leaf",
+    wallId: wall.id,
+    openingId: opening.id,
+    position: placeCenter(uC, sill + DOOR_CLEARANCE_MM + leafHmm / 2, leafNormalOffsetMm),
+    rotationY,
+    width: leafDepthMm * MM_TO_M,
+    height: leafHmm * MM_TO_M,
+    depth: leafWmm * MM_TO_M,
+  });
+
+  out.push({
+    reactKey: key("frame-left"),
+    kind: "door_frame",
+    wallId: wall.id,
+    openingId: opening.id,
+    position: placeCenter(o0 + frameFaceMm / 2, yC),
+    rotationY,
+    width: frameDepthMm * MM_TO_M,
+    height: clearHmm * MM_TO_M,
+    depth: frameFaceMm * MM_TO_M,
+  });
+  out.push({
+    reactKey: key("frame-right"),
+    kind: "door_frame",
+    wallId: wall.id,
+    openingId: opening.id,
+    position: placeCenter(o1 - frameFaceMm / 2, yC),
+    rotationY,
+    width: frameDepthMm * MM_TO_M,
+    height: clearHmm * MM_TO_M,
+    depth: frameFaceMm * MM_TO_M,
+  });
+  out.push({
+    reactKey: key("frame-top"),
+    kind: "door_frame",
+    wallId: wall.id,
+    openingId: opening.id,
+    position: placeCenter(uC, openTop - frameFaceMm / 2),
+    rotationY,
+    width: frameDepthMm * MM_TO_M,
+    height: frameFaceMm * MM_TO_M,
+    depth: W * MM_TO_M,
+  });
+
+  const hingeAtStart = (opening.doorSwing ?? "in_right").endsWith("left");
+  const handleAlongSign = hingeAtStart ? 1 : -1;
+  const handleAlong = (hingeAtStart ? o0 : o1) + handleAlongSign * Math.max(45, W - DOOR_HANDLE_BACKSET_MM);
+  const handleY = sill + Math.min(DOOR_HANDLE_HEIGHT_MM, leafHmm - 120);
+  for (const side of [-1, 1] as const) {
+    const plateNormal = leafNormalOffsetMm + side * (leafDepthMm / 2 + DOOR_HANDLE_PLATE_T_MM / 2);
+    const gripNormal = leafNormalOffsetMm + side * (leafDepthMm / 2 + DOOR_HANDLE_PLATE_T_MM + DOOR_HANDLE_GRIP_D_MM / 2);
+    const suffix = side > 0 ? "outer" : "inner";
+    out.push({
+      reactKey: key(`handle-plate-${suffix}`),
+      kind: "door_handle",
+      wallId: wall.id,
+      openingId: opening.id,
+      position: placeCenter(handleAlong, handleY, plateNormal),
+      rotationY,
+      width: DOOR_HANDLE_PLATE_T_MM * MM_TO_M,
+      height: DOOR_HANDLE_PLATE_H_MM * MM_TO_M,
+      depth: DOOR_HANDLE_PLATE_W_MM * MM_TO_M,
+    });
+    out.push({
+      reactKey: key(`handle-grip-${suffix}`),
+      kind: "door_handle",
+      wallId: wall.id,
+      openingId: opening.id,
+      position: placeCenter(handleAlong, handleY, gripNormal),
+      rotationY,
+      width: DOOR_HANDLE_GRIP_D_MM * MM_TO_M,
+      height: DOOR_HANDLE_GRIP_D_MM * MM_TO_M,
+      depth: DOOR_HANDLE_GRIP_LEN_MM * MM_TO_M,
+    });
+  }
+
+  return out;
+}
+
 /** Элементы openingFramingPieces — упрощённая геометрия вокруг проёма. */
 export function buildOpeningFramingPieceSpecs(wall: Wall, project: Project): readonly Opening3dMeshSpec[] {
   const sx = wall.start.x;
@@ -393,6 +538,7 @@ export function buildOpening3dSpecsForWall(wall: Wall, project: Project): readon
       continue;
     }
     win.push(...buildWindowAssemblySpecsForOpening(wall, o, project));
+    win.push(...buildDoorAssemblySpecsForOpening(wall, o, project));
   }
   win.push(...buildOpeningFramingPieceSpecs(wall, project));
   return win;

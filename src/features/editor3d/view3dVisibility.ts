@@ -51,11 +51,14 @@ export function isOpening3dMeshVisible(spec: Opening3dMeshSpec, project: Project
   if (spec.kind === "opening_framing") {
     return vs.show3dLayerFrame !== false;
   }
+  if (spec.kind === "door_leaf" || spec.kind === "door_frame" || spec.kind === "door_handle") {
+    return vs.show3dLayerDoors !== false;
+  }
   return vs.show3dLayerWindows !== false;
 }
 
-export function hasDoorGeometry3d(_project: Project): boolean {
-  return false;
+export function hasDoorGeometry3d(project: Project): boolean {
+  return project.openings.some((o) => o.kind === "door" && o.wallId != null && o.offsetFromStartMm != null && o.isEmptyOpening !== true);
 }
 
 export type WallMeshMaterialCategory = "osb" | "eps" | "other";

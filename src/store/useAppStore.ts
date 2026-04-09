@@ -29,7 +29,12 @@ import {
   type WallCalculationStage3Options,
 } from "@/core/domain/wallCalculation";
 import { removeUnplacedWindowDraft } from "@/core/domain/openingDraftCleanup";
-import { addUnplacedWindowToProject, type AddWindowDraftPayload } from "@/core/domain/openingMutations";
+import {
+  addUnplacedDoorToProject,
+  addUnplacedWindowToProject,
+  type AddDoorDraftPayload,
+  type AddWindowDraftPayload,
+} from "@/core/domain/openingMutations";
 import {
   finalizeWindowPlacementWithDefaults,
   placeDraftWindowOnWall,
@@ -37,6 +42,7 @@ import {
   saveWindowParamsAndRegenerateFraming,
   type SaveWindowParamsPayload,
 } from "@/core/domain/openingWindowMutations";
+import { placeDraftDoorOnWall, saveDoorParams, type SaveDoorParamsPayload } from "@/core/domain/openingDoorMutations";
 import {
   clampOpeningLeftEdgeMm,
   offsetFromStartForCursorCentered,
@@ -73,11 +79,18 @@ export type ActiveTool = "select" | "pan";
 export interface PendingWindowPlacement {
   readonly openingId: string;
 }
+export interface PendingDoorPlacement {
+  readonly openingId: string;
+}
 
 export type WindowEditModalTab = "form" | "position" | "sip";
 
 /** Редактирование размещённого окна (вкладки после установки на стену). */
 export interface WindowEditModalState {
+  readonly openingId: string;
+  readonly initialTab: WindowEditModalTab;
+}
+export interface DoorEditModalState {
   readonly openingId: string;
   readonly initialTab: WindowEditModalTab;
 }
@@ -104,8 +117,11 @@ interface AppState {
   readonly profilesModalOpen: boolean;
   readonly addWallModalOpen: boolean;
   readonly addWindowModalOpen: boolean;
+  readonly addDoorModalOpen: boolean;
   readonly pendingWindowPlacement: PendingWindowPlacement | null;
+  readonly pendingDoorPlacement: PendingDoorPlacement | null;
   readonly windowEditModal: WindowEditModalState | null;
+  readonly doorEditModal: DoorEditModalState | null;
   readonly wallJointParamsModalOpen: boolean;
   /** Ручной инструмент «Угловое соединение» после выбора типа в модалке. */
   readonly wallJointSession: WallJointSession | null;
@@ -182,15 +198,23 @@ interface AppActions {
   closeAddWallModal: () => void;
   openAddWindowModal: () => void;
   closeAddWindowModal: () => void;
+  openAddDoorModal: () => void;
+  closeAddDoorModal: () => void;
   /** Создать окно в проекте по данным вкладки «Форма окна». */
   applyWindowFormModal: (input: AddWindowDraftPayload) => void;
+  applyDoorFormModal: (input: AddDoorDraftPayload) => void;
   /** Отмена режима установки: удалить черновик окна без стены. */
   clearPendingWindowPlacement: () => void;
+  clearPendingDoorPlacement: () => void;
   tryCommitPendingWindowPlacementAtWorld: (worldMm: { readonly x: number; readonly y: number }) => void;
+  tryCommitPendingDoorPlacementAtWorld: (worldMm: { readonly x: number; readonly y: number }) => void;
   closeWindowEditModal: () => void;
   applyWindowEditModal: (payload: SaveWindowParamsPayload) => void;
+  closeDoorEditModal: () => void;
+  applyDoorEditModal: (payload: SaveDoorParamsPayload) => void;
   /** Повторное открытие модалки для окна, уже стоящего на стене. */
   openWindowEditModal: (openingId: string, initialTab?: WindowEditModalTab) => void;
+  openDoorEditModal: (openingId: string, initialTab?: WindowEditModalTab) => void;
   /** Перемещение окна вдоль стены (левый край, мм); без lastError — для drag. false если невалидно. */
   applyOpeningRepositionLeftEdge: (openingId: string, leftEdgeMm: number) => boolean;
   openWallJointParamsModal: () => void;
@@ -291,8 +315,11 @@ export const useAppStore = create<AppStore>((set, get) => {
     profilesModalOpen: false,
     addWallModalOpen: false,
     addWindowModalOpen: false,
+    addDoorModalOpen: false,
     pendingWindowPlacement: null,
+    pendingDoorPlacement: null,
     windowEditModal: null,
+    doorEditModal: null,
     wallJointParamsModalOpen: false,
     wallJointSession: null,
     wallPlacementSession: null,
@@ -567,6 +594,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     openAddWindowModal: () =>
       set({
         addWindowModalOpen: true,
+        addDoorModalOpen: false,
         addWallModalOpen: false,
         wallPlacementSession: null,
         wallJointSession: null,
@@ -575,8 +603,20 @@ export const useAppStore = create<AppStore>((set, get) => {
         windowEditModal: null,
         lastError: null,
       }),
+    openAddDoorModal: () =>
+      set({
+        addDoorModalOpen: true,
+        addWindowModalOpen: false,
+        wallPlacementSession: null,
+        wallJointSession: null,
+        wallJointParamsModalOpen: false,
+        wallCoordinateModalOpen: false,
+        doorEditModal: null,
+        lastError: null,
+      }),
 
     closeAddWindowModal: () => set({ addWindowModalOpen: false }),
+    closeAddDoorModal: () => set({ addDoorModalOpen: false }),
 
     applyWindowFormModal: (input) => {
       const p = get().currentProject;
@@ -585,6 +625,17 @@ export const useAppStore = create<AppStore>((set, get) => {
         currentProject: r.project,
         addWindowModalOpen: false,
         pendingWindowPlacement: { openingId: r.openingId },
+        dirty: true,
+        lastError: null,
+      });
+    },
+    applyDoorFormModal: (input) => {
+      const p = get().currentProject;
+      const r = addUnplacedDoorToProject(p, input);
+      set({
+        currentProject: r.project,
+        addDoorModalOpen: false,
+        pendingDoorPlacement: { openingId: r.openingId },
         dirty: true,
         lastError: null,
       });
@@ -598,6 +649,18 @@ export const useAppStore = create<AppStore>((set, get) => {
         return {
           pendingWindowPlacement: null,
           currentProject: removeUnplacedWindowDraft(s.currentProject, s.pendingWindowPlacement.openingId),
+          dirty: true,
+          lastError: null,
+        };
+      }),
+    clearPendingDoorPlacement: () =>
+      set((s) => {
+        if (!s.pendingDoorPlacement) {
+          return { pendingDoorPlacement: null };
+        }
+        return {
+          pendingDoorPlacement: null,
+          currentProject: removeUnplacedWindowDraft(s.currentProject, s.pendingDoorPlacement.openingId),
           dirty: true,
           lastError: null,
         };
@@ -657,6 +720,36 @@ export const useAppStore = create<AppStore>((set, get) => {
         lastError: null,
       });
     },
+    tryCommitPendingDoorPlacementAtWorld: (worldMm) => {
+      const pend = get().pendingDoorPlacement;
+      if (!pend) {
+        return;
+      }
+      const p0 = get().currentProject;
+      const layerSlice = narrowProjectToActiveLayer(p0);
+      const hit = pickClosestWallAlongPoint(worldMm, layerSlice.walls, Math.max(14, 22 / get().viewport2d.zoomPixelsPerMm));
+      if (!hit) {
+        set({ lastError: "Наведите курсор на стену и кликните по ней." });
+        return;
+      }
+      const op = p0.openings.find((o) => o.id === pend.openingId);
+      if (!op) {
+        set({ pendingDoorPlacement: null, lastError: null });
+        return;
+      }
+      const placed = placeDraftDoorOnWall(p0, pend.openingId, hit.wallId, offsetFromStartForCursorCentered(hit.alongMm, op.widthMm));
+      if ("error" in placed) {
+        set({ lastError: placed.error });
+        return;
+      }
+      set({
+        currentProject: placed.project,
+        pendingDoorPlacement: null,
+        doorEditModal: { openingId: pend.openingId, initialTab: "position" },
+        dirty: true,
+        lastError: null,
+      });
+    },
 
     closeWindowEditModal: () => set({ windowEditModal: null }),
 
@@ -677,12 +770,37 @@ export const useAppStore = create<AppStore>((set, get) => {
         lastError: null,
       });
     },
+    closeDoorEditModal: () => set({ doorEditModal: null }),
+    applyDoorEditModal: (payload) => {
+      const m = get().doorEditModal;
+      if (!m) {
+        return;
+      }
+      const r = saveDoorParams(get().currentProject, m.openingId, payload);
+      if ("error" in r) {
+        set({ lastError: r.error });
+        return;
+      }
+      set({
+        currentProject: r.project,
+        doorEditModal: null,
+        dirty: true,
+        lastError: null,
+      });
+    },
 
     openWindowEditModal: (openingId, initialTab = "form") =>
       set({
         windowEditModal: { openingId, initialTab: initialTab ?? "form" },
         addWindowModalOpen: false,
         pendingWindowPlacement: null,
+        lastError: null,
+      }),
+    openDoorEditModal: (openingId, initialTab = "form") =>
+      set({
+        doorEditModal: { openingId, initialTab: initialTab ?? "form" },
+        addDoorModalOpen: false,
+        pendingDoorPlacement: null,
         lastError: null,
       }),
 

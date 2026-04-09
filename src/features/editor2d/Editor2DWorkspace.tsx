@@ -28,12 +28,13 @@ import { appendWallLumberLabels2d } from "./wallLumberLabels2dPixi";
 import { drawWindowPlacementPreview2d } from "./drawWindowPlacementPreview2d";
 import { drawWallsAndOpenings2d } from "./walls2dPixi";
 import { appendWindowOpeningLabels2d } from "./windowOpeningLabels2dPixi";
+import { appendDoorOpeningLabels2d } from "./doorOpeningLabels2dPixi";
 import { buildViewportTransform, screenToWorld, worldToScreen } from "./viewportTransforms";
 import {
   clampOpeningLeftEdgeMm,
   offsetFromStartForCursorCentered,
   pickClosestWallAlongPoint,
-  pickPlacedWindowOnLayerSlice,
+  pickPlacedOpeningOnLayerSlice,
   projectWorldToAlongMm,
   snapOpeningLeftEdgeMm,
   validateWindowPlacementOnWall,
@@ -92,6 +93,7 @@ interface MarqueeDrag {
 interface OpeningPointerSession {
   readonly openingId: string;
   readonly wallId: string;
+  readonly kind: "window" | "door";
   readonly sx: number;
   readonly sy: number;
   readonly pointerId: number;
@@ -151,9 +153,13 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           setWallHintRef.current(null);
           return;
         }
-        if (useAppStore.getState().pendingWindowPlacement) {
+        if (useAppStore.getState().pendingWindowPlacement || useAppStore.getState().pendingDoorPlacement) {
           e.preventDefault();
-          useAppStore.getState().clearPendingWindowPlacement();
+          if (useAppStore.getState().pendingWindowPlacement) {
+            useAppStore.getState().clearPendingWindowPlacement();
+          } else {
+            useAppStore.getState().clearPendingDoorPlacement();
+          }
           windowPlacementHoverRef.current = null;
           setWallHintRef.current(null);
           return;
@@ -187,13 +193,14 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   }, []);
 
   const pendingWindowPlacement = useAppStore((s) => s.pendingWindowPlacement);
+  const pendingDoorPlacement = useAppStore((s) => s.pendingDoorPlacement);
   useEffect(() => {
     const el = hostRef.current;
     if (!el) {
       return;
     }
-    el.style.cursor = pendingWindowPlacement ? "crosshair" : "";
-  }, [pendingWindowPlacement]);
+    el.style.cursor = pendingWindowPlacement || pendingDoorPlacement ? "crosshair" : "";
+  }, [pendingWindowPlacement, pendingDoorPlacement]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -274,6 +281,9 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         appendWindowOpeningLabels2d(windowOpeningLabelsC, ctxSlice, t, "context", {
           dimensionProject: currentProject,
         });
+        appendDoorOpeningLabels2d(windowOpeningLabelsC, ctxSlice, t, "context", {
+          dimensionProject: currentProject,
+        });
         firstDraw = false;
       }
       const layerView = narrowProjectToActiveLayer(currentProject);
@@ -284,6 +294,9 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       });
       appendWallMarkLabels2d(wallLabelsC, layerView, t, "active", { dimensionProject: currentProject });
       appendWindowOpeningLabels2d(windowOpeningLabelsC, layerView, t, "active", {
+        dimensionProject: currentProject,
+      });
+      appendDoorOpeningLabels2d(windowOpeningLabelsC, layerView, t, "active", {
         dimensionProject: currentProject,
       });
 
@@ -307,7 +320,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       }
 
       windowPlacementG.clear();
-      const pend = useAppStore.getState().pendingWindowPlacement;
+      const pend = useAppStore.getState().pendingWindowPlacement ?? useAppStore.getState().pendingDoorPlacement;
       const hoverWin = windowPlacementHoverRef.current;
       if (pend && hoverWin) {
         const wall = currentProject.walls.find((w) => w.id === hoverWin.wallId);
@@ -506,7 +519,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             const wClick = screenToWorld(m.sx, m.sy, t);
             const layerView = narrowProjectToActiveLayer(currentProject);
             const tol = openingPickTolerancesMm(viewport2d.zoomPixelsPerMm);
-            const hitOp = pickPlacedWindowOnLayerSlice(layerView, wClick, tol.along, tol.perp);
+            const hitOp = pickPlacedOpeningOnLayerSlice(layerView, wClick, tol.along, tol.perp);
             if (hitOp) {
               if (m.shiftKey) {
                 const s = new Set(store.selectedEntityIds);
@@ -569,7 +582,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             const proj = useAppStore.getState().currentProject;
             const wall = proj.walls.find((x) => x.id === opSess.wallId);
             const opn = proj.openings.find((x) => x.id === opSess.openingId);
-            if (wall && opn) {
+            if (wall && opn && opSess.kind === "window") {
               const along = projectWorldToAlongMm(wall, p);
               const rawLeft = offsetFromStartForCursorCentered(along, opn.widthMm);
               const left = clampOpeningLeftEdgeMm(wall, opn.widthMm, rawLeft);
@@ -582,7 +595,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         }
 
         const rect = canvas.getBoundingClientRect();
-        const pend = useAppStore.getState().pendingWindowPlacement;
+        const pend = useAppStore.getState().pendingWindowPlacement ?? useAppStore.getState().pendingDoorPlacement;
         if (pend) {
           windowPlacementHoverRef.current = null;
           const layerView = narrowProjectToActiveLayer(currentProject);
@@ -614,14 +627,14 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                 setWallHintRef.current({
                   left: hudWin.hintLeft,
                   top: hudWin.hintTop,
-                  text: `Установка окна\n${hintExtra}`,
+                  text: `${op.kind === "door" ? "Установка двери" : "Установка окна"}\n${hintExtra}`,
                 });
               }
             } else {
               setWallHintRef.current({
                 left: hudWin.hintLeft,
                 top: hudWin.hintTop,
-                text: "Установка окна\nНаведите курсор на стену активного слоя",
+                text: "Установка проёма\nНаведите курсор на стену активного слоя",
               });
             }
           }
@@ -743,15 +756,26 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         const worldMm = screenToWorld(ev.global.x, ev.global.y, t);
 
         const pendingWin = useAppStore.getState().pendingWindowPlacement;
+        const pendingDoor = useAppStore.getState().pendingDoorPlacement;
         if (pendingWin && ev.button === 0) {
           useAppStore.getState().tryCommitPendingWindowPlacementAtWorld(worldMm);
           windowPlacementHoverRef.current = null;
           paint();
           return;
         }
-        if (pendingWin && ev.button === 2) {
+        if (pendingDoor && ev.button === 0) {
+          useAppStore.getState().tryCommitPendingDoorPlacementAtWorld(worldMm);
+          windowPlacementHoverRef.current = null;
+          paint();
+          return;
+        }
+        if ((pendingWin || pendingDoor) && ev.button === 2) {
           ev.preventDefault();
-          useAppStore.getState().clearPendingWindowPlacement();
+          if (pendingWin) {
+            useAppStore.getState().clearPendingWindowPlacement();
+          } else {
+            useAppStore.getState().clearPendingDoorPlacement();
+          }
           windowPlacementHoverRef.current = null;
           setWallHintRef.current(null);
           paint();
@@ -818,7 +842,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           activeTool === "select" &&
           !wallJointSession &&
           !wallPlacementSession &&
-          !useAppStore.getState().pendingWindowPlacement
+          !useAppStore.getState().pendingWindowPlacement &&
+          !useAppStore.getState().pendingDoorPlacement
         ) {
           ev.preventDefault();
           const { viewport2d: v2 } = useAppStore.getState();
@@ -842,16 +867,18 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           activeTool === "select" &&
           !wallJointSession &&
           !wallPlacementSession &&
-          !useAppStore.getState().pendingWindowPlacement
+          !useAppStore.getState().pendingWindowPlacement &&
+          !useAppStore.getState().pendingDoorPlacement
         ) {
           const cp = useAppStore.getState().currentProject;
           const layerView = narrowProjectToActiveLayer(cp);
           const tol = openingPickTolerancesMm(viewport2d.zoomPixelsPerMm);
-          const hitOp = pickPlacedWindowOnLayerSlice(layerView, worldMm, tol.along, tol.perp);
+          const hitOp = pickPlacedOpeningOnLayerSlice(layerView, worldMm, tol.along, tol.perp);
           if (hitOp && hitOp.wallId != null) {
             openingPointerRef.current = {
               openingId: hitOp.id,
               wallId: hitOp.wallId,
+              kind: hitOp.kind === "door" ? "door" : "window",
               sx: ev.global.x,
               sy: ev.global.y,
               pointerId: ev.pointerId,
@@ -901,7 +928,11 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             const now = Date.now();
             const last = lastOpeningClickRef.current;
             if (last && last.id === opPtr.openingId && now - last.t < 480) {
-              useAppStore.getState().openWindowEditModal(opPtr.openingId, "form");
+              if (opPtr.kind === "door") {
+                useAppStore.getState().openDoorEditModal(opPtr.openingId, "form");
+              } else {
+                useAppStore.getState().openWindowEditModal(opPtr.openingId, "form");
+              }
               lastOpeningClickRef.current = null;
             } else {
               lastOpeningClickRef.current = { id: opPtr.openingId, t: now };
@@ -911,7 +942,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             const proj = useAppStore.getState().currentProject;
             const o = proj.openings.find((x) => x.id === opPtr.openingId);
             const wall = proj.walls.find((w) => w.id === opPtr.wallId);
-            if (o && wall && o.offsetFromStartMm != null) {
+            if (opPtr.kind === "window" && o && wall && o.offsetFromStartMm != null) {
               const snapped = snapOpeningLeftEdgeMm(
                 wall,
                 o.widthMm,
@@ -947,7 +978,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             const proj = useAppStore.getState().currentProject;
             const o = proj.openings.find((x) => x.id === opPtr.openingId);
             const wall = proj.walls.find((w) => w.id === opPtr.wallId);
-            if (o && wall && o.offsetFromStartMm != null) {
+            if (opPtr.kind === "window" && o && wall && o.offsetFromStartMm != null) {
               const snapped = snapOpeningLeftEdgeMm(
                 wall,
                 o.widthMm,
@@ -967,11 +998,11 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         jointHoverRef.current = null;
         const st = useAppStore.getState();
         windowPlacementHoverRef.current = null;
-        if (!st.wallPlacementSession && !st.wallJointSession && !st.pendingWindowPlacement) {
+        if (!st.wallPlacementSession && !st.wallJointSession && !st.pendingWindowPlacement && !st.pendingDoorPlacement) {
           setWallHintRef.current(null);
           setCoordHudRef.current(null);
         }
-        if (st.wallJointSession || st.pendingWindowPlacement) {
+        if (st.wallJointSession || st.pendingWindowPlacement || st.pendingDoorPlacement) {
           paint();
         }
       };

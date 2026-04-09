@@ -11,26 +11,34 @@ import { ProjectCalculationMeshes } from "./ProjectCalculationMeshes";
 import { ProjectOpeningMeshes } from "./ProjectOpeningMeshes";
 import { ProjectWalls } from "./ProjectWalls";
 import { useEditor3dThemeColors } from "./useEditor3dThemeColors";
+import type { WallRenderMeshSpec } from "./wallMeshSpec";
 
 type Selected3d =
   | { kind: "calc"; reactKey: string; spec: ReturnType<typeof buildCalculationSolidSpecsForProject>[number] }
   | { kind: "opening"; reactKey: string; spec: Opening3dMeshSpec }
+  | { kind: "wall"; reactKey: string; spec: WallRenderMeshSpec }
   | null;
 
 function SceneFromProject({
   selected,
   onSelectCalculation,
   onSelectOpening,
+  onSelectWall,
 }: {
   readonly selected: Selected3d;
   readonly onSelectCalculation: (s: ReturnType<typeof buildCalculationSolidSpecsForProject>[number]) => void;
   readonly onSelectOpening: (s: Opening3dMeshSpec) => void;
+  readonly onSelectWall: (s: WallRenderMeshSpec) => void;
 }) {
   const project = useAppStore((s) => s.currentProject);
   const showCalc = project.viewState.show3dCalculation !== false;
   return (
     <>
-      <ProjectWalls project={project} />
+      <ProjectWalls
+        project={project}
+        selectedReactKey={selected?.kind === "wall" ? selected.reactKey : null}
+        onSelectWall={onSelectWall}
+      />
       <ProjectCalculationMeshes
         project={project}
         visible={showCalc}
@@ -62,12 +70,29 @@ export function Editor3DWorkspace() {
     if (selected3d.kind === "opening") {
       const s = selected3d.spec;
       return {
-        title: "Окно/обрамление",
+        title: "Проём/обрамление",
         rows: [
           ["ID", s.reactKey],
           ["Тип", s.kind],
           ["Стенa", s.wallId],
           ["Проём", s.openingId],
+          ["Ширина", `${Math.round(s.width * 1000)} мм`],
+          ["Высота", `${Math.round(s.height * 1000)} мм`],
+          ["Длина", `${Math.round(s.depth * 1000)} мм`],
+        ] as const,
+      };
+    }
+    if (selected3d.kind === "wall") {
+      const s = selected3d.spec;
+      return {
+        title: "SIP-панель",
+        rows: [
+          ["ID", s.reactKey],
+          ["Категория", "sip"],
+          ["Стена", s.wallId],
+          ["Расчёт", project.wallCalculations.find((c) => c.wallId === s.wallId)?.id ?? "—"],
+          ["Деталь", s.layerId ?? "shell"],
+          ["Роль", s.materialType],
           ["Ширина", `${Math.round(s.width * 1000)} мм`],
           ["Высота", `${Math.round(s.height * 1000)} мм`],
           ["Длина", `${Math.round(s.depth * 1000)} мм`],
@@ -185,6 +210,7 @@ export function Editor3DWorkspace() {
           selected={selected3d}
           onSelectCalculation={(s) => setSelected3d({ kind: "calc", reactKey: s.reactKey, spec: s })}
           onSelectOpening={(s) => setSelected3d({ kind: "opening", reactKey: s.reactKey, spec: s })}
+          onSelectWall={(s) => setSelected3d({ kind: "wall", reactKey: s.reactKey, spec: s })}
         />
         <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
       </Canvas>

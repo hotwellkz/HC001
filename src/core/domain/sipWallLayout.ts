@@ -382,14 +382,19 @@ export function buildWallCalculationForWall(
       const headerLen = Math.max(0, Math.round(spanEnd - spanStart));
       const metaBase = { openingId: o.id, kind: o.kind };
 
+      const isDoor = o.kind === "door";
       const sill = o.kind === "window" ? Math.max(0, o.sillHeightMm ?? 0) : 0;
-      const splitLower = o.kind === "window" ? Math.max(0, sill - OPENING_NODE_SHIFT_MM) : sill;
-      const openTop = o.kind === "window" ? sill + o.heightMm : Math.round(verticalBetweenPlatesMm * 0.72);
+      const splitLower = o.kind === "window" ? Math.max(0, sill - OPENING_NODE_SHIFT_MM) : 0;
+      const openTop = o.kind === "window" ? sill + o.heightMm : o.heightMm;
       const horT = m.plateBoardThicknessMm;
-      const topGap = OPENING_NODE_SHIFT_MM;
-      const lowerSegLen = Math.max(0, Math.min(verticalBetweenPlatesMm, splitLower - horT));
-      const middleSegLen = Math.max(0, Math.min(verticalBetweenPlatesMm - lowerSegLen, openTop - splitLower - horT));
-      const upperSegLen = Math.max(0, verticalBetweenPlatesMm - lowerSegLen - middleSegLen - horT - topGap);
+      const topGap = isDoor ? 0 : OPENING_NODE_SHIFT_MM;
+      const lowerSegLen = isDoor ? 0 : Math.max(0, Math.min(verticalBetweenPlatesMm, splitLower - horT));
+      const middleSegLen = isDoor
+        ? Math.max(0, Math.min(verticalBetweenPlatesMm, openTop))
+        : Math.max(0, Math.min(verticalBetweenPlatesMm - lowerSegLen, openTop - splitLower - horT));
+      const upperSegLen = isDoor
+        ? Math.max(0, verticalBetweenPlatesMm - openTop - horT)
+        : Math.max(0, verticalBetweenPlatesMm - lowerSegLen - middleSegLen - horT - topGap);
 
       const pushStudSegment = (
         role: "opening_left_stud" | "opening_right_stud",
@@ -482,6 +487,20 @@ export function buildWallCalculationForWall(
       orientation: "along_wall",
       metadata: { segmentIndex: i },
     });
+    platePos = b;
+  }
+  /** Для дверного прохода нижнюю обвязку режем: в самом проёме порога быть не должно. */
+  const doorBlocks = openingsOnWall
+    .filter((o) => o.kind === "door")
+    .map((o) => ({ lo: Math.max(0, o.offsetFromStartMm), hi: Math.min(L, o.offsetFromStartMm + o.widthMm) }))
+    .filter((b) => b.hi - b.lo > EPS);
+  const lowerRanges = subtractIntervalsFromRange(0, L, doorBlocks);
+  for (let i = 0; i < lowerRanges.length; i++) {
+    const [a, b] = lowerRanges[i]!;
+    const len = Math.round(Math.max(0, b - a));
+    if (len < 1) {
+      continue;
+    }
     verticalDrafts.push({
       id: newEntityId(),
       wallId: wall.id,
@@ -493,9 +512,8 @@ export function buildWallCalculationForWall(
       endOffsetMm: b,
       lengthMm: len,
       orientation: "along_wall",
-      metadata: { segmentIndex: i },
+      metadata: { segmentIndex: i, splitByDoor: true },
     });
-    platePos = b;
   }
 
   const lumberPieces = numberAndSortLumberPieces(wall, verticalDrafts);

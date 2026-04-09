@@ -29,6 +29,15 @@ function IconWindowAdd() {
   );
 }
 
+function IconDoorAdd() {
+  return (
+    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M5 4h12a1 1 0 0 1 1 1v15h-2V6H7v14H5V4zm4 7h2v2H9v-2z" />
+      <path fill="currentColor" d="M19 9h2v10h-2z" opacity="0.45" />
+    </svg>
+  );
+}
+
 function IconCalculate() {
   return (
     <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -56,6 +65,7 @@ export function Editor2DPlanToolbar() {
   const open = useAppStore((s) => s.openAddWallModal);
   const openWindow = useAppStore((s) => s.openAddWindowModal);
   const openJoint = useAppStore((s) => s.openWallJointParamsModal);
+  const openDoor = useAppStore((s) => s.openAddDoorModal);
   const openCalc = useAppStore((s) => s.openWallCalculationModal);
   const wallToolActive = useAppStore((s) => s.wallPlacementSession != null);
   const jointModalOpen = useAppStore((s) => s.wallJointParamsModalOpen);
@@ -86,6 +96,15 @@ export function Editor2DPlanToolbar() {
         onClick={() => openWindow()}
       >
         <IconWindowAdd />
+      </button>
+      <button
+        type="button"
+        className="e2dpt-btn"
+        title="Добавить дверь"
+        aria-label="Добавить дверь"
+        onClick={() => openDoor()}
+      >
+        <IconDoorAdd />
       </button>
       <button
         type="button"

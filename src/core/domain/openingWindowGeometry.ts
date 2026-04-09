@@ -173,6 +173,32 @@ export function hitTestPlacedWindowOnWall(
   return along >= lo && along <= hi;
 }
 
+export function hitTestPlacedOpeningOnWall(
+  wall: Wall,
+  opening: Opening,
+  worldMm: Point2D,
+  tolAlongMm: number,
+  tolPerpMm: number,
+): boolean {
+  if ((opening.kind !== "window" && opening.kind !== "door") || opening.wallId !== wall.id || opening.offsetFromStartMm == null) {
+    return false;
+  }
+  const L = wallLengthMm(wall);
+  if (L < 1e-6) {
+    return false;
+  }
+  const { point, t } = closestPointOnSegment(wall.start, wall.end, worldMm);
+  const perp = Math.hypot(worldMm.x - point.x, worldMm.y - point.y);
+  const halfT = wall.thicknessMm / 2;
+  if (perp > halfT + tolPerpMm) {
+    return false;
+  }
+  const along = Math.max(0, Math.min(1, t)) * L;
+  const lo = opening.offsetFromStartMm - tolAlongMm;
+  const hi = opening.offsetFromStartMm + opening.widthMm + tolAlongMm;
+  return along >= lo && along <= hi;
+}
+
 /**
  * Окно «сверху» списка (последнее в массиве) при перекрытии — как порядок отрисовки в 2D.
  */
@@ -193,6 +219,29 @@ export function pickPlacedWindowOnLayerSlice(
       continue;
     }
     if (hitTestPlacedWindowOnWall(wall, o, worldMm, tolAlongMm, tolPerpMm)) {
+      hit = o;
+    }
+  }
+  return hit;
+}
+
+export function pickPlacedOpeningOnLayerSlice(
+  layerSlice: Project,
+  worldMm: Point2D,
+  tolAlongMm: number,
+  tolPerpMm: number,
+): Opening | null {
+  const wallIds = new Set(layerSlice.walls.map((w) => w.id));
+  let hit: Opening | null = null;
+  for (const o of layerSlice.openings) {
+    if ((o.kind !== "window" && o.kind !== "door") || o.wallId == null || o.offsetFromStartMm == null || !wallIds.has(o.wallId)) {
+      continue;
+    }
+    const wall = layerSlice.walls.find((w) => w.id === o.wallId);
+    if (!wall) {
+      continue;
+    }
+    if (hitTestPlacedOpeningOnWall(wall, o, worldMm, tolAlongMm, tolPerpMm)) {
       hit = o;
     }
   }

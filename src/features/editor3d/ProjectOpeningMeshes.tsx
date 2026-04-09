@@ -36,6 +36,12 @@ function materialForKind(kind: Opening3dMeshKind): {
     case "window_frame":
     case "window_mullion":
       return { color: 0xd8dee8, roughness: 0.42, metalness: 0.06 };
+    case "door_leaf":
+      return { color: 0x8b6a45, roughness: 0.58, metalness: 0.04 };
+    case "door_frame":
+      return { color: 0xb79573, roughness: 0.52, metalness: 0.04 };
+    case "door_handle":
+      return { color: 0xa7adb6, roughness: 0.26, metalness: 0.72 };
     default:
       return { color: 0xc49a6a, roughness: 0.52, metalness: 0.05 };
   }

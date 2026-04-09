@@ -270,15 +270,16 @@ function epsNormalSegmentsForSipRegionMm(
       ) {
         const op = openingById(project, meta.openingId);
         if (op && op.wallId === wall.id) {
+          const isDoor = op.kind === "door";
           const sill = op.kind === "window" ? (op.sillHeightMm ?? op.position?.sillLevelMm ?? 0) : 0;
-          const splitLower = Math.max(0, sill - OPENING_NODE_SHIFT_MM);
-          const openTop = op.kind === "window" ? sill + op.heightMm : Math.round(vCoreMm * 0.72);
+          const splitLower = isDoor ? 0 : Math.max(0, sill - OPENING_NODE_SHIFT_MM);
+          const openTop = op.kind === "window" ? sill + op.heightMm : op.heightMm;
           const horT = plateT;
           const segBottomLo = bottomMm + plateT;
           const segBottomHi = bottomMm + plateT + Math.max(0, splitLower - horT);
           const segMiddleLo = bottomMm + plateT + splitLower;
-          const segMiddleHi = bottomMm + plateT + Math.max(splitLower, openTop - horT);
-          const segTopLo = bottomMm + plateT + openTop;
+          const segMiddleHi = bottomMm + plateT + (isDoor ? openTop : Math.max(splitLower, openTop - horT));
+          const segTopLo = bottomMm + plateT + (isDoor ? openTop + horT : openTop);
           const segTopHi = bottomMm + plateT + vCoreMm;
           if (meta.studSegment === "bottom") {
             pLo = segBottomLo;
@@ -414,7 +415,7 @@ function sipSpecsForWall(
   const Tj = calc.settingsSnapshot.jointBoardThicknessMm;
   const horT = calc.settingsSnapshot.plateBoardThicknessMm;
   for (const o of project.openings) {
-    if (o.wallId !== wall.id || o.offsetFromStartMm == null || o.kind !== "window") {
+    if (o.wallId !== wall.id || o.offsetFromStartMm == null || (o.kind !== "window" && o.kind !== "door")) {
       continue;
     }
     /** Над/под окном берём диапазон между внутренними гранями боковых стоек, а не суженный "оконный блок". */
@@ -423,15 +424,18 @@ function sipSpecsForWall(
     if (o1 - o0 < 1e-3) {
       continue;
     }
-    const sill = Math.max(0, o.sillHeightMm ?? o.position?.sillLevelMm ?? 0);
+    const isDoor = o.kind === "door";
+    const sill = isDoor ? 0 : Math.max(0, o.sillHeightMm ?? o.position?.sillLevelMm ?? 0);
     const openTop = sill + o.heightMm;
-    const belowTop = Math.max(0, sill - horT - OPENING_NODE_SHIFT_MM);
-    const aboveBottom = Math.max(0, Math.min(vCoreMm, openTop + horT - OPENING_NODE_SHIFT_MM));
-    if (belowTop > 1e-3) {
+    const belowTop = isDoor ? 0 : Math.max(0, sill - horT - OPENING_NODE_SHIFT_MM);
+    const aboveBottom = isDoor
+      ? Math.max(0, Math.min(vCoreMm, openTop + horT))
+      : Math.max(0, Math.min(vCoreMm, openTop + horT - OPENING_NODE_SHIFT_MM));
+    if (!isDoor && belowTop > 1e-3) {
       pushResidualChunk(`${wall.id}-${calc.id}-sip-win-${o.id}-below`, o0, o1, 0, belowTop);
     }
     if (aboveBottom < vCoreMm - 1e-3) {
-      pushResidualChunk(`${wall.id}-${calc.id}-sip-win-${o.id}-above`, o0, o1, aboveBottom, vCoreMm);
+      pushResidualChunk(`${wall.id}-${calc.id}-sip-${isDoor ? "door" : "win"}-${o.id}-above`, o0, o1, aboveBottom, vCoreMm);
     }
   }
   return out;
@@ -536,12 +540,15 @@ function lumberPieceCenterYWorld(
   ) {
     const op = openingById(project, meta.openingId);
     if (op && op.wallId === wall.id) {
+      const isDoor = op.kind === "door";
       const sill = op.kind === "window" ? (op.sillHeightMm ?? 0) : 0;
-      const openTop = op.kind === "window" ? sill + op.heightMm : Math.round(vCoreMm * 0.72);
+      const openTop = op.kind === "window" ? sill + op.heightMm : op.heightMm;
       const horT = plateT;
       const len = piece.lengthMm;
-      const midCenter = bottomMm + sill + len / 2;
-      const topCenter = bottomMm + openTop + horT + len / 2;
+      const midCenter = isDoor ? bottomMm + plateT + len / 2 : bottomMm + sill + len / 2;
+      const topCenter = isDoor
+        ? bottomMm + plateT + openTop + horT + len / 2
+        : bottomMm + openTop + horT + len / 2;
       const botCenter = bottomMm + (sill - horT) - len / 2;
       if (meta.studSegment === "top") {
         return topCenter * MM_TO_M;
@@ -575,6 +582,9 @@ function lumberPieceCenterYWorld(
           ? ((meta as { sillLevelMm: number }).sillLevelMm ?? sill)
           : sill;
       if (piece.role === "opening_header") {
+        if (op.kind === "door") {
+          return bottomMm * MM_TO_M + plateT * MM_TO_M + op.heightMm * MM_TO_M + height / 2;
+        }
         return bottomMm * MM_TO_M + sill * MM_TO_M + op.heightMm * MM_TO_M + height / 2;
       }
       return bottomMm * MM_TO_M + sillFromMeta * MM_TO_M - height / 2;

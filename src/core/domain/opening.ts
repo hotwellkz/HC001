@@ -2,6 +2,8 @@ import type { WindowFormKey, WindowViewPresetKey } from "./windowFormCatalog";
 import type { OpeningPositionSpec, OpeningSipConstructionSpec } from "./openingWindowTypes";
 
 export type OpeningKind = "door" | "window" | "other";
+export type DoorOpeningType = "single";
+export type DoorOpeningSwing = "in_right" | "in_left" | "out_right" | "out_left";
 
 /** Проём, уже привязанный к стене (есть wallId и смещение вдоль оси). */
 export function isOpeningPlacedOnWall(o: Opening): o is Opening & { wallId: string; offsetFromStartMm: number } {
@@ -37,6 +39,14 @@ export interface Opening {
   readonly sipConstruction?: OpeningSipConstructionSpec | null;
   /** Стабильный номер окна в проекте (для марки ОК-n). */
   readonly windowSequenceNumber?: number;
+  /** Стабильный номер двери в проекте (для марки Д-n). */
+  readonly doorSequenceNumber?: number;
+  /** Дверь: тип. */
+  readonly doorType?: DoorOpeningType;
+  /** Дверь: направление открывания. */
+  readonly doorSwing?: DoorOpeningSwing;
+  /** Дверь: наличник, мм. */
+  readonly doorTrimMm?: number;
   readonly markLabel?: string;
   readonly createdAt?: string;
   readonly updatedAt?: string;

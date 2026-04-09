@@ -14,6 +14,15 @@ export interface AddWindowDraftPayload {
   readonly isEmptyOpening: boolean;
 }
 
+export interface AddDoorDraftPayload {
+  readonly widthMm: number;
+  readonly heightMm: number;
+  readonly isEmptyOpening: boolean;
+  readonly doorType: "single";
+  readonly doorSwing: "in_right" | "in_left" | "out_right" | "out_left";
+  readonly doorTrimMm: number;
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -37,6 +46,32 @@ export function addUnplacedWindowToProject(project: Project, draft: AddWindowDra
     isEmptyOpening: draft.isEmptyOpening,
     viewPreset: draft.viewPreset,
     sillOverhangMm: draft.sillOverhangMm,
+    createdAt: t,
+    updatedAt: t,
+  };
+  return {
+    project: touchProjectMeta({
+      ...project,
+      openings: [...project.openings, opening],
+    }),
+    openingId: id,
+  };
+}
+
+export function addUnplacedDoorToProject(project: Project, draft: AddDoorDraftPayload): { project: Project; openingId: string } {
+  const t = nowIso();
+  const id = newEntityId();
+  const opening: Opening = {
+    id,
+    wallId: null,
+    kind: "door",
+    offsetFromStartMm: null,
+    widthMm: draft.widthMm,
+    heightMm: draft.heightMm,
+    isEmptyOpening: draft.isEmptyOpening,
+    doorType: draft.doorType,
+    doorSwing: draft.doorSwing,
+    doorTrimMm: draft.doorTrimMm,
     createdAt: t,
     updatedAt: t,
   };

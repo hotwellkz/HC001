@@ -2,14 +2,17 @@ import { useMemo } from "react";
 import { DoubleSide } from "three";
 
 import type { Project } from "@/core/domain/project";
+import { openingSillLevelMm, openingTopLevelMmForShell } from "@/core/domain/doorGeometry";
 
 import { meshStandardPresetForLayerOrDefault } from "./materials3d";
 import { selectWallsForScene3d } from "./selectors/walls3d";
 import { isWallMeshSpecVisible } from "./view3dVisibility";
-import { wallsToMeshSpecs } from "./wallMeshSpec";
+import { wallsToMeshSpecs, type WallRenderMeshSpec } from "./wallMeshSpec";
 
 interface ProjectWallsProps {
   readonly project: Project;
+  readonly selectedReactKey?: string | null;
+  readonly onSelectWall?: (spec: WallRenderMeshSpec) => void;
 }
 
 const MM_TO_M = 0.001;
@@ -119,22 +122,22 @@ function seamSpecsForProject(project: Project): readonly OsbSeamSpec[] {
         if (s <= o0 + 1e-3 || s >= o1 - 1e-3) {
           continue;
         }
-        const sill = o.kind === "window" ? (o.sillHeightMm ?? o.position?.sillLevelMm ?? 900) : 0;
-        cuts.push({ lo: Math.max(0, sill), hi: Math.min(wall.heightMm, sill + o.heightMm) });
+        const sill = openingSillLevelMm(o);
+        cuts.push({ lo: Math.max(0, sill), hi: Math.min(wall.heightMm, openingTopLevelMmForShell(o)) });
       }
       const ySegments = subtractYIntervals(0, wall.heightMm, cuts);
       pushSeamAt(s, ySegments, `${i}`);
     }
     for (const o of project.openings) {
-      if (o.wallId !== wall.id || o.offsetFromStartMm == null || o.kind !== "window") {
+      if (o.wallId !== wall.id || o.offsetFromStartMm == null || (o.kind !== "window" && o.kind !== "door")) {
         continue;
       }
-      const sill = o.sillHeightMm ?? o.position?.sillLevelMm ?? 900;
+      const sill = openingSillLevelMm(o);
       const ySegs: [number, number][] = [];
       if (sill > 1e-3) {
         ySegs.push([0, Math.min(wall.heightMm, sill)]);
       }
-      const top = sill + o.heightMm;
+      const top = openingTopLevelMmForShell(o);
       if (top < wall.heightMm - 1e-3) {
         ySegs.push([Math.max(0, top), wall.heightMm]);
       }
@@ -152,7 +155,7 @@ function seamSpecsForProject(project: Project): readonly OsbSeamSpec[] {
 /**
  * Меши стен из domain model; обновляется при любом изменении project.
  */
-export function ProjectWalls({ project }: ProjectWallsProps) {
+export function ProjectWalls({ project, selectedReactKey = null, onSelectWall }: ProjectWallsProps) {
   const specs = useMemo(() => {
     const walls = selectWallsForScene3d(project);
     const all = wallsToMeshSpecs(project, walls);
@@ -165,21 +168,35 @@ export function ProjectWalls({ project }: ProjectWallsProps) {
       {specs.map((s) => {
         const preset = meshStandardPresetForLayerOrDefault(s.materialType);
         return (
-          <mesh
-            key={s.reactKey}
-            position={s.position}
-            rotation={[0, s.rotationY, 0]}
-            castShadow
-            receiveShadow
-          >
-            <boxGeometry args={[s.width, s.height, s.depth]} />
-            <meshStandardMaterial
-              color={preset.color}
-              roughness={preset.roughness}
-              metalness={preset.metalness}
-              side={DoubleSide}
-            />
-          </mesh>
+          <group key={s.reactKey}>
+            <mesh
+              position={s.position}
+              rotation={[0, s.rotationY, 0]}
+              castShadow
+              receiveShadow
+              onPointerDown={(e) => {
+                if (!onSelectWall) {
+                  return;
+                }
+                e.stopPropagation();
+                onSelectWall(s);
+              }}
+            >
+              <boxGeometry args={[s.width, s.height, s.depth]} />
+              <meshStandardMaterial
+                color={preset.color}
+                roughness={preset.roughness}
+                metalness={preset.metalness}
+                side={DoubleSide}
+              />
+            </mesh>
+            {selectedReactKey === s.reactKey ? (
+              <mesh position={s.position} rotation={[0, s.rotationY, 0]}>
+                <boxGeometry args={[s.width * 1.015, s.height * 1.015, s.depth * 1.015]} />
+                <meshBasicMaterial color={0xf2c94c} wireframe transparent opacity={0.95} depthTest={false} />
+              </mesh>
+            ) : null}
+          </group>
         );
       })}
       <group name="project-osb-seams">

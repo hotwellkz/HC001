@@ -4,6 +4,7 @@ import type { Profile, ProfileMaterialType } from "@/core/domain/profile";
 import type { Project } from "@/core/domain/project";
 import type { Wall } from "@/core/domain/wall";
 import { wallLengthMm } from "@/core/domain/wallCalculationGeometry";
+import { openingSillLevelMm, openingTopLevelMmForShell } from "@/core/domain/doorGeometry";
 import { subtractOpeningFacesFromWallRect, type WallOpeningFaceMm } from "@/core/domain/wallFaceOpeningSubdivide";
 import {
   coreLayerNormalOffsetsMm,
@@ -64,11 +65,11 @@ function openingsOnWallFaceMm(wall: Wall, project: Project): WallOpeningFaceMm[]
     if (o.wallId !== wall.id || o.offsetFromStartMm == null) {
       continue;
     }
-    const sill = o.kind === "window" ? (o.sillHeightMm ?? o.position?.sillLevelMm ?? 900) : 0;
+    const sill = openingSillLevelMm(o);
     const lo = Math.max(0, o.offsetFromStartMm);
     const hi = Math.min(L, o.offsetFromStartMm + o.widthMm);
     const y0 = Math.max(0, sill);
-    const y1 = Math.min(wall.heightMm, sill + o.heightMm);
+    const y1 = Math.min(wall.heightMm, openingTopLevelMmForShell(o));
     if (hi - lo < MIN_LEN_MM || y1 - y0 < MIN_LEN_MM) {
       continue;
     }
@@ -194,15 +195,14 @@ function layeredSpecsFromProfile(wall: Wall, project: Project, profile: Profile)
 
   const rotationY = Math.atan2(dxM, dzM);
 
-  const openings = openingsOnWallFaceMm(wall, project);
-  const faceRects = subtractOpeningFacesFromWallRect(lenMm, heightMm, openings);
-
   const T = wall.thicknessMm;
 
   const out: WallRenderMeshSpec[] = [];
   let acc = -T / 2;
   let stripIdx = 0;
   for (const strip of strips) {
+    const openings = openingsOnWallFaceMm(wall, project);
+    const faceRects = subtractOpeningFacesFromWallRect(lenMm, heightMm, openings);
     const tMm = strip.thicknessMm;
     if (tMm < 1e-6) {
       continue;
