@@ -42,7 +42,12 @@ import {
   saveWindowParamsAndRegenerateFraming,
   type SaveWindowParamsPayload,
 } from "@/core/domain/openingWindowMutations";
-import { placeDraftDoorOnWall, saveDoorParams, type SaveDoorParamsPayload } from "@/core/domain/openingDoorMutations";
+import {
+  placeDraftDoorOnWall,
+  repositionPlacedDoorLeftEdge,
+  saveDoorParams,
+  type SaveDoorParamsPayload,
+} from "@/core/domain/openingDoorMutations";
 import {
   clampOpeningLeftEdgeMm,
   offsetFromStartForCursorCentered,
@@ -137,6 +142,8 @@ interface AppState {
   readonly firestoreEnabled: boolean;
   /** Размер canvas 2D для привязки и модалки координат (не персистится). */
   readonly viewportCanvas2dPx: { readonly width: number; readonly height: number } | null;
+  /** Режим редактирования смещения выбранного проёма по размерным линиям. */
+  readonly openingMoveModeActive: boolean;
 }
 
 interface AppActions {
@@ -217,6 +224,8 @@ interface AppActions {
   openDoorEditModal: (openingId: string, initialTab?: WindowEditModalTab) => void;
   /** Перемещение окна вдоль стены (левый край, мм); без lastError — для drag. false если невалидно. */
   applyOpeningRepositionLeftEdge: (openingId: string, leftEdgeMm: number) => boolean;
+  setOpeningMoveModeActive: (active: boolean) => void;
+  toggleOpeningMoveMode: () => void;
   openWallJointParamsModal: () => void;
   closeWallJointParamsModal: () => void;
   applyWallJointParamsModal: (kind: WallJointKind) => void;
@@ -332,6 +341,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     persistenceStatus: "loading",
     firestoreEnabled: false,
     viewportCanvas2dPx: null,
+    openingMoveModeActive: false,
 
     setViewportCanvas2dPx: (width, height) =>
       set({
@@ -361,6 +371,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     setActiveTool: (tool) =>
       set({
         activeTool: tool,
+        openingMoveModeActive: tool === "select" ? get().openingMoveModeActive : false,
         ...(tool === "select"
           ? {
               wallPlacementSession: null,
@@ -404,6 +415,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           pendingWindowPlacement: tab === "2d" ? s.pendingWindowPlacement : null,
           windowEditModal: tab === "2d" ? s.windowEditModal : null,
           wallCoordinateModalOpen: tab === "2d" ? s.wallCoordinateModalOpen : false,
+          openingMoveModeActive: tab === "2d" ? s.openingMoveModeActive : false,
           currentProject: mergeViewState(tab !== "2d" && s.pendingWindowPlacement ? proj : s.currentProject, {
             activeTab: tab,
           }),
@@ -805,13 +817,20 @@ export const useAppStore = create<AppStore>((set, get) => {
       }),
 
     applyOpeningRepositionLeftEdge: (openingId, leftEdgeMm) => {
-      const r = repositionPlacedWindowLeftEdge(get().currentProject, openingId, leftEdgeMm);
+      const p = get().currentProject;
+      const op = p.openings.find((o) => o.id === openingId);
+      const r =
+        op?.kind === "door"
+          ? repositionPlacedDoorLeftEdge(p, openingId, leftEdgeMm)
+          : repositionPlacedWindowLeftEdge(p, openingId, leftEdgeMm);
       if ("error" in r) {
         return false;
       }
       set({ currentProject: r.project, dirty: true });
       return true;
     },
+    setOpeningMoveModeActive: (active) => set({ openingMoveModeActive: active }),
+    toggleOpeningMoveMode: () => set((s) => ({ openingMoveModeActive: !s.openingMoveModeActive })),
 
     openWallJointParamsModal: () =>
       set({

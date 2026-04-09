@@ -12,14 +12,23 @@ import {
 import { buildSipPanelPieceMark } from "./wallCalculation";
 
 describe("splitLengthMm", () => {
-  it("делит длину > max на сбалансированные куски", () => {
-    expect(splitLengthMm(9220, 6000)).toEqual([4610, 4610]);
+  it("если длина меньше стандарта — один кусок", () => {
+    expect(splitLengthMm(5800, 6000)).toEqual([5800]);
   });
-  it("одна деталь если укладывается", () => {
-    expect(splitLengthMm(4000, 6000)).toEqual([4000]);
+  it("если длина равна стандарту — один кусок", () => {
+    expect(splitLengthMm(6000, 6000)).toEqual([6000]);
+  });
+  it("режет по 6000 + остаток", () => {
+    expect(splitLengthMm(6263, 6000)).toEqual([6000, 263]);
+  });
+  it("малый остаток перераспределяет между двумя последними", () => {
+    expect(splitLengthMm(6050, 6000)).toEqual([5950, 100]);
+  });
+  it("малый остаток при нескольких полных заготовках", () => {
+    expect(splitLengthMm(12050, 6000)).toEqual([6000, 5950, 100]);
   });
   it("сумма чанков равна полной длине (обвязка по сегментам заготовки)", () => {
-    for (const L of [1000, 8000, 8001, 12000]) {
+    for (const L of [1000, 6000, 6263, 6050, 8001, 12000, 12050]) {
       const chunks = splitLengthMm(L, 6000);
       const sum = chunks.reduce((a, b) => a + b, 0);
       expect(sum).toBe(L);
@@ -128,5 +137,27 @@ describe("buildWallCalculationForWall", () => {
       options: { includeOpeningFraming: false, includeWallConnectionElements: true },
     });
     expect(calc.lumberPieces.some((x) => x.role === "tee_joint_board")).toBe(true);
+  });
+
+  it("для окна узкий остаток у края (<250) не блокирует расчёт", () => {
+    const p = createDemoProject();
+    const wall = p.walls[0]!;
+    const profile = p.profiles[0]!;
+    const opening: Opening = {
+      id: "o-edge-window",
+      wallId: wall.id,
+      kind: "window",
+      offsetFromStartMm: 120,
+      widthMm: 1200,
+      heightMm: 1300,
+      sillHeightMm: 900,
+    };
+    expect(() =>
+      buildWallCalculationForWall(wall, profile, {
+        openings: [opening],
+        wallJoints: [],
+        options: { includeOpeningFraming: true, includeWallConnectionElements: true },
+      }),
+    ).not.toThrow();
   });
 });

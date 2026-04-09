@@ -49,6 +49,14 @@ function IconCalculate() {
   );
 }
 
+function IconMoveOpening() {
+  return (
+    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M12 3l3 3h-2v4h-2V6H9l3-3zm0 18l-3-3h2v-4h2v4h2l-3 3zM3 12l3-3v2h4v2H6v2l-3-3zm18 0l-3 3v-2h-4v-2h4V9l3 3z" />
+    </svg>
+  );
+}
+
 function IconWallJoint() {
   return (
     <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -74,6 +82,12 @@ export function Editor2DPlanToolbar() {
     const sel = new Set(s.selectedEntityIds);
     return s.currentProject.walls.filter((w) => sel.has(w.id)).length;
   });
+  const selectedOpeningCount = useAppStore((s) => {
+    const sel = new Set(s.selectedEntityIds);
+    return s.currentProject.openings.filter((o) => sel.has(o.id) && (o.kind === "window" || o.kind === "door")).length;
+  });
+  const openingMoveModeActive = useAppStore((s) => s.openingMoveModeActive);
+  const toggleOpeningMoveMode = useAppStore((s) => s.toggleOpeningMoveMode);
 
   return (
     <div className="e2dpt" role="toolbar" aria-label="Построение плана">
@@ -116,6 +130,18 @@ export function Editor2DPlanToolbar() {
         onClick={() => openJoint()}
       >
         <IconWallJoint />
+      </button>
+      <button
+        type="button"
+        className="e2dpt-btn"
+        title={selectedOpeningCount === 1 ? "Переместить" : "Выберите одно окно или дверь"}
+        aria-label="Переместить"
+        aria-pressed={openingMoveModeActive}
+        data-active={openingMoveModeActive}
+        disabled={selectedOpeningCount !== 1}
+        onClick={() => toggleOpeningMoveMode()}
+      >
+        <IconMoveOpening />
       </button>
       <button
         type="button"

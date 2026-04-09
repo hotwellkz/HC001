@@ -11,6 +11,8 @@ const MIN_LEN_MM = 1;
 const SIP_SEAM_DEPTH_MM = 1.5;
 /** Торцевые швы досок — чуть тоньше/слабее SIP, тот же принцип тонкого бокса. */
 const LUMBER_SEAM_DEPTH_MM = 1.2;
+const LUMBER_SEAM_MIN_ALONG_MM = 20;
+const LUMBER_SEAM_MIN_FACE_MM = 6;
 /** Минимальная толщина EPS-сегмента (мм), чтобы не порождать пылинки. */
 const EPS_SEGMENT_MIN_MM = 1.5;
 const OPENING_NODE_SHIFT_MM = 45;
@@ -614,9 +616,14 @@ function lumberSeamSpecsForWall(
 ): CalculationSolidSpec[] {
   const out: CalculationSolidSpec[] = [];
   const thinZ = LUMBER_SEAM_DEPTH_MM * MM_TO_M;
-  const minAlong = 2 * LUMBER_SEAM_DEPTH_MM + 0.5;
+  const minAlong = Math.max(2 * LUMBER_SEAM_DEPTH_MM + 0.5, LUMBER_SEAM_MIN_ALONG_MM);
+  const seen = new Set<string>();
 
   for (const piece of calc.lumberPieces) {
+    /** Для стыковочных досок торцевые seam-накладки дают визуальный "мусор" и не несут полезной информации. */
+    if (piece.role === "tee_joint_board" || piece.role === "corner_joint_board") {
+      continue;
+    }
     const zShift = alongShiftForPieceMm(piece);
     const s0 = Math.min(piece.startOffsetMm, piece.endOffsetMm) + zShift;
     const s1 = Math.max(piece.startOffsetMm, piece.endOffsetMm) + zShift;
@@ -637,14 +644,29 @@ function lumberSeamSpecsForWall(
       faceWidthM = sd * MM_TO_M;
       faceHeightM = st * MM_TO_M;
     }
+    if (faceWidthM * 1000 < LUMBER_SEAM_MIN_FACE_MM || faceHeightM * 1000 < LUMBER_SEAM_MIN_FACE_MM) {
+      continue;
+    }
 
-    const alongShiftMm = piece.role === "joint_board" ? -piece.sectionThicknessMm / 2 : 0;
+    const alongShiftMm = 0;
     for (let i = 0; i < 2; i++) {
       const s = (i === 0 ? s0 : s1) + alongShiftMm;
       const p = pointAlongWallMm(sx, sy, ux, uy, s);
       const cx = (p.x + nx * coreMid) * MM_TO_M;
       const cz = (-p.y + nz * coreMid) * MM_TO_M;
       const tag = i === 0 ? "a" : "b";
+      const dedupeKey = [
+        wall.id,
+        Math.round(cx * 10000),
+        Math.round(cy * 10000),
+        Math.round(cz * 10000),
+        Math.round(faceWidthM * 10000),
+        Math.round(faceHeightM * 10000),
+      ].join(":");
+      if (seen.has(dedupeKey)) {
+        continue;
+      }
+      seen.add(dedupeKey);
       out.push({
         reactKey: `${wall.id}-${calc.id}-lumber-seam-${piece.id}-${tag}`,
         wallId: wall.id,

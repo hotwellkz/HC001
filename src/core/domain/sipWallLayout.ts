@@ -29,24 +29,44 @@ export class SipWallLayoutError extends Error {
   }
 }
 
-/** Разбивает длину (мм) на участки не длиннее maxPieceMm, сбалансированно. */
-export function splitLengthMm(totalMm: number, maxPieceMm: number): readonly number[] {
+/**
+ * Производственный раскрой линейной доски:
+ * - шаг стандартной заготовки (stockLengthMm), обычно 6000 мм;
+ * - если последний остаток меньше minSegmentMm, его переносим в предпоследний кусок
+ *   (чтобы не получать "огрызок" < minSegmentMm).
+ */
+export function splitLengthMm(totalMm: number, stockLengthMm: number, minSegmentMm = 100): readonly number[] {
   if (totalMm <= 0 || !Number.isFinite(totalMm)) {
     return [];
   }
-  if (maxPieceMm <= 0 || !Number.isFinite(maxPieceMm)) {
+  if (stockLengthMm <= 0 || !Number.isFinite(stockLengthMm)) {
     return [Math.round(totalMm)];
   }
-  const n = Math.ceil(totalMm / maxPieceMm);
-  const base = Math.floor(totalMm / n);
-  let rem = Math.round(totalMm - base * n);
-  const out: number[] = [];
-  for (let i = 0; i < n; i++) {
-    out.push(base + (rem > 0 ? 1 : 0));
-    if (rem > 0) {
-      rem -= 1;
-    }
+  const total = Math.round(totalMm);
+  if (total <= stockLengthMm) {
+    return [total];
   }
+
+  const fullCount = Math.floor(total / stockLengthMm);
+  const rem = total - fullCount * stockLengthMm;
+  const out: number[] = Array.from({ length: fullCount }, () => stockLengthMm);
+  if (rem === 0) {
+    return out;
+  }
+
+  if (rem >= minSegmentMm) {
+    out.push(rem);
+    return out;
+  }
+
+  if (out.length === 0) {
+    return [total];
+  }
+
+  const deficit = minSegmentMm - rem;
+  const lastIdx = out.length - 1;
+  out[lastIdx] = Math.max(1, out[lastIdx]! - deficit);
+  out.push(minSegmentMm);
   return out;
 }
 
@@ -107,6 +127,13 @@ function distributePanelWidths(S: number, n: number, Wmin: number, Wn: number): 
 
 const EPS = 1e-3;
 const OPENING_NODE_SHIFT_MM = 45;
+
+function getOpeningMinEdgeRestMm(wall: Wall, opening: Opening, m: EffectiveWallManufacturingSettings): number {
+  if (opening.kind === "window" || opening.kind === "door") {
+    return Math.max(0, wall.thicknessMm);
+  }
+  return m.minPanelWidthMm;
+}
 
 function intervalsOverlap(a0: number, a1: number, b0: number, b1: number): boolean {
   return a0 < b1 - EPS && a1 > b0 + EPS;
@@ -223,15 +250,27 @@ export function buildWallCalculationForWall(
     .sort((a, b) => a.offsetFromStartMm - b.offsetFromStartMm);
 
   const openingBlocks = openingsOnWall.map((o) => {
-    const lo = Math.max(0, o.offsetFromStartMm);
-    const hi = Math.min(L, o.offsetFromStartMm + o.widthMm);
-    return { lo, hi };
+    const minRest = getOpeningMinEdgeRestMm(wall, o, m);
+    const maxLeft = Math.max(minRest, L - o.widthMm - minRest);
+    const lo = Math.max(minRest, Math.min(maxLeft, o.offsetFromStartMm));
+    const hi = Math.min(L - minRest, lo + o.widthMm);
+    return { lo, hi, kind: o.kind };
   }).filter((b) => b.hi - b.lo > EPS);
 
   const segments = subtractIntervalsFromRange(interiorLo, interiorHi, openingBlocks);
 
+  const segmentTouchesFlexibleOpening = (a: number, b: number): boolean => {
+    const leftFlexible = openingBlocks.some(
+      (ob) => Math.abs(ob.hi - a) <= 1e-6 && (ob.kind === "door" || ob.kind === "window"),
+    );
+    const rightFlexible = openingBlocks.some(
+      (ob) => Math.abs(ob.lo - b) <= 1e-6 && (ob.kind === "door" || ob.kind === "window"),
+    );
+    return leftFlexible || rightFlexible;
+  };
+
   for (const [a, b] of segments) {
-    if (b - a < m.minPanelWidthMm - 1e-6) {
+    if (!segmentTouchesFlexibleOpening(a, b) && b - a < m.minPanelWidthMm - 1e-6) {
       throw new SipWallLayoutError(
         `Между проёмами осталось ${Math.round(b - a)} мм — меньше минимума панели ${m.minPanelWidthMm} мм.`,
       );
@@ -284,7 +323,10 @@ export function buildWallCalculationForWall(
   let sipIndex = 0;
   for (const [segLo, segHi] of segments) {
     const segLen = segHi - segLo;
-    const widths = computePanelWidthsMm(segLen, m.panelNominalWidthMm, m.minPanelWidthMm, m.jointBoardThicknessMm);
+    const allowNarrowPanelForOpening = segmentTouchesFlexibleOpening(segLo, segHi);
+    const widths = allowNarrowPanelForOpening && segLen < m.minPanelWidthMm
+      ? [segLen]
+      : computePanelWidthsMm(segLen, m.panelNominalWidthMm, m.minPanelWidthMm, m.jointBoardThicknessMm);
     const n = widths.length;
     let p = segLo;
     for (let i = 0; i < n; i++) {

@@ -1,4 +1,4 @@
-import { Application, Container, FederatedPointerEvent, Graphics } from "pixi.js";
+import { Application, Container, FederatedPointerEvent, Graphics, Text } from "pixi.js";
 import { useEffect, useRef, useState } from "react";
 
 import { linearPlacementModeLabelRu } from "@/core/geometry/linearPlacementGeometry";
@@ -38,7 +38,9 @@ import {
   projectWorldToAlongMm,
   snapOpeningLeftEdgeMm,
   validateWindowPlacementOnWall,
+  WINDOW_OPENING_WALL_END_MARGIN_MM,
 } from "@/core/domain/openingWindowGeometry";
+import { wallLengthMm } from "@/core/domain/wallCalculationGeometry";
 
 import "./wall-placement-hint.css";
 
@@ -100,6 +102,87 @@ interface OpeningPointerSession {
   dragActive: boolean;
 }
 
+type MoveDimSide = "left" | "right";
+
+interface MoveDimHitArea {
+  readonly anchor: MoveDimSide;
+  readonly face: "inner" | "outer";
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  readonly valueMm: number;
+}
+
+interface OpeningMoveMetrics {
+  readonly openingId: string;
+  readonly wallId: string;
+  readonly leftEdgeMm: number;
+  readonly widthMm: number;
+  readonly wallStartMm: number;
+  readonly wallEndMm: number;
+  readonly allowedStartMm: number;
+  readonly allowedEndMm: number;
+  readonly leftGapMm: number;
+  readonly rightGapMm: number;
+}
+
+function openingMoveMetrics(project: Project, openingId: string): OpeningMoveMetrics | null {
+  const o = project.openings.find((x) => x.id === openingId);
+  if (!o || (o.kind !== "window" && o.kind !== "door") || o.wallId == null || o.offsetFromStartMm == null) {
+    return null;
+  }
+  const wall = project.walls.find((w) => w.id === o.wallId);
+  if (!wall) {
+    return null;
+  }
+  const L = wallLengthMm(wall);
+  const allowedStartMm = WINDOW_OPENING_WALL_END_MARGIN_MM;
+  const allowedEndMm = Math.max(allowedStartMm, L - WINDOW_OPENING_WALL_END_MARGIN_MM);
+  const left = o.offsetFromStartMm;
+  const right = o.offsetFromStartMm + o.widthMm;
+  return {
+    openingId: o.id,
+    wallId: wall.id,
+    leftEdgeMm: left,
+    widthMm: o.widthMm,
+    wallStartMm: 0,
+    wallEndMm: L,
+    allowedStartMm,
+    allowedEndMm,
+    leftGapMm: Math.max(0, left),
+    rightGapMm: Math.max(0, L - right),
+  };
+}
+
+function wallInnerNormalSign(project: Project, wallId: string): 1 | -1 {
+  const wall = project.walls.find((w) => w.id === wallId);
+  if (!wall) {
+    return 1;
+  }
+  let sx = 0;
+  let sy = 0;
+  let n = 0;
+  for (const w of project.walls) {
+    sx += w.start.x + w.end.x;
+    sy += w.start.y + w.end.y;
+    n += 2;
+  }
+  if (n < 1) return 1;
+  const cx = sx / n;
+  const cy = sy / n;
+  const wx = (wall.start.x + wall.end.x) / 2;
+  const wy = (wall.start.y + wall.end.y) / 2;
+  const dx = wall.end.x - wall.start.x;
+  const dy = wall.end.y - wall.start.y;
+  const L = Math.hypot(dx, dy);
+  if (L < 1e-6) return 1;
+  const nx = -dy / L;
+  const ny = dx / L;
+  const toC = (cx - wx) * nx + (cy - wy) * ny;
+  return toC >= 0 ? 1 : -1;
+}
+
 export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   const wallPlacementSession = useAppStore((s) => s.wallPlacementSession);
   const jointHoverRef = useRef<JointHoverState>(null);
@@ -132,6 +215,18 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   } | null>(null);
   const setCoordHudRef = useRef(setCoordHud);
   setCoordHudRef.current = setCoordHud;
+  const moveDimHitsRef = useRef<readonly MoveDimHitArea[]>([]);
+  const [moveEdit, setMoveEdit] = useState<{
+    readonly side: MoveDimSide;
+    readonly face: "inner" | "outer";
+    readonly openingId: string;
+    readonly valueStr: string;
+    readonly initialValueStr: string;
+    readonly left: number;
+    readonly top: number;
+    readonly error: string | null;
+  } | null>(null);
+  const moveEditInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!wallPlacementSession || wallPlacementSession.phase !== "waitingSecondPoint") {
@@ -194,6 +289,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
 
   const pendingWindowPlacement = useAppStore((s) => s.pendingWindowPlacement);
   const pendingDoorPlacement = useAppStore((s) => s.pendingDoorPlacement);
+  const openingMoveModeActive = useAppStore((s) => s.openingMoveModeActive);
+  const selectedIds = useAppStore((s) => s.selectedEntityIds);
   useEffect(() => {
     const el = hostRef.current;
     if (!el) {
@@ -201,6 +298,23 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
     }
     el.style.cursor = pendingWindowPlacement || pendingDoorPlacement ? "crosshair" : "";
   }, [pendingWindowPlacement, pendingDoorPlacement]);
+
+  useEffect(() => {
+    if (!openingMoveModeActive || selectedIds.length !== 1) {
+      setMoveEdit(null);
+    }
+  }, [openingMoveModeActive, selectedIds]);
+
+  useEffect(() => {
+    if (!moveEdit) return;
+    const raf = requestAnimationFrame(() => {
+      const el = moveEditInputRef.current;
+      if (!el) return;
+      el.focus();
+      el.select();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [moveEdit?.openingId, moveEdit?.side, moveEdit?.face, moveEdit?.left, moveEdit?.top]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -224,6 +338,10 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
     const dimensionsG = new Graphics();
     dimensionsG.eventMode = "none";
     const dimensionsLabelC = new Container();
+    const openingMoveG = new Graphics();
+    openingMoveG.eventMode = "none";
+    const openingMoveLabelC = new Container();
+    openingMoveLabelC.eventMode = "none";
     dimensionsLabelC.eventMode = "none";
     const jointPickG = new Graphics();
     jointPickG.eventMode = "none";
@@ -306,6 +424,147 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       appendWallLumberLabels2d(wallCalcLabelC, currentProject, visibleWallIds, t);
 
       drawDimensions2d(dimensionsG, dimensionsLabelC, currentProject, t);
+      openingMoveG.clear();
+      for (const ch of [...openingMoveLabelC.children]) {
+        ch.destroy({ children: true });
+      }
+      openingMoveLabelC.removeChildren();
+      moveDimHitsRef.current = [];
+      const moveMode = useAppStore.getState().openingMoveModeActive;
+      if (moveMode && selectedEntityIds.length === 1) {
+        const m = openingMoveMetrics(currentProject, selectedEntityIds[0]!);
+        if (m) {
+          const wall = currentProject.walls.find((w0) => w0.id === m.wallId);
+          if (wall) {
+            const dx = wall.end.x - wall.start.x;
+            const dy = wall.end.y - wall.start.y;
+            const L = Math.hypot(dx, dy);
+            if (L > 1e-6) {
+              const ux = dx / L;
+              const uy = dy / L;
+              const nx = -uy;
+              const ny = ux;
+              const innerSign = wallInnerNormalSign(currentProject, wall.id);
+              const halfT = wall.thicknessMm / 2;
+              const faceShiftMm = 12 / t.zoomPixelsPerMm;
+              const chainShiftMm = 36 / t.zoomPixelsPerMm;
+              const outerLeftMm = m.leftGapMm;
+              const outerRightMm = m.rightGapMm;
+              const innerLeftMm = Math.max(0, outerLeftMm - wall.thicknessMm);
+              const innerRightMm = Math.max(0, outerRightMm - wall.thicknessMm);
+              const faceGeom = (face: "inner" | "outer") => {
+                const faceSign = face === "inner" ? innerSign : -innerSign;
+                const baseOff = faceSign * halfT;
+                const thickness = Math.max(0, wall.thicknessMm);
+                const openStart = m.leftEdgeMm;
+                const openEnd = m.leftEdgeMm + m.widthMm;
+                const faceStartAlong = face === "inner" ? Math.min(openStart, thickness) : 0;
+                const faceEndAlong = face === "inner" ? Math.max(openEnd, L - thickness) : L;
+                const pBase = { x: wall.start.x + nx * baseOff, y: wall.start.y + ny * baseOff };
+                const pStart = { x: pBase.x + ux * faceStartAlong, y: pBase.y + uy * faceStartAlong };
+                const pEnd = { x: pBase.x + ux * faceEndAlong, y: pBase.y + uy * faceEndAlong };
+                const pOpenStart = { x: pBase.x + ux * openStart, y: pBase.y + uy * openStart };
+                const pOpenEnd = { x: pBase.x + ux * openEnd, y: pBase.y + uy * openEnd };
+                const nOut = faceSign * (faceShiftMm + chainShiftMm);
+                const shift = (p: { x: number; y: number }) => ({ x: p.x + nx * nOut, y: p.y + ny * nOut });
+                return {
+                  left0: worldToScreen(shift(pStart).x, shift(pStart).y, t),
+                  left1: worldToScreen(shift(pOpenStart).x, shift(pOpenStart).y, t),
+                  right0: worldToScreen(shift(pOpenEnd).x, shift(pOpenEnd).y, t),
+                  right1: worldToScreen(shift(pEnd).x, shift(pEnd).y, t),
+                };
+              };
+              const inner = faceGeom("inner");
+              const outer = faceGeom("outer");
+              const lineColor = 0x6f7f95;
+              const textColor = 0x1f2937;
+              const drawDim = (
+                s0: { x: number; y: number },
+                s1: { x: number; y: number },
+                anchor: MoveDimSide,
+                face: "inner" | "outer",
+                valueMm: number,
+              ) => {
+                openingMoveG.moveTo(s0.x, s0.y);
+                openingMoveG.lineTo(s1.x, s1.y);
+                openingMoveG.stroke({ width: 1, color: lineColor, alpha: 0.95 });
+                const vxRaw = s1.x - s0.x;
+                const vyRaw = s1.y - s0.y;
+                const vLen = Math.hypot(vxRaw, vyRaw);
+                let vx = 1;
+                let vy = 0;
+                let px = 0;
+                let py = 1;
+                if (vLen > 1e-6) {
+                  vx = vxRaw / vLen;
+                  vy = vyRaw / vLen;
+                  px = -vy;
+                  py = vx;
+                  const tick = 5;
+                  const drawTick = (x: number, y: number) => {
+                    openingMoveG.moveTo(x - px * tick, y - py * tick);
+                    openingMoveG.lineTo(x + px * tick, y + py * tick);
+                    openingMoveG.stroke({ width: 1, color: lineColor, alpha: 0.95 });
+                  };
+                  drawTick(s0.x, s0.y);
+                  drawTick(s1.x, s1.y);
+                }
+                const mx = (s0.x + s1.x) / 2;
+                const my = (s0.y + s1.y) / 2;
+                const txt = new Text({
+                  text: `${Math.round(valueMm)}`,
+                  style: {
+                    fontFamily: "ui-sans-serif, system-ui, sans-serif",
+                    fontSize: 11,
+                    fontWeight: "700",
+                    fill: textColor,
+                  },
+                });
+                txt.anchor.set(0.5);
+                const shortDim = vLen < txt.width + 26;
+                if (shortDim) {
+                  const sideMul = anchor === "left" ? -1 : 1;
+                  const lx0 = s1.x + vx * 8 * sideMul;
+                  const ly0 = s1.y + vy * 8 * sideMul;
+                  const lx1 = lx0 + vx * 10 * sideMul;
+                  const ly1 = ly0 + vy * 10 * sideMul;
+                  openingMoveG.moveTo(lx0, ly0);
+                  openingMoveG.lineTo(lx1, ly1);
+                  openingMoveG.stroke({ width: 1, color: lineColor, alpha: 0.95 });
+                  txt.x = lx1 + px * 10;
+                  txt.y = ly1 + py * 10;
+                } else {
+                  txt.x = mx;
+                  txt.y = my - 8;
+                }
+                openingMoveLabelC.addChild(txt);
+                const wbox = Math.max(34, txt.width + 10);
+                const hbox = Math.max(18, txt.height + 8);
+                const tx0 = txt.x - wbox / 2;
+                const ty0 = txt.y - hbox / 2;
+                const tx1 = txt.x + wbox / 2;
+                const ty1 = txt.y + hbox / 2;
+                const lx0 = Math.min(s0.x, s1.x) - 8;
+                const ly0 = Math.min(s0.y, s1.y) - 8;
+                const lx1 = Math.max(s0.x, s1.x) + 8;
+                const ly1 = Math.max(s0.y, s1.y) + 8;
+                const hx0 = Math.min(tx0, lx0);
+                const hy0 = Math.min(ty0, ly0);
+                const hx1 = Math.max(tx1, lx1);
+                const hy1 = Math.max(ty1, ly1);
+                moveDimHitsRef.current = [
+                  ...moveDimHitsRef.current,
+                  { anchor, face, x: hx0, y: hy0, w: hx1 - hx0, h: hy1 - hy0, valueMm },
+                ];
+              };
+              drawDim(inner.left0, inner.left1, "left", "inner", innerLeftMm);
+              drawDim(outer.left0, outer.left1, "left", "outer", outerLeftMm);
+              drawDim(inner.right0, inner.right1, "right", "inner", innerRightMm);
+              drawDim(outer.right0, outer.right1, "right", "outer", outerRightMm);
+            }
+          }
+        }
+      }
 
       jointPickG.clear();
       const jSession = useAppStore.getState().wallJointSession;
@@ -436,6 +695,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       worldRoot.addChild(windowOpeningLabelsC);
       worldRoot.addChild(dimensionsG);
       worldRoot.addChild(dimensionsLabelC);
+      worldRoot.addChild(openingMoveG);
+      worldRoot.addChild(openingMoveLabelC);
       worldRoot.addChild(jointPickG);
       worldRoot.addChild(windowPlacementG);
       worldRoot.addChild(previewG);
@@ -595,6 +856,18 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         }
 
         const rect = canvas.getBoundingClientRect();
+        if (useAppStore.getState().openingMoveModeActive) {
+          const hit = moveDimHitsRef.current.find(
+            (h0) =>
+              ev.global.x >= h0.x &&
+              ev.global.x <= h0.x + h0.w &&
+              ev.global.y >= h0.y &&
+              ev.global.y <= h0.y + h0.h,
+          );
+          canvas.style.cursor = hit ? "pointer" : "";
+        } else if (!panning.active) {
+          canvas.style.cursor = "";
+        }
         const pend = useAppStore.getState().pendingWindowPlacement ?? useAppStore.getState().pendingDoorPlacement;
         if (pend) {
           windowPlacementHoverRef.current = null;
@@ -870,6 +1143,32 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           !useAppStore.getState().pendingWindowPlacement &&
           !useAppStore.getState().pendingDoorPlacement
         ) {
+          const moveMode = useAppStore.getState().openingMoveModeActive;
+          if (moveMode) {
+            const hit = moveDimHitsRef.current.find(
+              (h0) =>
+                ev.global.x >= h0.x &&
+                ev.global.x <= h0.x + h0.w &&
+                ev.global.y >= h0.y &&
+                ev.global.y <= h0.y + h0.h,
+            );
+            if (hit) {
+              const sel = useAppStore.getState().selectedEntityIds;
+              if (sel.length === 1) {
+                setMoveEdit({
+                  side: hit.anchor,
+                  face: hit.face,
+                  openingId: sel[0]!,
+                  valueStr: String(Math.round(hit.valueMm)),
+                  initialValueStr: String(Math.round(hit.valueMm)),
+                  left: ev.global.x + 8,
+                  top: ev.global.y + 8,
+                  error: null,
+                });
+                return;
+              }
+            }
+          }
           const cp = useAppStore.getState().currentProject;
           const layerView = narrowProjectToActiveLayer(cp);
           const tol = openingPickTolerancesMm(viewport2d.zoomPixelsPerMm);
@@ -1068,6 +1367,86 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       {coordHud ? (
         <div className="ed2d-wall-coord-hud" style={{ left: coordHud.left, top: coordHud.top }}>
           X={Math.round(coordHud.dx)} · Y={Math.round(coordHud.dy)} · D={Math.round(coordHud.d)}
+        </div>
+      ) : null}
+      {moveEdit ? (
+        <div
+          style={{
+            position: "absolute",
+            left: moveEdit.left,
+            top: moveEdit.top,
+            zIndex: 20,
+            background: "var(--color-surface-raised)",
+            color: "var(--color-text-primary)",
+            border: "1px solid var(--color-border-subtle)",
+            borderRadius: 6,
+            padding: "8px 10px",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <input
+            ref={moveEditInputRef}
+            autoFocus
+            value={moveEdit.valueStr}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            onFocus={(e) => e.currentTarget.select()}
+            onChange={(e) =>
+              setMoveEdit({ ...moveEdit, valueStr: e.target.value.replace(/[^\d]/g, ""), error: null })
+            }
+            onBlur={() => {}}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setMoveEdit(null);
+                return;
+              }
+              if (e.key !== "Enter") return;
+              const v = Number(moveEdit.valueStr.replace(",", "."));
+              if (!Number.isFinite(v) || v < 0) {
+                setMoveEdit({ ...moveEdit, error: "Введите неотрицательное число" });
+                return;
+              }
+              const st = useAppStore.getState();
+              const p = st.currentProject;
+              const m = openingMoveMetrics(p, moveEdit.openingId);
+              if (!m) {
+                setMoveEdit({ ...moveEdit, error: "Проём не найден" });
+                return;
+              }
+              const wall = p.walls.find((w0) => w0.id === m.wallId);
+              if (!wall) {
+                setMoveEdit({ ...moveEdit, error: "Стена не найдена" });
+                return;
+              }
+              const thickness = Math.max(0, wall.thicknessMm);
+              const outerValue = moveEdit.face === "inner" ? v + thickness : v;
+              const nextLeft =
+                moveEdit.side === "left" ? m.wallStartMm + outerValue : m.wallEndMm - outerValue - m.widthMm;
+              if (nextLeft < m.allowedStartMm - 1e-3 || nextLeft + m.widthMm > m.allowedEndMm + 1e-3) {
+                setMoveEdit({ ...moveEdit, error: "Выход за пределы стены" });
+                return;
+              }
+              const ok = st.applyOpeningRepositionLeftEdge(moveEdit.openingId, nextLeft);
+              if (!ok) {
+                setMoveEdit({ ...moveEdit, error: "Некорректное смещение" });
+                return;
+              }
+              setMoveEdit(null);
+            }}
+            style={{
+              width: 90,
+              height: 28,
+              padding: "0 6px",
+              borderRadius: 4,
+              border: "1px solid var(--color-border-subtle)",
+              background: "var(--color-surface-default)",
+              color: "var(--color-text-primary)",
+            }}
+          />
+          <span style={{ fontSize: 12, opacity: 0.8 }}>мм</span>
+          {moveEdit.error ? <span style={{ color: "#ef4444", fontSize: 12 }}>{moveEdit.error}</span> : null}
         </div>
       ) : null}
     </div>

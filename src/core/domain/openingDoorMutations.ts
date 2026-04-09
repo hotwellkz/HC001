@@ -5,10 +5,11 @@ import {
   offsetFromStartFromPositionSpec,
   validateWindowPlacementOnWall,
 } from "./openingWindowGeometry";
+import { defaultOpeningSipConstruction } from "./openingFramingGenerate";
 import type { OpeningPositionSpec, OpeningSipConstructionSpec } from "./openingWindowTypes";
 import type { Project } from "./project";
 import { touchProjectMeta } from "./projectFactory";
-import { recalculateWallCalculationStrict } from "./wallCalculationRecalc";
+import { recalculateWallCalculationIfPresent } from "./wallCalculationRecalc";
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -115,11 +116,39 @@ export function saveDoorParams(
   const openings = [...project.openings];
   openings[idx] = nextOpening;
   let next = touchProjectMeta({ ...project, openings });
-  const recalc = recalculateWallCalculationStrict(next, wall.id);
-  if ("error" in recalc) {
-    return { error: recalc.error };
-  }
-  next = recalc.project;
+  /** Для двери не блокируем ручное размещение/перемещение ограничением min SIP panel. */
+  next = recalculateWallCalculationIfPresent(next, wall.id);
   return { project: next };
+}
+
+export function repositionPlacedDoorLeftEdge(
+  project: Project,
+  openingId: string,
+  leftEdgeMm: number,
+): { readonly project: Project } | { readonly error: string } {
+  const o = project.openings.find((x) => x.id === openingId);
+  if (!o || o.kind !== "door" || o.wallId == null || o.offsetFromStartMm == null) {
+    return { error: "Дверь не на стене." };
+  }
+  const wall = project.walls.find((w) => w.id === o.wallId);
+  if (!wall) {
+    return { error: "Стена не найдена." };
+  }
+  const clamped = clampOpeningLeftEdgeMm(wall, o.widthMm, leftEdgeMm);
+  const v = validateWindowPlacementOnWall(wall, clamped, o.widthMm, project, openingId);
+  if (!v.ok) {
+    return { error: v.reason };
+  }
+  const position = defaultPositionSpecFromLeftEdge(wall, clamped, o.widthMm, 0);
+  return saveDoorParams(project, openingId, {
+    widthMm: o.widthMm,
+    heightMm: o.heightMm,
+    isEmptyOpening: o.isEmptyOpening ?? false,
+    doorType: o.doorType ?? "single",
+    doorSwing: o.doorSwing ?? "in_right",
+    doorTrimMm: o.doorTrimMm ?? 50,
+    position,
+    sipConstruction: o.sipConstruction ?? defaultOpeningSipConstruction(project.profiles),
+  });
 }
 

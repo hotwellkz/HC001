@@ -16,7 +16,7 @@ import {
   offsetFromStartFromPositionSpec,
   validateWindowPlacementOnWall,
 } from "./openingWindowGeometry";
-import { recalculateWallCalculationStrict } from "./wallCalculationRecalc";
+import { recalculateWallCalculationIfPresent, recalculateWallCalculationStrict } from "./wallCalculationRecalc";
 import { getProfileById } from "./profileOps";
 import type { OpeningPositionSpec, OpeningSipConstructionSpec } from "./openingWindowTypes";
 import type { Project } from "./project";
@@ -161,6 +161,10 @@ export interface SaveWindowParamsPayload {
   readonly sipConstruction: OpeningSipConstructionSpec;
 }
 
+interface SaveWindowParamsOptions {
+  readonly interactiveMove?: boolean;
+}
+
 /**
  * Сохранение вкладок форма/позиция/SIP: пересчёт offset, генерация обрамления.
  */
@@ -168,6 +172,7 @@ export function saveWindowParamsAndRegenerateFraming(
   project: Project,
   openingId: string,
   payload: SaveWindowParamsPayload,
+  options?: SaveWindowParamsOptions,
 ): { readonly project: Project } | { readonly error: string } {
   const idx = project.openings.findIndex((o) => o.id === openingId);
   if (idx < 0) {
@@ -241,6 +246,10 @@ export function saveWindowParamsAndRegenerateFraming(
     openings,
     openingFramingPieces: [...framingRest, ...framing],
   });
+  if (options?.interactiveMove) {
+    nextProject = recalculateWallCalculationIfPresent(nextProject, wall.id);
+    return { project: nextProject };
+  }
   const recalc = recalculateWallCalculationStrict(nextProject, wall.id);
   if ("error" in recalc) {
     return { error: recalc.error };
@@ -280,7 +289,7 @@ export function repositionPlacedWindowLeftEdge(
   };
   const sip = o.sipConstruction ?? defaultOpeningSipConstruction(project.profiles);
   const payload = buildSaveWindowParamsPayloadFromOpening(merged, wall, sip);
-  return saveWindowParamsAndRegenerateFraming(project, openingId, payload);
+  return saveWindowParamsAndRegenerateFraming(project, openingId, payload, { interactiveMove: true });
 }
 
 export function removeOpeningFramingPiecesForWallIds(project: Project, wallIds: ReadonlySet<string>): Project {
