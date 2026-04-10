@@ -3,6 +3,8 @@ import { DoubleSide } from "three";
 
 import type { Project } from "@/core/domain/project";
 
+import { SELECTION_BOX_OUTLINE_3D } from "./calculationSeamVisual3d";
+import { ExactBoxSelectionOutline } from "./ExactBoxSelectionOutline";
 import { meshStandardPresetForLayerOrDefault } from "./materials3d";
 import { selectWallsForScene3d } from "./selectors/walls3d";
 import { isWallMeshSpecVisible } from "./view3dVisibility";
@@ -51,10 +53,15 @@ export function ProjectWalls({ project, selectedReactKey = null, onSelectWall }:
               />
             </mesh>
             {selectedReactKey === s.reactKey ? (
-              <mesh position={s.position} rotation={[0, s.rotationY, 0]}>
-                <boxGeometry args={[s.width * 1.015, s.height * 1.015, s.depth * 1.015]} />
-                <meshBasicMaterial color={0xf2c94c} wireframe transparent opacity={0.95} depthTest={false} />
-              </mesh>
+              <ExactBoxSelectionOutline
+                width={s.width}
+                height={s.height}
+                depth={s.depth}
+                position={s.position}
+                rotationY={s.rotationY}
+                color={SELECTION_BOX_OUTLINE_3D.color}
+                opacity={SELECTION_BOX_OUTLINE_3D.opacity}
+              />
             ) : null}
           </group>
         );

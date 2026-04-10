@@ -5,6 +5,8 @@ import { buildOpening3dSpecsForProject } from "@/core/domain/opening3dAssemblySp
 import type { Opening3dMeshKind, Opening3dMeshSpec } from "@/core/domain/opening3dAssemblySpecs";
 import type { Project } from "@/core/domain/project";
 
+import { SELECTION_BOX_OUTLINE_3D } from "./calculationSeamVisual3d";
+import { ExactBoxSelectionOutline } from "./ExactBoxSelectionOutline";
 import { isOpening3dMeshVisible } from "./view3dVisibility";
 
 interface ProjectOpeningMeshesProps {
@@ -92,10 +94,15 @@ function OpeningMesh({
         )}
       </mesh>
       {selected ? (
-        <mesh position={spec.position} rotation={[0, spec.rotationY, 0]}>
-          <boxGeometry args={[spec.width * 1.015, spec.height * 1.015, spec.depth * 1.015]} />
-          <meshBasicMaterial color={0xf2c94c} wireframe transparent opacity={0.95} depthTest={false} />
-        </mesh>
+        <ExactBoxSelectionOutline
+          width={spec.width}
+          height={spec.height}
+          depth={spec.depth}
+          position={spec.position}
+          rotationY={spec.rotationY}
+          color={SELECTION_BOX_OUTLINE_3D.color}
+          opacity={SELECTION_BOX_OUTLINE_3D.opacity}
+        />
       ) : null}
     </group>
   );

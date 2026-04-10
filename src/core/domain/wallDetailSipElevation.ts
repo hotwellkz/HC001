@@ -38,7 +38,22 @@ export interface WallDetailSipFacadeSliceAbove {
   readonly specHeightMm: number;
 }
 
-export type WallDetailSipFacadeSlice = WallDetailSipFacadeSliceColumn | WallDetailSipFacadeSliceAbove;
+/** Полоса SIP под окном (от подоконника до низа стены); только для окон с подоконником > 0. */
+export interface WallDetailSipFacadeSliceBelow {
+  readonly kind: "below_opening";
+  readonly openingId: string;
+  readonly drawX0: number;
+  readonly drawX1: number;
+  readonly drawY0: number;
+  readonly drawY1: number;
+  readonly specWidthMm: number;
+  readonly specHeightMm: number;
+}
+
+export type WallDetailSipFacadeSlice =
+  | WallDetailSipFacadeSliceColumn
+  | WallDetailSipFacadeSliceAbove
+  | WallDetailSipFacadeSliceBelow;
 
 /**
  * Верх светового проёма на листе (нижняя граница полосы SIP «над» проёмом).
@@ -53,6 +68,14 @@ export function openingTopSheetYMm(o: Opening, wallBottomMm: number): number {
   }
   const sill = Math.max(0, o.sillHeightMm ?? o.position?.sillLevelMm ?? 0);
   return wallBottomMm - sill - o.heightMm;
+}
+
+/** Нижний край светового проёма на листе (граница под окном); ниже — зона SIP под проёмом. */
+export function openingBottomSheetYMm(o: Opening, wallBottomMm: number): number {
+  if (o.offsetFromStartMm == null) {
+    return wallBottomMm;
+  }
+  return openingTopSheetYMm(o, wallBottomMm) + o.heightMm;
 }
 
 /**
@@ -118,6 +141,20 @@ export function buildWallDetailSipFacadeSlices(
         drawY1: yOpenTop,
         specWidthMm: o.widthMm,
         specHeightMm: stripHeight,
+      });
+    }
+    const yOpenBottom = openingBottomSheetYMm(o, wallBottom);
+    const belowHeight = wallBottom - yOpenBottom;
+    if (o.kind === "window" && belowHeight > 1 && x1 - x0 > 1) {
+      out.push({
+        kind: "below_opening",
+        openingId: o.id,
+        drawX0: x0,
+        drawX1: x1,
+        drawY0: yOpenBottom,
+        drawY1: wallBottom,
+        specWidthMm: o.widthMm,
+        specHeightMm: belowHeight,
       });
     }
   }

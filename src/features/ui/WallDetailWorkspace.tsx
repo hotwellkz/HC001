@@ -235,7 +235,7 @@ export function WallDetailWorkspace() {
         mark: formatSipPanelDisplayMark(wallLabel, i),
         size: `${Math.round(sl.specWidthMm)}x${Math.round(sl.specHeightMm)}x${Math.round(wallThicknessMm)}`,
         qty: 1,
-        rowKey: `above-${sl.openingId}`,
+        rowKey: sl.kind === "above_opening" ? `above-${sl.openingId}` : `below-${sl.openingId}`,
       };
     });
   }, [calc, wall, wallLabel, sipFacadeSlices]);
@@ -623,8 +623,10 @@ export function WallDetailWorkspace() {
                   }
                   const wPx = Math.max(1, (sl.drawX1 - sl.drawX0) * zoom);
                   const hPx = Math.max(1, (sl.drawY1 - sl.drawY0) * zoom);
+                  const stripKey =
+                    sl.kind === "above_opening" ? `sip-above-${sl.openingId}` : `sip-below-${sl.openingId}`;
                   return (
-                    <g key={`sip-above-${sl.openingId}`} className="wd-sip-panel-layer">
+                    <g key={stripKey} className="wd-sip-panel-layer">
                       <rect x={sx(sl.drawX0)} y={sy(sl.drawY0)} width={wPx} height={hPx} className="wd-sip" />
                       <rect
                         x={sx(sl.drawX0)}
@@ -701,16 +703,24 @@ export function WallDetailWorkspace() {
             ) : null}
 
             {calc
-              ? sipFacadeSlices.map((sl, i) => (
-                  <text
-                    key={sl.kind === "column" ? `sip-label-${sl.region.id}` : `sip-label-above-${sl.openingId}`}
-                    x={sx((sl.drawX0 + sl.drawX1) / 2)}
-                    y={sy((sl.drawY0 + sl.drawY1) / 2)}
-                    className="wd-panel-mark"
-                  >
-                    {formatSipPanelDisplayMark(wallLabel, i)}
-                  </text>
-                ))
+              ? sipFacadeSlices.map((sl, i) => {
+                  const labelKey =
+                    sl.kind === "column"
+                      ? `sip-label-${sl.region.id}`
+                      : sl.kind === "above_opening"
+                        ? `sip-label-above-${sl.openingId}`
+                        : `sip-label-below-${sl.openingId}`;
+                  return (
+                    <text
+                      key={labelKey}
+                      x={sx((sl.drawX0 + sl.drawX1) / 2)}
+                      y={sy((sl.drawY0 + sl.drawY1) / 2)}
+                      className="wd-panel-mark"
+                    >
+                      {formatSipPanelDisplayMark(wallLabel, i)}
+                    </text>
+                  );
+                })
               : null}
 
             {drawDimensionLevel(frontLevel1, dimRowSipY, sx, sy, DIM_ROW_STACK_STEP_MM, {

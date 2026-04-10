@@ -5,6 +5,7 @@ import type { SipPanelRegion } from "./wallCalculation";
 import type { Wall } from "./wall";
 import {
   buildWallDetailSipFacadeSlices,
+  openingBottomSheetYMm,
   openingTopSheetYMm,
   sipPanelHorizontalDimensionSegmentsWallDetailMm,
 } from "./wallDetailSipElevation";
@@ -75,5 +76,37 @@ describe("buildWallDetailSipFacadeSlices", () => {
       expect(above.specHeightMm).toBe(400);
       expect(above.drawY1).toBe(openingTopSheetYMm(door, frame.wallBottomMm));
     }
+    expect(slices.some((s) => s.kind === "below_opening")).toBe(false);
+  });
+
+  it("под окном: отдельная полоса SIP шириной проёма и высотой до подоконника", () => {
+    const wall = { id: "w1", heightMm: 2500 } as Wall;
+    const frame = { wallTopMm: 96, wallBottomMm: 2596, wallHeightMm: 2500 };
+    const win: Opening = {
+      id: "w1",
+      wallId: "w1",
+      kind: "window",
+      offsetFromStartMm: 1250,
+      widthMm: 1250,
+      heightMm: 1300,
+      sillHeightMm: 900,
+    };
+    const regions = [
+      baseRegion({ id: "l", index: 0, startOffsetMm: 0, endOffsetMm: 1250 }),
+      baseRegion({ id: "r", index: 1, startOffsetMm: 2500, endOffsetMm: 3750 }),
+    ];
+    const slices = buildWallDetailSipFacadeSlices(regions, [win], wall, frame);
+    const below = slices.find((s) => s.kind === "below_opening");
+    expect(below?.kind).toBe("below_opening");
+    if (below?.kind === "below_opening") {
+      expect(below.specWidthMm).toBe(1250);
+      expect(below.specHeightMm).toBe(900);
+      expect(below.drawY0).toBe(openingBottomSheetYMm(win, frame.wallBottomMm));
+      expect(below.drawY1).toBe(frame.wallBottomMm);
+    }
+    const idxBelow = slices.findIndex((s) => s.kind === "below_opening");
+    const idxAbove = slices.findIndex((s) => s.kind === "above_opening");
+    expect(idxAbove).toBeGreaterThanOrEqual(0);
+    expect(idxBelow).toBeGreaterThan(idxAbove);
   });
 });
