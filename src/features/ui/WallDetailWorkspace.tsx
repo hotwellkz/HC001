@@ -14,6 +14,7 @@ import {
   sipPanelHorizontalDimensionSegmentsWallDetailMm,
   wallDetailSipVerticalBoundaryXsMm,
 } from "@/core/domain/wallDetailSipElevation";
+import { buildWallDetailSipPanelDisplayGrouping } from "@/core/domain/wallDetailSipPanelGrouping";
 import {
   formatLumberFullDisplayMark,
   formatSipPanelDisplayMark,
@@ -185,6 +186,9 @@ export function WallDetailWorkspace() {
 
   const wallLabel = wall ? wallMarkLabelForDisplay(wall.markLabel, wall.id.slice(0, 8)) : "";
 
+  const L = wall ? Math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y) : 0;
+  const H = wall?.heightMm ?? 0;
+
   const lumberPositionByPieceId = useMemo(
     () => (calc ? lumberGroupedPositionIndexByPieceId(calc.lumberPieces) : new Map<string, number>()),
     [calc],
@@ -239,29 +243,30 @@ export function WallDetailWorkspace() {
     return buildWallDetailSipFacadeSlices(calc.sipRegions, openingsOnWall, wall, wallDetailSipFrameMm);
   }, [wall, calc, openingsOnWall, wallDetailSipFrameMm]);
 
-  const sipRows = useMemo(() => {
-    if (!calc || !wall || sipFacadeSlices.length === 0) return [];
-    const wallThicknessMm = wall.thicknessMm;
-    return sipFacadeSlices.map((sl, i) => {
-      if (sl.kind === "column") {
-        return {
-          mark: formatSipPanelDisplayMark(wallLabel, i),
-          size: `${Math.round(sl.specWidthMm)}x${Math.round(sl.specHeightMm)}x${Math.round(wallThicknessMm)}`,
-          qty: 1,
-          rowKey: sl.region.id,
-        };
-      }
-      return {
-        mark: formatSipPanelDisplayMark(wallLabel, i),
-        size: `${Math.round(sl.specWidthMm)}x${Math.round(sl.specHeightMm)}x${Math.round(wallThicknessMm)}`,
-        qty: 1,
-        rowKey: sl.kind === "above_opening" ? `above-${sl.openingId}` : `below-${sl.openingId}`,
-      };
-    });
-  }, [calc, wall, wallLabel, sipFacadeSlices]);
+  const sipPanelGrouping = useMemo(() => {
+    if (!wall || sipFacadeSlices.length === 0) {
+      return null;
+    }
+    return buildWallDetailSipPanelDisplayGrouping(
+      sipFacadeSlices,
+      L,
+      wall.thicknessMm,
+      openingsOnWall,
+      wall.id,
+    );
+  }, [wall, sipFacadeSlices, L, openingsOnWall, wall?.thicknessMm]);
 
-  const L = wall ? Math.hypot(wall.end.x - wall.start.x, wall.end.y - wall.start.y) : 0;
-  const H = wall?.heightMm ?? 0;
+  const sipRows = useMemo(() => {
+    if (!sipPanelGrouping) return [];
+    return [...sipPanelGrouping.groupedRows]
+      .sort((a, b) => a.positionOneBased - b.positionOneBased)
+      .map((r) => ({
+        mark: formatSipPanelDisplayMark(wallLabel, r.positionOneBased - 1),
+        size: `${r.widthMm}x${r.heightMm}x${r.thicknessMm}`,
+        qty: r.qty,
+        rowKey: r.groupKey,
+      }));
+  }, [sipPanelGrouping, wallLabel]);
 
   const layout = useMemo(() => {
     if (!wall) return null;
@@ -723,7 +728,7 @@ export function WallDetailWorkspace() {
               </g>
             ) : null}
 
-            {calc
+            {calc && sipPanelGrouping
               ? sipFacadeSlices.map((sl, i) => {
                   const labelKey =
                     sl.kind === "column"
@@ -731,6 +736,7 @@ export function WallDetailWorkspace() {
                       : sl.kind === "above_opening"
                         ? `sip-label-above-${sl.openingId}`
                         : `sip-label-below-${sl.openingId}`;
+                  const pos = sipPanelGrouping.slicePositionOneBased[i] ?? i + 1;
                   return (
                     <text
                       key={labelKey}
@@ -738,7 +744,7 @@ export function WallDetailWorkspace() {
                       y={sy((sl.drawY0 + sl.drawY1) / 2)}
                       className="wd-panel-mark"
                     >
-                      {formatSipPanelDisplayMark(wallLabel, i)}
+                      {formatSipPanelDisplayMark(wallLabel, pos - 1)}
                     </text>
                   );
                 })
@@ -838,7 +844,7 @@ export function WallDetailWorkspace() {
                 <tfoot>
                   <tr>
                     <td colSpan={2}>Итого</td>
-                    <td>{sipRows.length}</td>
+                    <td>{sipRows.reduce((s, r) => s + r.qty, 0)}</td>
                   </tr>
                 </tfoot>
               </table>
