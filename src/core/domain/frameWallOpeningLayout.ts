@@ -54,9 +54,9 @@ export function filterFramingStudsClearOfDoorOpenings(
 }
 
 /**
- * ГКЛ/каркас: сетка стоек ставит вертикаль на границе листа (`roughLo` / `roughHi`), совпадающей
- * с полосой дверной стойки — получается два профиля подряд. Убираем лишние `framing_member_generic`,
- * центр которых попадает в полосу обкладки двери [roughLo…clearLeft] или [clearRight…roughHi].
+ * ГКЛ/каркас: у стыка «лист / световая грань проёма» сетка может дать `framing_member_generic`
+ * там же, где уже стоит дверная стойка [roughLo…clearLeft] / [clearRight…roughHi]. Убираем дубль по центру
+ * в этих полосах.
  */
 export function removeGkLFramingStudsOverlappingDoorJambs(
   drafts: readonly LumberPieceDraftInput[],

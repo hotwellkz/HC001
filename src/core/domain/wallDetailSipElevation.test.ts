@@ -40,7 +40,7 @@ describe("sipPanelHorizontalDimensionSegmentsWallDetailMm", () => {
     expect(withOpening.some((s) => Math.abs(s.b - s.a - 1000) < 1)).toBe(true);
   });
 
-  it("каркас/ГКЛ: границы листов у проёма + без срезов по световому проёму — нет ложного модуля 1250", () => {
+  it("каркас/ГКЛ: границы листов по световому проёму + без срезов по clear — шаги по sipRegions", () => {
     const door: Opening = {
       id: "d1",
       wallId: "w1",
@@ -52,18 +52,18 @@ describe("sipPanelHorizontalDimensionSegmentsWallDetailMm", () => {
     const cuts = sheetInteriorCutXsAlongWallFromRegionsMm(
       [
         { startOffsetMm: 0, endOffsetMm: 1200 },
-        { startOffsetMm: 1200, endOffsetMm: 1950 },
-        { startOffsetMm: 3050, endOffsetMm: 4250 },
-        { startOffsetMm: 4250, endOffsetMm: 5000 },
+        { startOffsetMm: 1200, endOffsetMm: 2000 },
+        { startOffsetMm: 3000, endOffsetMm: 4200 },
+        { startOffsetMm: 4200, endOffsetMm: 5000 },
       ],
       0,
       5000,
     );
-    expect(cuts).toEqual([1200, 1950, 3050, 4250]);
+    expect(cuts).toEqual([1200, 2000, 3000, 4200]);
     const segs = sipPanelHorizontalDimensionSegmentsWallDetailMm(0, 5000, cuts, [door], {
       omitClearOpeningCutsAlongWall: true,
     });
-    expect(segs.map((s) => Math.round(s.b - s.a))).toEqual([1200, 750, 1100, 1200, 750]);
+    expect(segs.map((s) => Math.round(s.b - s.a))).toEqual([1200, 800, 1000, 1200, 800]);
     expect(segs.some((s) => Math.abs(s.b - s.a - 1250) < 1)).toBe(false);
   });
 });

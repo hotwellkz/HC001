@@ -380,10 +380,10 @@ export function buildWallCalculationForWall(
     const physicalSpan = isFrameGklDoor ? o.widthMm + 2 * Tframe : o.widthMm;
     const maxLeft = Math.max(minRest, L - physicalSpan - minRest);
     const clearLeft = Math.max(minRest, Math.min(maxLeft, o.offsetFromStartMm));
-    if (isFrameGklDoor) {
-      const { roughLo, roughHi } = frameGklDoorRoughAlongSpanMm(clearLeft, o.widthMm, Tframe);
-      return { lo: roughLo, hi: roughHi, kind: o.kind };
-    }
+    /**
+     * ГКЛ + frame_gkl_door: тот же интервал вычитания, что и у светового проёма — [clearLeft, hi];
+     * rough (с обкладкой T) остаётся только для стоек, нижней обвязки и фильтров, не для sipRegions.
+     */
     const hi = Math.min(L - minRest, clearLeft + o.widthMm);
     return { lo: clearLeft, hi, kind: o.kind };
   }).filter((b) => b.hi - b.lo > EPS);

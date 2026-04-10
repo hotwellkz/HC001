@@ -56,7 +56,7 @@ describe("filterFramingStudsClearOfDoorOpenings", () => {
 });
 
 describe("removeGkLFramingStudsOverlappingDoorJambs", () => {
-  it("убирает framing_member_generic в полосе дверной стойки (стык листа = roughLo)", () => {
+  it("убирает framing_member_generic в полосе дверной стойки (пересечение с обкладкой)", () => {
     const Tj = 50;
     const door = { id: "d1", wallId: "w1", kind: "door" as const, offsetFromStartMm: 2000, widthMm: 1000, heightMm: 2100 };
     const drafts: LumberPieceDraftInput[] = [
