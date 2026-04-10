@@ -47,6 +47,34 @@ describe("computePlacementHudScreenPosition", () => {
     expect(r.coordHudTop).toBeNull();
   });
 
+  it("wallMoveCopyCoordinateModalOpen скрывает coord HUD", () => {
+    const canvasRect = rect(100, 80, 800, 600);
+    const r = computePlacementHudScreenPosition({
+      canvasRect,
+      cursorCanvasX: 400,
+      cursorCanvasY: 300,
+      wallCoordinateModalOpen: false,
+      wallMoveCopyCoordinateModalOpen: true,
+      showCoordHud: true,
+    });
+    expect(r.coordHudLeft).toBeNull();
+    expect(r.coordHudTop).toBeNull();
+  });
+
+  it("lengthChangeCoordinateModalOpen скрывает coord HUD", () => {
+    const canvasRect = rect(100, 80, 800, 600);
+    const r = computePlacementHudScreenPosition({
+      canvasRect,
+      cursorCanvasX: 400,
+      cursorCanvasY: 300,
+      wallCoordinateModalOpen: false,
+      lengthChangeCoordinateModalOpen: true,
+      showCoordHud: true,
+    });
+    expect(r.coordHudLeft).toBeNull();
+    expect(r.coordHudTop).toBeNull();
+  });
+
   it("держит hint внутри canvas при курсоре у правого края", () => {
     const canvasRect = rect(0, 0, 400, 300);
     const r = computePlacementHudScreenPosition({

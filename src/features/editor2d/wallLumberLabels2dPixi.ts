@@ -7,6 +7,7 @@ import { isLumberRoleLabeledInPlan2d } from "@/core/domain/wallCalculationPlan2d
 import { clampAlongWallRangeMm } from "@/core/domain/wallLumberPlan2dGeometry";
 import { formatLumberDisplayMark, lumberDisplayIndexByPieceId } from "@/core/domain/pieceDisplayMark";
 import type { LumberPiece } from "@/core/domain/wallCalculation";
+import { readableAlongSegmentRotationRad } from "@/core/geometry/readableAlongSegmentRotationRad";
 
 import type { ViewportTransform } from "./viewportTransforms";
 import { worldToScreen } from "./viewportTransforms";
@@ -118,7 +119,7 @@ export function appendWallLumberLabels2d(
       txt.x = cx;
       txt.y = cy;
       if (piece.orientation === "along_wall" && spanPx >= MIN_SEG_PX) {
-        txt.rotation = ang;
+        txt.rotation = readableAlongSegmentRotationRad(ang);
       } else {
         txt.rotation = 0;
       }

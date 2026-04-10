@@ -1,5 +1,7 @@
 import { useAppStore } from "@/store/useAppStore";
 
+import { openSelectedObjectEditor as runOpenSelectedObjectEditor } from "./objectEditorActions";
+
 /** Тонкий фасад над Zustand: UI и хоткеи вызывают команды, а не размазывают логику по компонентам. */
 export const projectCommands = {
   createNew: (): void => {
@@ -17,7 +19,11 @@ export const projectCommands = {
   deleteSelected: (): void => {
     useAppStore.getState().deleteSelectedEntities();
   },
-  /** Параметры окна: одно выделенное размещённое окно. */
+  /** Редактор выбранного объекта на 2D (стена / дверь / окно) — та же логика, что двойной клик. */
+  openSelectedObjectEditor: (): void => {
+    runOpenSelectedObjectEditor();
+  },
+  /** Параметры окна: одно выделенное размещённое окно (панель свойств). */
   openSelectedWindowProperties: (): void => {
     const { selectedEntityIds, currentProject } = useAppStore.getState();
     if (selectedEntityIds.length !== 1) {

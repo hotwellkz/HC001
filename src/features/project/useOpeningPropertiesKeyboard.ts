@@ -3,10 +3,10 @@ import { useEffect } from "react";
 import { isEditableKeyboardTarget } from "@/shared/editableKeyboardTarget";
 import { useAppStore } from "@/store/useAppStore";
 
-import { projectCommands } from "./commands";
+import { applyResolvedObjectEditor, resolveObjectEditorForSelection } from "./objectEditorActions";
 
 /**
- * Enter → открыть модалку параметров, если выбрано одно окно на стене (как двойной клик).
+ * Enter → открыть редактор выбранного объекта на 2D (как кнопка «Редактировать» / двойной клик).
  */
 export function useOpeningPropertiesKeyboard(enabled: boolean): void {
   useEffect(() => {
@@ -20,24 +20,32 @@ export function useOpeningPropertiesKeyboard(enabled: boolean): void {
       if (isEditableKeyboardTarget(e.target)) {
         return;
       }
-      const { selectedEntityIds, currentProject, windowEditModal, addWindowModalOpen, activeTab } =
-        useAppStore.getState();
+      const {
+        selectedEntityIds,
+        currentProject,
+        windowEditModal,
+        addWindowModalOpen,
+        doorEditModal,
+        addDoorModalOpen,
+        activeTab,
+      } = useAppStore.getState();
       if (activeTab !== "2d") {
         return;
       }
-      if (windowEditModal != null || addWindowModalOpen) {
+      if (
+        windowEditModal != null ||
+        addWindowModalOpen ||
+        doorEditModal != null ||
+        addDoorModalOpen
+      ) {
         return;
       }
-      if (selectedEntityIds.length !== 1) {
-        return;
-      }
-      const id = selectedEntityIds[0]!;
-      const o = currentProject.openings.find((x) => x.id === id);
-      if (!o || o.kind !== "window" || o.wallId == null || o.offsetFromStartMm == null) {
+      const resolved = resolveObjectEditorForSelection(selectedEntityIds, currentProject);
+      if (resolved.kind === "hint") {
         return;
       }
       e.preventDefault();
-      projectCommands.openSelectedWindowProperties();
+      applyResolvedObjectEditor(resolved);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

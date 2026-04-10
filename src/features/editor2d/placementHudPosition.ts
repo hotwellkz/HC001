@@ -27,10 +27,18 @@ export function computePlacementHudScreenPosition(opts: {
   readonly wallCoordinateModalOpen: boolean;
   /** Модалка смещения от опорной точки — та же «парковка» подсказки, что и у координат стены. */
   readonly wallAnchorCoordinateModalOpen?: boolean;
+  /** Модалка координат переноса/копии стены. */
+  readonly wallMoveCopyCoordinateModalOpen?: boolean;
+  /** Модалка точного ввода Δ длины (инструмент «Изменение длины»). */
+  readonly lengthChangeCoordinateModalOpen?: boolean;
   readonly showCoordHud: boolean;
 }): PlacementHudScreenPosition {
   const { canvasRect, cursorCanvasX, cursorCanvasY, wallCoordinateModalOpen, showCoordHud } = opts;
-  const anyCoordModalOpen = wallCoordinateModalOpen || Boolean(opts.wallAnchorCoordinateModalOpen);
+  const anyCoordModalOpen =
+    wallCoordinateModalOpen ||
+    Boolean(opts.wallAnchorCoordinateModalOpen) ||
+    Boolean(opts.wallMoveCopyCoordinateModalOpen) ||
+    Boolean(opts.lengthChangeCoordinateModalOpen);
 
   const screenX = canvasRect.left + cursorCanvasX;
   const screenY = canvasRect.top + cursorCanvasY;

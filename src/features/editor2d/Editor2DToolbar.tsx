@@ -30,6 +30,59 @@ function IconPan() {
   );
 }
 
+/** Изменение длины: отрезок со стрелками к торцам. */
+function IconChangeLength() {
+  return (
+    <svg className="ed2d-icon ed2d-icon--stroke" viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <path
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M5 12h14"
+      />
+      <path
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M5 12l2.5-2M5 12l2.5 2M19 12l-2.5-2M19 12l-2.5 2"
+      />
+    </svg>
+  );
+}
+
+/** Линейка: узкая полоса с делениями. */
+function IconRuler() {
+  return (
+    <svg className="ed2d-icon ed2d-icon--stroke" viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <path
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M4 16.5L16.5 4l3.5 3.5L8 19.5H4v-3z"
+      />
+      <path stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" d="M7 13.5l1-1m2-2l1-1m2-2l1-1" />
+    </svg>
+  );
+}
+
+/** Карандаш / правка параметров выбранного объекта. */
+function IconEdit() {
+  return (
+    <svg className="ed2d-icon ed2d-icon--stroke" viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <path
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 20h9M4 13l8-8a2 2 0 113 3l-8 8-4 1 1-4z"
+      />
+    </svg>
+  );
+}
+
 function IconTrash() {
   return (
     <svg className="ed2d-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -47,6 +100,13 @@ export function Editor2DToolbar() {
   const setActiveTool = useAppStore((s) => s.setActiveTool);
 
   const deleteDisabled = selectedCount === 0;
+  const editDisabled = selectedCount !== 1;
+  const editTitle =
+    selectedCount === 0
+      ? "Редактировать — сначала выберите объект"
+      : selectedCount > 1
+        ? "Редактировать — только один объект"
+        : "Редактировать";
 
   return (
     <div className="ed2d-toolbar" role="toolbar" aria-label="Инструменты 2D плана">
@@ -71,6 +131,38 @@ export function Editor2DToolbar() {
         onClick={() => setActiveTool("pan")}
       >
         <IconPan />
+      </button>
+      <button
+        type="button"
+        className="ed2d-toolbtn"
+        title="Изменение длины"
+        aria-label="Изменение длины"
+        aria-pressed={activeTool === "changeLength"}
+        data-active={activeTool === "changeLength"}
+        onClick={() => setActiveTool(activeTool === "changeLength" ? "select" : "changeLength")}
+      >
+        <IconChangeLength />
+      </button>
+      <button
+        type="button"
+        className="ed2d-toolbtn"
+        title="Линейка — замер расстояний (мм). Esc — сброс"
+        aria-label="Линейка"
+        aria-pressed={activeTool === "ruler"}
+        data-active={activeTool === "ruler"}
+        onClick={() => setActiveTool("ruler")}
+      >
+        <IconRuler />
+      </button>
+      <button
+        type="button"
+        className="ed2d-toolbtn"
+        title={editTitle}
+        aria-label="Редактировать"
+        disabled={editDisabled}
+        onClick={() => projectCommands.openSelectedObjectEditor()}
+      >
+        <IconEdit />
       </button>
       <button
         type="button"

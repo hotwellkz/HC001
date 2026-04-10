@@ -44,10 +44,16 @@ import {
   validateWindowPlacementOnWall,
 } from "@/core/domain/openingWindowGeometry";
 import { wallLengthMm } from "@/core/domain/wallCalculationGeometry";
+import { wallWithMovedEndAtLength } from "@/core/domain/wallLengthChangeGeometry";
+import type { WallEndSide } from "@/core/domain/wallJoint";
+import { drawLengthChangeDragOverlay, drawLengthChangeEndHover } from "./lengthChange2dPixi";
 
 import "./wall-placement-hint.css";
+import "./wall-context-menu.css";
 
+import type { OpeningKind } from "@/core/domain/opening";
 import type { Project } from "@/core/domain/project";
+import { openPlacedOpeningObjectEditorFromHit, openWallObjectEditorFromHit } from "@/features/project/objectEditorActions";
 
 function collectVisibleWallIds2d(project: Project): Set<string> {
   const contextIds = sortedVisibleContextLayerIds(project);
@@ -98,7 +104,7 @@ interface MarqueeDrag {
 interface OpeningPointerSession {
   readonly openingId: string;
   readonly wallId: string;
-  readonly kind: "window" | "door";
+  readonly kind: OpeningKind;
   readonly sx: number;
   readonly sy: number;
   readonly pointerId: number;
@@ -189,7 +195,10 @@ function wallInnerNormalSign(project: Project, wallId: string): 1 | -1 {
 
 export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   const wallPlacementSession = useAppStore((s) => s.wallPlacementSession);
+  const wallMoveCopySession = useAppStore((s) => s.wallMoveCopySession);
+  const wallContextMenu = useAppStore((s) => s.wallContextMenu);
   const jointHoverRef = useRef<JointHoverState>(null);
+  const lengthChangeHoverRef = useRef<{ readonly wallId: string; readonly end: WallEndSide } | null>(null);
   /** Превью установки окна: стена + левый край проёма (мм от start), валидность. */
   const windowPlacementHoverRef = useRef<{
     readonly wallId: string;
@@ -247,8 +256,53 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   }, [wallPlacementSession]);
 
   useEffect(() => {
+    if (!wallMoveCopySession) {
+      setCoordHud(null);
+    }
+  }, [wallMoveCopySession]);
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.(".ed2d-wall-ctx")) {
+        return;
+      }
+      useAppStore.getState().closeWallContextMenu();
+    };
+    window.addEventListener("mousedown", onDown, true);
+    return () => window.removeEventListener("mousedown", onDown, true);
+  }, []);
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (useAppStore.getState().wallMoveCopyCoordinateModalOpen) {
+          e.preventDefault();
+          useAppStore.getState().closeWallMoveCopyCoordinateModal();
+          return;
+        }
+        if (useAppStore.getState().activeTool === "ruler") {
+          e.preventDefault();
+          useAppStore.getState().ruler2dCancel();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          return;
+        }
+        if (useAppStore.getState().activeTool === "changeLength") {
+          e.preventDefault();
+          useAppStore.getState().lengthChange2dEsc();
+          lengthChangeHoverRef.current = null;
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          return;
+        }
+        if (useAppStore.getState().wallMoveCopySession) {
+          e.preventDefault();
+          useAppStore.getState().cancelWallMoveCopy();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          return;
+        }
         if (useAppStore.getState().wallCoordinateModalOpen) {
           e.preventDefault();
           useAppStore.getState().closeWallCoordinateModal();
@@ -304,6 +358,16 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         }
         const st = useAppStore.getState();
         if (st.wallCoordinateModalOpen || st.wallAnchorCoordinateModalOpen) {
+          return;
+        }
+        if (st.wallMoveCopySession?.phase === "pickTarget") {
+          e.preventDefault();
+          st.openWallMoveCopyCoordinateModal();
+          return;
+        }
+        if (st.activeTool === "changeLength" && st.lengthChange2dSession && !st.lengthChangeCoordinateModalOpen) {
+          e.preventDefault();
+          st.openLengthChangeCoordinateModal();
           return;
         }
         if (
@@ -393,7 +457,11 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
     const windowPlacementG = new Graphics();
     windowPlacementG.eventMode = "none";
     const previewG = new Graphics();
+    const lengthChangeG = new Graphics();
+    lengthChangeG.eventMode = "none";
     const snapMarkerG = new Graphics();
+    const rulerG = new Graphics();
+    rulerG.eventMode = "none";
     const marqueeG = new Graphics();
     const worldRoot = new Container();
     worldRoot.eventMode = "static";
@@ -424,12 +492,19 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const ws = st.wallPlacementSession;
       const firstPh =
         ws && (ws.phase === "waitingFirstWallPoint" || ws.phase === "waitingOriginAndFirst");
-      const show =
+      const anchorShow =
         st.wallAnchorPlacementModeActive &&
         Boolean(firstPh) &&
         !st.wallCoordinateModalOpen &&
         !st.wallAnchorCoordinateModalOpen &&
+        !st.openingMoveModeActive;
+      const rulerShow = st.activeTool === "ruler" && st.ruler2dSession != null && !st.openingMoveModeActive;
+      const lengthChangeShow =
+        st.activeTool === "changeLength" &&
         !st.openingMoveModeActive &&
+        !st.lengthChangeCoordinateModalOpen;
+      const show =
+        (anchorShow || rulerShow || lengthChangeShow) &&
         !panning.active &&
         !marquee &&
         lastPointerAnchorCrosshairRef.current.inside;
@@ -456,34 +531,80 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const proj = st.currentProject;
       const e2 = proj.settings.editor2d;
 
-      const am = st.wallPlacementAnchorMm;
-      const ap = st.wallPlacementAnchorPreviewEndMm;
-
       let centerRx: number;
       let centerRy: number;
-      if (am && ap) {
-        const sc = worldToScreen(ap.x, ap.y, t);
-        centerRx = sc.x;
-        centerRy = sc.y;
-      } else if (!am) {
-        const snap = resolveSnap2d({
-          rawWorldMm: { x: last.worldX, y: last.worldY },
-          viewport: t,
-          project: proj,
-          snapSettings: {
-            snapToVertex: e2.snapToVertex,
-            snapToEdge: e2.snapToEdge,
-            snapToGrid: e2.snapToGrid,
-          },
-          gridStepMm: proj.settings.gridStepMm,
-        });
-        const sc = worldToScreen(snap.point.x, snap.point.y, t);
-        centerRx = sc.x;
-        centerRy = sc.y;
+
+      if (rulerShow) {
+        const rs = st.ruler2dSession!;
+        if (rs.phase === "stretching" && rs.firstMm && rs.previewEndMm) {
+          const sc = worldToScreen(rs.previewEndMm.x, rs.previewEndMm.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        } else {
+          const snap = resolveSnap2d({
+            rawWorldMm: { x: last.worldX, y: last.worldY },
+            viewport: t,
+            project: proj,
+            snapSettings: {
+              snapToVertex: e2.snapToVertex,
+              snapToEdge: e2.snapToEdge,
+              snapToGrid: e2.snapToGrid,
+            },
+            gridStepMm: proj.settings.gridStepMm,
+          });
+          const sc = worldToScreen(snap.point.x, snap.point.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        }
+      } else if (lengthChangeShow) {
+        const lc = st.lengthChange2dSession;
+        if (lc) {
+          const sc = worldToScreen(lc.previewMovingMm.x, lc.previewMovingMm.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        } else {
+          const snap = resolveSnap2d({
+            rawWorldMm: { x: last.worldX, y: last.worldY },
+            viewport: t,
+            project: proj,
+            snapSettings: {
+              snapToVertex: e2.snapToVertex,
+              snapToEdge: e2.snapToEdge,
+              snapToGrid: e2.snapToGrid,
+            },
+            gridStepMm: proj.settings.gridStepMm,
+          });
+          const sc = worldToScreen(snap.point.x, snap.point.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        }
       } else {
-        const sc = worldToScreen(last.worldX, last.worldY, t);
-        centerRx = sc.x;
-        centerRy = sc.y;
+        const am = st.wallPlacementAnchorMm;
+        const ap = st.wallPlacementAnchorPreviewEndMm;
+        if (am && ap) {
+          const sc = worldToScreen(ap.x, ap.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        } else if (!am) {
+          const snap = resolveSnap2d({
+            rawWorldMm: { x: last.worldX, y: last.worldY },
+            viewport: t,
+            project: proj,
+            snapSettings: {
+              snapToVertex: e2.snapToVertex,
+              snapToEdge: e2.snapToEdge,
+              snapToGrid: e2.snapToGrid,
+            },
+            gridStepMm: proj.settings.gridStepMm,
+          });
+          const sc = worldToScreen(snap.point.x, snap.point.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        } else {
+          const sc = worldToScreen(last.worldX, last.worldY, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        }
       }
 
       const cssX = centerRx * scaleX;
@@ -782,7 +903,85 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         }
       }
 
+      const wmPaint = useAppStore.getState().wallMoveCopySession;
+      if (wmPaint?.phase === "pickTarget" && wmPaint.anchorWorldMm && wmPaint.previewTargetMm) {
+        const wM = currentProject.walls.find((w) => w.id === wmPaint.workingWallId);
+        if (wM) {
+          const dx = wmPaint.previewTargetMm.x - wmPaint.anchorWorldMm.x;
+          const dy = wmPaint.previewTargetMm.y - wmPaint.anchorWorldMm.y;
+          const gs = { x: wM.start.x + dx, y: wM.start.y + dy };
+          const ge = { x: wM.end.x + dx, y: wM.end.y + dy };
+          const previewProfile = wM.profileId ? getProfileById(currentProject, wM.profileId) : undefined;
+          const layeredPreviewOpts = {
+            profile: previewProfile,
+            show2dProfileLayers: show2dLayers,
+            thicknessMm: wM.thicknessMm,
+            zoomPixelsPerMm: viewport2d.zoomPixelsPerMm,
+          };
+          drawWallPlacementPreview(previewG, gs, ge, wM.thicknessMm, "center", t, layeredPreviewOpts);
+          if (wmPaint.angleSnapLockedDeg != null) {
+            const f = wmPaint.anchorWorldMm;
+            const e = wmPaint.previewTargetMm;
+            const a = worldToScreen(f.x, f.y, t);
+            const b = worldToScreen(e.x, e.y, t);
+            previewG.moveTo(a.x, a.y);
+            previewG.lineTo(b.x, b.y);
+            previewG.stroke({ width: 1.75, color: 0x34d399, alpha: 0.55 });
+          }
+        }
+      }
+
       const stPaint = useAppStore.getState();
+
+      lengthChangeG.clear();
+      if (stPaint.activeTool === "changeLength") {
+        const layerLc = narrowProjectToActiveLayer(currentProject);
+        const lcPaint = stPaint.lengthChange2dSession;
+        if (lcPaint) {
+          const wLc = layerLc.walls.find((w0) => w0.id === lcPaint.wallId);
+          if (wLc) {
+            const dx = lcPaint.previewMovingMm.x - lcPaint.fixedEndMm.x;
+            const dy = lcPaint.previewMovingMm.y - lcPaint.fixedEndMm.y;
+            const Lcur = dx * lcPaint.axisUx + dy * lcPaint.axisUy;
+            const wPrev = wallWithMovedEndAtLength(wLc, lcPaint.movingEnd, Lcur);
+            if (wPrev) {
+              const previewProfile = wLc.profileId ? getProfileById(currentProject, wLc.profileId) : undefined;
+              const layeredPreviewOpts = {
+                profile: previewProfile,
+                show2dProfileLayers: show2dLayers,
+                thicknessMm: wLc.thicknessMm,
+                zoomPixelsPerMm: viewport2d.zoomPixelsPerMm,
+              };
+              drawWallPlacementPreview(
+                previewG,
+                wPrev.start,
+                wPrev.end,
+                wLc.thicknessMm,
+                currentProject.settings.editor2d.linearPlacementMode,
+                t,
+                layeredPreviewOpts,
+              );
+            }
+            drawLengthChangeDragOverlay(
+              lengthChangeG,
+              wLc,
+              lcPaint.movingEnd,
+              lcPaint.fixedEndMm,
+              lcPaint.previewMovingMm,
+              t,
+            );
+          }
+        } else {
+          const h = lengthChangeHoverRef.current;
+          if (h) {
+            const wH = layerLc.walls.find((w0) => w0.id === h.wallId);
+            if (wH) {
+              drawLengthChangeEndHover(lengthChangeG, wH, h.end, t);
+            }
+          }
+        }
+      }
+
       const anchorOnP = stPaint.wallAnchorPlacementModeActive;
       const anchorP = stPaint.wallPlacementAnchorMm;
       const endP = stPaint.wallPlacementAnchorPreviewEndMm;
@@ -846,6 +1045,82 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         snapMarkerG.fill({ color: colA, alpha: 0.95 });
       }
 
+      if (
+        wmPaint?.phase === "pickTarget" &&
+        wmPaint.previewTargetMm &&
+        wmPaint.lastSnapKind &&
+        wmPaint.lastSnapKind !== "none"
+      ) {
+        const skW = wmPaint.lastSnapKind;
+        const pW = wmPaint.previewTargetMm;
+        const scW = worldToScreen(pW.x, pW.y, t);
+        const colW = skW === "vertex" ? 0x5cff8a : skW === "edge" ? 0x5ab4ff : 0xffc857;
+        snapMarkerG.circle(scW.x, scW.y, 7);
+        snapMarkerG.stroke({ width: 2, color: colW, alpha: 0.95 });
+        snapMarkerG.circle(scW.x, scW.y, 2);
+        snapMarkerG.fill({ color: colW, alpha: 0.95 });
+      }
+
+      if (
+        stPaint.activeTool === "changeLength" &&
+        stPaint.lengthChange2dSession &&
+        stPaint.lengthChange2dSession.lastSnapKind &&
+        stPaint.lengthChange2dSession.lastSnapKind !== "none"
+      ) {
+        const lcSnap = stPaint.lengthChange2dSession;
+        const pSn = lcSnap.previewMovingMm;
+        const scSn = worldToScreen(pSn.x, pSn.y, t);
+        const skSn = lcSnap.lastSnapKind;
+        const colSn = skSn === "vertex" ? 0x5cff8a : skSn === "edge" ? 0x5ab4ff : 0xffc857;
+        snapMarkerG.circle(scSn.x, scSn.y, 7);
+        snapMarkerG.stroke({ width: 2, color: colSn, alpha: 0.95 });
+        snapMarkerG.circle(scSn.x, scSn.y, 2);
+        snapMarkerG.fill({ color: colSn, alpha: 0.95 });
+      }
+
+      rulerG.clear();
+      const toolPaint = stPaint.activeTool;
+      const rSess = stPaint.ruler2dSession;
+      const RULER_STROKE = 0xd97706;
+      if (toolPaint === "ruler" && rSess?.firstMm) {
+        const endRm =
+          rSess.phase === "stretching" ? rSess.previewEndMm : rSess.phase === "done" ? rSess.secondMm : null;
+        if (endRm) {
+          const p0 = rSess.firstMm;
+          const s0 = worldToScreen(p0.x, p0.y, t);
+          const s1 = worldToScreen(endRm.x, endRm.y, t);
+          rulerG.moveTo(s0.x, s0.y);
+          rulerG.lineTo(s1.x, s1.y);
+          rulerG.stroke({ width: 1.25, color: RULER_STROKE, alpha: 0.92 });
+          rulerG.circle(s0.x, s0.y, 3.5);
+          rulerG.fill({ color: RULER_STROKE, alpha: 0.88 });
+          rulerG.stroke({ width: 1, color: RULER_STROKE, alpha: 0.95 });
+          rulerG.circle(s1.x, s1.y, 3.5);
+          rulerG.fill({
+            color: RULER_STROKE,
+            alpha: rSess.phase === "stretching" ? 0.42 : 0.88,
+          });
+          rulerG.stroke({ width: 1, color: RULER_STROKE, alpha: 0.95 });
+        }
+      }
+
+      if (
+        toolPaint === "ruler" &&
+        rSess?.phase === "stretching" &&
+        rSess.previewEndMm &&
+        rSess.lastSnapKind &&
+        rSess.lastSnapKind !== "none"
+      ) {
+        const skR = rSess.lastSnapKind;
+        const pR = rSess.previewEndMm;
+        const scR = worldToScreen(pR.x, pR.y, t);
+        const colR = skR === "vertex" ? 0x5cff8a : skR === "edge" ? 0x5ab4ff : 0xffc857;
+        snapMarkerG.circle(scR.x, scR.y, 7);
+        snapMarkerG.stroke({ width: 2, color: colR, alpha: 0.95 });
+        snapMarkerG.circle(scR.x, scR.y, 2);
+        snapMarkerG.fill({ color: colR, alpha: 0.95 });
+      }
+
       marqueeG.clear();
       if (marquee) {
         const x = Math.min(marquee.sx, marquee.cx);
@@ -897,7 +1172,9 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       worldRoot.addChild(jointPickG);
       worldRoot.addChild(windowPlacementG);
       worldRoot.addChild(previewG);
+      worldRoot.addChild(lengthChangeG);
       worldRoot.addChild(snapMarkerG);
+      worldRoot.addChild(rulerG);
       worldRoot.addChild(marqueeG);
       app.stage.addChild(worldRoot);
       useAppStore.getState().setViewportCanvas2dPx(app.renderer.width, app.renderer.height);
@@ -1024,8 +1301,16 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const onPointerMove = (ev: FederatedPointerEvent) => {
         const w = app.renderer.width;
         const h = app.renderer.height;
-        const { viewport2d, wallPlacementSession, currentProject, wallJointSession, wallCoordinateModalOpen } =
-          useAppStore.getState();
+        const {
+          viewport2d,
+          wallPlacementSession,
+          wallMoveCopySession,
+          currentProject,
+          wallJointSession,
+          wallCoordinateModalOpen,
+          activeTool,
+          ruler2dSession,
+        } = useAppStore.getState();
         const t = buildViewportTransform(w, h, viewport2d.panXMm, viewport2d.panYMm, viewport2d.zoomPixelsPerMm);
         const p = screenToWorld(ev.global.x, ev.global.y, t);
         cursorCbRef.current({ x: p.x, y: p.y });
@@ -1053,11 +1338,13 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             const proj = useAppStore.getState().currentProject;
             const wall = proj.walls.find((x) => x.id === opSess.wallId);
             const opn = proj.openings.find((x) => x.id === opSess.openingId);
-            if (wall && opn && opSess.kind === "window") {
+            if (wall && opn && (opSess.kind === "window" || opSess.kind === "door")) {
               const along = projectWorldToAlongMm(wall, p);
               const rawLeft = offsetFromStartForCursorCentered(along, opn.widthMm);
               const left = clampOpeningLeftEdgeMm(wall, opn.widthMm, rawLeft, proj);
-              const v = validateWindowPlacementOnWall(wall, left, opn.widthMm, proj, opSess.openingId);
+              const v = validateWindowPlacementOnWall(wall, left, opn.widthMm, proj, opSess.openingId, {
+                openingKind: opSess.kind,
+              });
               if (v.ok) {
                 useAppStore.getState().applyOpeningRepositionLeftEdge(opSess.openingId, left);
               }
@@ -1075,7 +1362,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               ev.global.y <= h0.y + h0.h,
           );
           canvas.style.cursor = hit ? "pointer" : "";
-        } else if (!panning.active) {
+        } else if (!panning.active && activeTool !== "ruler" && activeTool !== "changeLength") {
           canvas.style.cursor = "";
         }
         const pend = useAppStore.getState().pendingWindowPlacement ?? useAppStore.getState().pendingDoorPlacement;
@@ -1128,6 +1415,98 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                 text: "Установка проёма\nНаведите курсор на стену активного слоя",
               });
             }
+          }
+          setCoordHudRef.current(null);
+          paint();
+        } else if (activeTool === "changeLength") {
+          const storeLc = useAppStore.getState();
+          const lenSess = storeLc.lengthChange2dSession;
+          const lenModal = storeLc.lengthChangeCoordinateModalOpen;
+          const hudLc = computePlacementHudScreenPosition({
+            canvasRect: rect,
+            cursorCanvasX: ev.global.x,
+            cursorCanvasY: ev.global.y,
+            wallCoordinateModalOpen: false,
+            lengthChangeCoordinateModalOpen: lenModal,
+            showCoordHud: false,
+          });
+          const layerLc = narrowProjectToActiveLayer(currentProject);
+          const endTol = Math.max(14, 22 / viewport2d.zoomPixelsPerMm);
+          if (lenSess && !lenModal) {
+            useAppStore.getState().lengthChange2dPreviewMove(p, t);
+            const s2 = useAppStore.getState().lengthChange2dSession!;
+            const dx = s2.previewMovingMm.x - s2.fixedEndMm.x;
+            const dy = s2.previewMovingMm.y - s2.fixedEndMm.y;
+            const Lnow = dx * s2.axisUx + dy * s2.axisUy;
+            const dMm = Math.round(Lnow - s2.initialLengthMm);
+            const Lround = Math.round(Lnow);
+            let snapLine = "";
+            if (s2.lastSnapKind && s2.lastSnapKind !== "none") {
+              snapLine =
+                s2.lastSnapKind === "vertex"
+                  ? "Привязка: угол"
+                  : s2.lastSnapKind === "edge"
+                    ? "Привязка: линия"
+                    : "Привязка: сетка";
+            }
+            const errLine = useAppStore.getState().lastError ? `\n${useAppStore.getState().lastError}` : "";
+            setWallHintRef.current({
+              left: hudLc.hintLeft,
+              top: hudLc.hintTop,
+              text: `Изменение длины\nΔ = ${dMm >= 0 ? "+" : ""}${dMm} мм\nНовая длина = ${Lround} мм\nЛКМ — применить · Esc — отмена · Пробел — Δ (мм)${snapLine ? `\n${snapLine}` : ""}${errLine}`,
+            });
+            lengthChangeHoverRef.current = null;
+          } else if (!lenModal) {
+            const hitEnd = pickNearestWallEnd(p, layerLc.walls, endTol);
+            lengthChangeHoverRef.current = hitEnd ? { wallId: hitEnd.wallId, end: hitEnd.end } : null;
+            setWallHintRef.current({
+              left: hudLc.hintLeft,
+              top: hudLc.hintTop,
+              text: "Выберите сторону",
+            });
+          }
+          setCoordHudRef.current(null);
+          paint();
+        } else if (activeTool === "ruler" && ruler2dSession) {
+          const rs = ruler2dSession;
+          const hudRm = computePlacementHudScreenPosition({
+            canvasRect: rect,
+            cursorCanvasX: ev.global.x,
+            cursorCanvasY: ev.global.y,
+            wallCoordinateModalOpen: false,
+            showCoordHud: false,
+          });
+          if (rs.phase === "stretching" && rs.firstMm) {
+            const altKey = Boolean((ev as { altKey?: boolean }).altKey);
+            useAppStore.getState().ruler2dPreviewMove(p, t, { altKey });
+            const rs2 = useAppStore.getState().ruler2dSession;
+            const end = rs2?.previewEndMm;
+            const first = rs2?.firstMm;
+            if (end && first) {
+              const dx = Math.round(end.x - first.x);
+              const dy = Math.round(end.y - first.y);
+              const d = Math.round(Math.hypot(dx, dy));
+              setWallHintRef.current({
+                left: hudRm.hintLeft,
+                top: hudRm.hintTop,
+                text: `Линейка\nX = ${dx}, Y = ${dy}, D = ${d}\nAlt — без угловой привязки`,
+              });
+            }
+          } else if (rs.phase === "pickFirst") {
+            setWallHintRef.current({
+              left: hudRm.hintLeft,
+              top: hudRm.hintTop,
+              text: "Линейка\nВыберите первую точку",
+            });
+          } else if (rs.phase === "done" && rs.firstMm && rs.secondMm) {
+            const dx = Math.round(rs.secondMm.x - rs.firstMm.x);
+            const dy = Math.round(rs.secondMm.y - rs.firstMm.y);
+            const d = Math.round(Math.hypot(dx, dy));
+            setWallHintRef.current({
+              left: hudRm.hintLeft,
+              top: hudRm.hintTop,
+              text: `Линейка\nX = ${dx}, Y = ${dy}, D = ${d}\nЛКМ — новый замер · Esc — сброс`,
+            });
           }
           setCoordHudRef.current(null);
           paint();
@@ -1258,6 +1637,80 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             });
             setCoordHudRef.current(null);
           }
+        } else if (wallMoveCopySession) {
+          const stMc = useAppStore.getState();
+          const wm = stMc.wallMoveCopySession;
+          const moveCopyCoordOpen = stMc.wallMoveCopyCoordinateModalOpen;
+          const modeLabel = linearPlacementModeLabelRu(currentProject.settings.editor2d.linearPlacementMode);
+          const title = wm?.mode === "copy" ? "Копирование стены" : "Перенос стены";
+          if (wm?.phase === "pickTarget" && wm.anchorWorldMm) {
+            const altKey = Boolean((ev as { altKey?: boolean }).altKey);
+            useAppStore.getState().wallMoveCopyPreviewMove(p, t, { altKey });
+            const ws = useAppStore.getState().wallMoveCopySession;
+            let snapLine = "";
+            if (ws?.lastSnapKind && ws.lastSnapKind !== "none") {
+              snapLine =
+                ws.lastSnapKind === "vertex"
+                  ? "Привязка: угол"
+                  : ws.lastSnapKind === "edge"
+                    ? "Привязка: линия"
+                    : "Привязка: сетка";
+            }
+            const coordModalAny = wallCoordinateModalOpen || moveCopyCoordOpen;
+            const hud = computePlacementHudScreenPosition({
+              canvasRect: rect,
+              cursorCanvasX: ev.global.x,
+              cursorCanvasY: ev.global.y,
+              wallCoordinateModalOpen,
+              wallMoveCopyCoordinateModalOpen: moveCopyCoordOpen,
+              showCoordHud: !coordModalAny,
+            });
+            setWallHintRef.current({
+              left: hud.hintLeft,
+              top: hud.hintTop,
+              text: `${title}\nУкажите новое положение (ЛКМ) или Пробел — координаты\n${modeLabel}${snapLine ? `\n${snapLine}` : ""}\nAlt — без угловой привязки`,
+            });
+            if (ws?.anchorWorldMm && ws.previewTargetMm && hud.coordHudLeft != null && hud.coordHudTop != null) {
+              const dx = ws.previewTargetMm.x - ws.anchorWorldMm.x;
+              const dy = ws.previewTargetMm.y - ws.anchorWorldMm.y;
+              const d = Math.hypot(dx, dy);
+              const rel2 = computeAnchorRelativeHud(
+                ws.anchorWorldMm.x,
+                ws.anchorWorldMm.y,
+                ws.previewTargetMm.x,
+                ws.previewTargetMm.y,
+              );
+              const locked = ws.angleSnapLockedDeg ?? null;
+              setCoordHudRef.current({
+                left: hud.coordHudLeft,
+                top: hud.coordHudTop,
+                dx,
+                dy,
+                d,
+                angleDeg: locked != null ? locked : rel2.angleDeg,
+                angleSnapLockedDeg: locked,
+                axisHint: rel2.axisHint,
+              });
+            } else {
+              setCoordHudRef.current(null);
+            }
+          } else {
+            const hud = computePlacementHudScreenPosition({
+              canvasRect: rect,
+              cursorCanvasX: ev.global.x,
+              cursorCanvasY: ev.global.y,
+              wallCoordinateModalOpen,
+              wallMoveCopyCoordinateModalOpen: moveCopyCoordOpen,
+              showCoordHud: false,
+            });
+            setWallHintRef.current({
+              left: hud.hintLeft,
+              top: hud.hintTop,
+              text: `${title}\nВыберите точку привязки на стене (ЛКМ)\n${modeLabel}`,
+            });
+            setCoordHudRef.current(null);
+          }
+          paint();
         } else if (wallJointSession) {
           const layerView = narrowProjectToActiveLayer(currentProject);
           const walls = layerView.walls;
@@ -1408,6 +1861,68 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           return;
         }
 
+        const wallMoveCopySessionPtr = useAppStore.getState().wallMoveCopySession;
+        if (wallMoveCopySessionPtr && ev.button === 2) {
+          ev.preventDefault();
+          useAppStore.getState().cancelWallMoveCopy();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          paint();
+          return;
+        }
+
+        if (wallMoveCopySessionPtr && ev.button === 0) {
+          if (useAppStore.getState().wallMoveCopyCoordinateModalOpen) {
+            return;
+          }
+          useAppStore.getState().wallMoveCopyPrimaryClick(worldMm, t, { altKey: Boolean(ev.altKey) });
+          paint();
+          if (!useAppStore.getState().wallMoveCopySession) {
+            setWallHintRef.current(null);
+            setCoordHudRef.current(null);
+          }
+          return;
+        }
+
+        if (activeTool === "changeLength" && ev.button === 2) {
+          ev.preventDefault();
+          useAppStore.getState().lengthChange2dEsc();
+          lengthChangeHoverRef.current = null;
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          paint();
+          return;
+        }
+
+        if (activeTool === "changeLength" && ev.button === 0) {
+          if (useAppStore.getState().lengthChangeCoordinateModalOpen) {
+            return;
+          }
+          const layerLc = narrowProjectToActiveLayer(useAppStore.getState().currentProject);
+          const lc = useAppStore.getState().lengthChange2dSession;
+          if (lc) {
+            useAppStore.getState().lengthChange2dCommit();
+            setWallHintRef.current(null);
+            setCoordHudRef.current(null);
+            paint();
+            return;
+          }
+          const endTol = Math.max(14, 22 / viewport2d.zoomPixelsPerMm);
+          const hitEnd = pickNearestWallEnd(worldMm, layerLc.walls, endTol);
+          if (hitEnd) {
+            useAppStore.getState().startLengthChange2dSession(hitEnd.wallId, hitEnd.end, worldMm, t);
+            paint();
+            return;
+          }
+          return;
+        }
+
+        if (activeTool === "ruler" && ev.button === 0) {
+          useAppStore.getState().ruler2dPrimaryClick(worldMm, t, { altKey: Boolean(ev.altKey) });
+          paint();
+          return;
+        }
+
         if (ev.button === 1) {
           const { viewport2d: v2 } = useAppStore.getState();
           panning.active = true;
@@ -1430,13 +1945,31 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         }
         if (
           ev.button === 2 &&
-          activeTool === "select" &&
+          (activeTool === "select" || activeTool === "ruler") &&
           !wallJointSession &&
           !wallPlacementSession &&
           !useAppStore.getState().pendingWindowPlacement &&
-          !useAppStore.getState().pendingDoorPlacement
+          !useAppStore.getState().pendingDoorPlacement &&
+          !useAppStore.getState().wallMoveCopySession
         ) {
           ev.preventDefault();
+          const cpRm = useAppStore.getState().currentProject;
+          const layerRm = narrowProjectToActiveLayer(cpRm);
+          const wallTolRm = Math.max(14, 22 / viewport2d.zoomPixelsPerMm);
+          const wallHitRm = pickClosestWallAlongPoint(worldMm, layerRm.walls, wallTolRm);
+          if (activeTool === "select" && wallHitRm) {
+            const canvasRm = app.canvas as HTMLCanvasElement;
+            const rectRm = canvasRm.getBoundingClientRect();
+            const sx = rectRm.left + (ev.global.x / w) * rectRm.width;
+            const sy = rectRm.top + (ev.global.y / h) * rectRm.height;
+            useAppStore.getState().openWallContextMenu({
+              wallId: wallHitRm.wallId,
+              clientX: sx,
+              clientY: sy,
+            });
+            paint();
+            return;
+          }
           const { viewport2d: v2 } = useAppStore.getState();
           panning.active = true;
           panning.sx = ev.global.x;
@@ -1459,7 +1992,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           !wallJointSession &&
           !wallPlacementSession &&
           !useAppStore.getState().pendingWindowPlacement &&
-          !useAppStore.getState().pendingDoorPlacement
+          !useAppStore.getState().pendingDoorPlacement &&
+          !useAppStore.getState().wallMoveCopySession
         ) {
           const moveMode = useAppStore.getState().openingMoveModeActive;
           if (moveMode) {
@@ -1495,7 +2029,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             openingPointerRef.current = {
               openingId: hitOp.id,
               wallId: hitOp.wallId,
-              kind: hitOp.kind === "door" ? "door" : "window",
+              kind: hitOp.kind,
               sx: ev.global.x,
               sy: ev.global.y,
               pointerId: ev.pointerId,
@@ -1535,7 +2069,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             const now = Date.now();
             const prev = lastWallClickRef.current;
             if (prev && prev.id === wallHit.wallId && now - prev.t < 480) {
-              useAppStore.getState().openWallDetail(wallHit.wallId);
+              openWallObjectEditorFromHit(wallHit.wallId);
               lastWallClickRef.current = null;
             } else {
               lastWallClickRef.current = { id: wallHit.wallId, t: now };
@@ -1567,11 +2101,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             const now = Date.now();
             const last = lastOpeningClickRef.current;
             if (last && last.id === opPtr.openingId && now - last.t < 480) {
-              if (opPtr.kind === "door") {
-                useAppStore.getState().openDoorEditModal(opPtr.openingId, "form");
-              } else {
-                useAppStore.getState().openWindowEditModal(opPtr.openingId, "form");
-              }
+              openPlacedOpeningObjectEditorFromHit(opPtr.openingId);
               lastOpeningClickRef.current = null;
             } else {
               lastOpeningClickRef.current = { id: opPtr.openingId, t: now };
@@ -1581,7 +2111,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             const proj = useAppStore.getState().currentProject;
             const o = proj.openings.find((x) => x.id === opPtr.openingId);
             const wall = proj.walls.find((w) => w.id === opPtr.wallId);
-            if (opPtr.kind === "window" && o && wall && o.offsetFromStartMm != null) {
+            if ((opPtr.kind === "window" || opPtr.kind === "door") && o && wall && o.offsetFromStartMm != null) {
               const snapped = snapOpeningLeftEdgeMm(
                 wall,
                 o.widthMm,
@@ -1621,7 +2151,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             const proj = useAppStore.getState().currentProject;
             const o = proj.openings.find((x) => x.id === opPtr.openingId);
             const wall = proj.walls.find((w) => w.id === opPtr.wallId);
-            if (opPtr.kind === "window" && o && wall && o.offsetFromStartMm != null) {
+            if ((opPtr.kind === "window" || opPtr.kind === "door") && o && wall && o.offsetFromStartMm != null) {
               const snapped = snapOpeningLeftEdgeMm(
                 wall,
                 o.widthMm,
@@ -1640,13 +2170,32 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         endPan();
         cursorCbRef.current(null);
         jointHoverRef.current = null;
+        lengthChangeHoverRef.current = null;
         const st = useAppStore.getState();
         windowPlacementHoverRef.current = null;
-        if (!st.wallPlacementSession && !st.wallJointSession && !st.pendingWindowPlacement && !st.pendingDoorPlacement) {
+        if (st.activeTool === "ruler" || st.activeTool === "changeLength") {
+          setWallHintRef.current(null);
+        }
+        if (
+          !st.wallPlacementSession &&
+          !st.wallJointSession &&
+          !st.pendingWindowPlacement &&
+          !st.pendingDoorPlacement &&
+          !st.wallMoveCopySession &&
+          st.activeTool !== "ruler" &&
+          st.activeTool !== "changeLength"
+        ) {
           setWallHintRef.current(null);
           setCoordHudRef.current(null);
         }
-        if (st.wallJointSession || st.pendingWindowPlacement || st.pendingDoorPlacement) {
+        if (
+          st.wallJointSession ||
+          st.pendingWindowPlacement ||
+          st.pendingDoorPlacement ||
+          st.wallMoveCopySession ||
+          st.activeTool === "ruler" ||
+          st.activeTool === "changeLength"
+        ) {
           paint();
         }
       };
@@ -1722,6 +2271,39 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           </svg>
         </div>
       </div>
+      {wallContextMenu ? (
+        <div
+          className="ed2d-wall-ctx"
+          style={{ left: wallContextMenu.clientX, top: wallContextMenu.clientY }}
+          role="menu"
+          aria-label="Действия со стеной"
+        >
+          <button
+            type="button"
+            className="ed2d-wall-ctx__item"
+            role="menuitem"
+            onClick={() => useAppStore.getState().startWallCopyFromContextMenu(wallContextMenu.wallId)}
+          >
+            Копировать
+          </button>
+          <button
+            type="button"
+            className="ed2d-wall-ctx__item"
+            role="menuitem"
+            onClick={() => useAppStore.getState().startWallMoveFromContextMenu(wallContextMenu.wallId)}
+          >
+            Переместить
+          </button>
+          <button
+            type="button"
+            className="ed2d-wall-ctx__item"
+            role="menuitem"
+            onClick={() => useAppStore.getState().deleteWallFromContextMenu(wallContextMenu.wallId)}
+          >
+            Удалить
+          </button>
+        </div>
+      ) : null}
       {wallHint ? (
         <div className="ed2d-wall-hint" style={{ left: wallHint.left, top: wallHint.top }}>
           {wallHint.text}

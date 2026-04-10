@@ -59,12 +59,26 @@ import { buildViewportTransform, type ViewportTransform } from "@/core/geometry/
 import type { Point2D } from "@/core/geometry/types";
 import { applyWallDirectionAngleSnapToPoint } from "@/core/geometry/wallDirectionAngleSnap";
 import { resolveSnap2d, type SnapKind } from "@/core/geometry/snap2d";
-import { computeProfileThickness, setProjectOrigin } from "@/core/domain/wallOps";
+import { computeProfileThickness, MIN_WALL_SEGMENT_LENGTH_MM, setProjectOrigin } from "@/core/domain/wallOps";
+import { duplicateWallWithDependents } from "@/core/domain/wallDuplicate";
+import { translateWallInProject } from "@/core/domain/wallTranslate";
+import type { WallMoveCopySession } from "@/core/domain/wallMoveCopySession";
+import { initialRuler2dSession, type Ruler2dSession } from "@/core/domain/ruler2dSession";
+import type { LengthChange2dSession } from "@/core/domain/lengthChange2dSession";
+import { applyWallLengthChangeInProject } from "@/core/domain/wallLengthChangeApply";
+import {
+  axisFromFixedTowardMoving,
+  fixedEndpointForLengthChange,
+  lengthFromSnappedPointForWallLengthEdit,
+  movingEndpointForLengthMm,
+} from "@/core/domain/wallLengthChangeGeometry";
+import { wallLengthMm } from "@/core/domain/wallCalculationGeometry";
+import { closestPointOnSegment } from "@/core/domain/wallJointGeometry";
 import { commitWallPlacementSecondPoint } from "@/core/domain/wallPlacementCommit";
 import type { WallPlacementSession } from "@/core/domain/wallPlacement";
 import { initialWallPlacementPhase } from "@/core/domain/wallPlacement";
 import { applyCornerWallJoint, applyTeeWallJoint } from "@/core/domain/wallJointApply";
-import type { WallJointKind } from "@/core/domain/wallJoint";
+import type { WallEndSide, WallJointKind } from "@/core/domain/wallJoint";
 import type { WallJointSession } from "@/core/domain/wallJointSession";
 import { pickNearestWallEnd, pickWallSegmentInterior } from "@/core/domain/wallJointPick";
 import { narrowProjectToActiveLayer } from "@/core/domain/projectLayerSlice";
@@ -80,7 +94,7 @@ import { pickAndLoadProject, saveProjectWithFallback } from "@/core/io/projectFi
 import { validateProjectSchema } from "@/core/validation/validateProjectSchema";
 import type { LinearProfilePlacementMode } from "@/core/geometry/linearPlacementGeometry";
 
-export type ActiveTool = "select" | "pan";
+export type ActiveTool = "select" | "pan" | "ruler" | "changeLength";
 
 /** Окно создано из модалки, ожидает привязку к стене (этап 2). */
 export interface PendingWindowPlacement {
@@ -144,6 +158,12 @@ interface AppState {
   readonly wallPlacementAnchorLastSnapKind: SnapKind | null;
   /** Гистерезис угловой привязки вектора «опора → начало стены». */
   readonly wallPlacementAnchorAngleSnapLockedDeg: number | null;
+  /** Контекстное меню стены на 2D (экранные координаты). */
+  readonly wallContextMenu: { readonly wallId: string; readonly clientX: number; readonly clientY: number } | null;
+  /** Перенос или копия стены двумя точками (как постановка стены). */
+  readonly wallMoveCopySession: WallMoveCopySession | null;
+  /** Пробел: смещение второй точки переноса/копии. */
+  readonly wallMoveCopyCoordinateModalOpen: boolean;
   readonly wallCalculationModalOpen: boolean;
   readonly dirty: boolean;
   readonly lastError: string | null;
@@ -157,6 +177,12 @@ interface AppState {
   readonly openingMoveModeActive: boolean;
   /** Выбранная стена для режима «Вид стены». */
   readonly wallDetailWallId: string | null;
+  /** Замер расстояния на 2D (только при activeTool === "ruler"). */
+  readonly ruler2dSession: Ruler2dSession | null;
+  /** Изменение длины стены по торцу (только при activeTool === "changeLength"). */
+  readonly lengthChange2dSession: LengthChange2dSession | null;
+  /** Пробел: точный ввод Δ длины (мм) в режиме изменения длины. */
+  readonly lengthChangeCoordinateModalOpen: boolean;
 }
 
 interface AppActions {
@@ -282,6 +308,58 @@ interface AppActions {
   openWallCoordinateModal: () => void;
   closeWallCoordinateModal: () => void;
   applyWallCoordinateModal: (input: { readonly dxMm: number; readonly dyMm: number }) => void;
+  openWallContextMenu: (input: { readonly wallId: string; readonly clientX: number; readonly clientY: number }) => void;
+  closeWallContextMenu: () => void;
+  deleteWallFromContextMenu: (wallId: string) => void;
+  startWallMoveFromContextMenu: (wallId: string) => void;
+  startWallCopyFromContextMenu: (wallId: string) => void;
+  cancelWallMoveCopy: () => void;
+  wallMoveCopyPreviewMove: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+    opts?: { readonly altKey?: boolean },
+  ) => void;
+  wallMoveCopyPrimaryClick: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+    opts?: { readonly altKey?: boolean },
+  ) => void;
+  wallMoveCopyCommitTarget: (worldMm: Point2D) => void;
+  openWallMoveCopyCoordinateModal: () => void;
+  closeWallMoveCopyCoordinateModal: () => void;
+  applyWallMoveCopyCoordinateModal: (input: { readonly dxMm: number; readonly dyMm: number }) => void;
+  ruler2dPreviewMove: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+    opts?: { readonly altKey?: boolean },
+  ) => void;
+  ruler2dPrimaryClick: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+    opts?: { readonly altKey?: boolean },
+  ) => void;
+  /** Esc: сброс замера или выход из линейки. */
+  ruler2dCancel: () => void;
+  /** После выбора торца — начать перетаскивание (клик–движение–клик). */
+  startLengthChange2dSession: (
+    wallId: string,
+    movingEnd: WallEndSide,
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+  ) => void;
+  lengthChange2dPreviewMove: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+    opts?: { readonly altKey?: boolean },
+  ) => void;
+  /** Второй ЛКМ: зафиксировать длину. */
+  lengthChange2dCommit: () => void;
+  /** Esc: отменить перетаскивание; если торец не выбран — выйти из инструмента. */
+  lengthChange2dEsc: () => void;
+  openLengthChangeCoordinateModal: () => void;
+  closeLengthChangeCoordinateModal: () => void;
+  /** Δ к исходной длинине (мм); применяет и закрывает режим перетаскивания. */
+  applyLengthChangeCoordinateModal: (input: { readonly deltaMm: number }) => void;
   toggleWallAnchorPlacementMode: () => void;
   clearWallPlacementAnchor: () => void;
   wallPlacementAnchorPreviewMove: (
@@ -373,6 +451,9 @@ export const useAppStore = create<AppStore>((set, get) => {
     wallPlacementAnchorPreviewEndMm: null,
     wallPlacementAnchorLastSnapKind: null,
     wallPlacementAnchorAngleSnapLockedDeg: null,
+    wallContextMenu: null,
+    wallMoveCopySession: null,
+    wallMoveCopyCoordinateModalOpen: false,
     wallCalculationModalOpen: false,
     dirty: false,
     lastError: null,
@@ -383,6 +464,9 @@ export const useAppStore = create<AppStore>((set, get) => {
     viewportCanvas2dPx: null,
     openingMoveModeActive: false,
     wallDetailWallId: null,
+    ruler2dSession: null,
+    lengthChange2dSession: null,
+    lengthChangeCoordinateModalOpen: false,
 
     setViewportCanvas2dPx: (width, height) =>
       set({
@@ -410,25 +494,73 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
 
     setActiveTool: (tool) =>
-      set({
-        activeTool: tool,
-        openingMoveModeActive: tool === "select" ? get().openingMoveModeActive : false,
-        ...(tool === "select"
-          ? {
-              wallPlacementSession: null,
-              wallCoordinateModalOpen: false,
-              wallAnchorCoordinateModalOpen: false,
-              wallAnchorPlacementModeActive: false,
-              wallPlacementAnchorMm: null,
-              wallPlacementAnchorPreviewEndMm: null,
-              wallPlacementAnchorLastSnapKind: null,
-              wallPlacementAnchorAngleSnapLockedDeg: null,
-              addWallModalOpen: false,
-              addWindowModalOpen: false,
-              wallJointSession: null,
-              wallJointParamsModalOpen: false,
-            }
-          : { wallJointSession: null, wallJointParamsModalOpen: false }),
+      set((s) => {
+        let proj = s.currentProject;
+        let dirty = s.dirty;
+        if (tool !== "select" && s.wallMoveCopySession?.mode === "copy") {
+          proj = touchProjectMeta(deleteEntitiesFromProject(s.currentProject, new Set([s.wallMoveCopySession.workingWallId])));
+          dirty = true;
+        }
+        const wallMoveCopySession = tool === "select" ? s.wallMoveCopySession : null;
+        const wallMoveCopyCoordinateModalOpen = tool === "select" ? s.wallMoveCopyCoordinateModalOpen : false;
+        const wallContextMenu = tool === "select" ? s.wallContextMenu : null;
+        const commonClear = {
+          currentProject: proj,
+          dirty,
+          wallMoveCopySession,
+          wallMoveCopyCoordinateModalOpen,
+          wallContextMenu,
+          wallJointSession: null,
+          wallJointParamsModalOpen: false,
+          wallPlacementSession: null,
+          wallCoordinateModalOpen: false,
+          wallAnchorCoordinateModalOpen: false,
+          wallAnchorPlacementModeActive: false,
+          wallPlacementAnchorMm: null,
+          wallPlacementAnchorPreviewEndMm: null,
+          wallPlacementAnchorLastSnapKind: null,
+          wallPlacementAnchorAngleSnapLockedDeg: null,
+          addWallModalOpen: false,
+          addWindowModalOpen: false,
+        };
+        if (tool === "select") {
+          return {
+            activeTool: "select",
+            ...commonClear,
+            openingMoveModeActive: s.openingMoveModeActive,
+            ruler2dSession: null,
+            lengthChange2dSession: null,
+            lengthChangeCoordinateModalOpen: false,
+          };
+        }
+        if (tool === "ruler") {
+          return {
+            activeTool: "ruler",
+            ...commonClear,
+            openingMoveModeActive: false,
+            ruler2dSession: initialRuler2dSession(),
+            lengthChange2dSession: null,
+            lengthChangeCoordinateModalOpen: false,
+          };
+        }
+        if (tool === "changeLength") {
+          return {
+            activeTool: "changeLength",
+            ...commonClear,
+            openingMoveModeActive: false,
+            ruler2dSession: null,
+            lengthChange2dSession: null,
+            lengthChangeCoordinateModalOpen: false,
+          };
+        }
+        return {
+          activeTool: "pan",
+          ...commonClear,
+          openingMoveModeActive: false,
+          ruler2dSession: null,
+          lengthChange2dSession: null,
+          lengthChangeCoordinateModalOpen: false,
+        };
       }),
 
     setViewport2d: (v) =>
@@ -451,9 +583,17 @@ export const useAppStore = create<AppStore>((set, get) => {
         if (tab !== "2d" && s.pendingWindowPlacement) {
           proj = removeUnplacedWindowDraft(proj, s.pendingWindowPlacement.openingId);
         }
+        if (tab !== "2d" && s.wallMoveCopySession?.mode === "copy") {
+          proj = deleteEntitiesFromProject(proj, new Set([s.wallMoveCopySession.workingWallId]));
+        }
         return {
           activeTab: tab,
-          activeTool: tab === "2d" ? "select" : s.activeTool,
+          activeTool:
+            tab === "2d"
+              ? s.activeTool
+              : s.activeTool === "ruler" || s.activeTool === "changeLength"
+                ? "select"
+                : s.activeTool,
           wallPlacementSession: tab === "2d" ? s.wallPlacementSession : null,
           wallJointSession: tab === "2d" ? s.wallJointSession : null,
           wallJointParamsModalOpen: tab === "2d" ? s.wallJointParamsModalOpen : false,
@@ -468,14 +608,23 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementAnchorPreviewEndMm: tab === "2d" ? s.wallPlacementAnchorPreviewEndMm : null,
           wallPlacementAnchorLastSnapKind: tab === "2d" ? s.wallPlacementAnchorLastSnapKind : null,
           wallPlacementAnchorAngleSnapLockedDeg: tab === "2d" ? s.wallPlacementAnchorAngleSnapLockedDeg : null,
+          wallContextMenu: tab === "2d" ? s.wallContextMenu : null,
+          wallMoveCopySession: tab === "2d" ? s.wallMoveCopySession : null,
+          wallMoveCopyCoordinateModalOpen: tab === "2d" ? s.wallMoveCopyCoordinateModalOpen : false,
+          ruler2dSession: tab === "2d" ? s.ruler2dSession : null,
+          lengthChange2dSession: tab === "2d" ? s.lengthChange2dSession : null,
+          lengthChangeCoordinateModalOpen: tab === "2d" ? s.lengthChangeCoordinateModalOpen : false,
           openingMoveModeActive: tab === "2d" ? s.openingMoveModeActive : false,
           wallDetailWallId:
             tab === "wall"
               ? s.wallDetailWallId ?? s.currentProject.walls.find((w) => s.selectedEntityIds.includes(w.id))?.id ?? null
               : s.wallDetailWallId,
-          currentProject: mergeViewState(tab !== "2d" && s.pendingWindowPlacement ? proj : s.currentProject, {
-            activeTab: tab,
-          }),
+          currentProject: mergeViewState(
+            tab !== "2d" && (s.pendingWindowPlacement || s.wallMoveCopySession?.mode === "copy") ? proj : s.currentProject,
+            {
+              activeTab: tab,
+            },
+          ),
           dirty: true,
         };
       }),
@@ -1104,6 +1253,9 @@ export const useAppStore = create<AppStore>((set, get) => {
         wallPlacementAnchorLastSnapKind: null,
         wallPlacementAnchorAngleSnapLockedDeg: null,
         wallAnchorCoordinateModalOpen: false,
+        wallContextMenu: null,
+        wallMoveCopySession: null,
+        wallMoveCopyCoordinateModalOpen: false,
         selectedEntityIds: [],
         lastError: null,
       });
@@ -1452,6 +1604,480 @@ export const useAppStore = create<AppStore>((set, get) => {
           angleSnapLockedDeg: null,
         },
         ...clearAfterStart,
+        lastError: null,
+      });
+    },
+
+    openWallContextMenu: (input) =>
+      set({
+        wallContextMenu: { wallId: input.wallId, clientX: input.clientX, clientY: input.clientY },
+        lastError: null,
+      }),
+
+    closeWallContextMenu: () => set({ wallContextMenu: null }),
+
+    deleteWallFromContextMenu: (wallId) => {
+      const { currentProject, selectedEntityIds, wallDetailWallId } = get();
+      const next = deleteEntitiesFromProject(currentProject, new Set([wallId]));
+      set({
+        currentProject: next,
+        wallContextMenu: null,
+        wallMoveCopySession: null,
+        wallMoveCopyCoordinateModalOpen: false,
+        selectedEntityIds: selectedEntityIds.filter((id) => id !== wallId),
+        wallDetailWallId: wallDetailWallId === wallId ? null : wallDetailWallId,
+        dirty: true,
+        lastError: null,
+      });
+    },
+
+    startWallMoveFromContextMenu: (wallId) => {
+      const w = get().currentProject.walls.find((x) => x.id === wallId);
+      if (!w) {
+        set({ lastError: "Стена не найдена.", wallContextMenu: null });
+        return;
+      }
+      set({
+        wallContextMenu: null,
+        wallPlacementSession: null,
+        wallCoordinateModalOpen: false,
+        wallAnchorCoordinateModalOpen: false,
+        wallAnchorPlacementModeActive: false,
+        wallPlacementAnchorMm: null,
+        wallPlacementAnchorPreviewEndMm: null,
+        wallPlacementAnchorLastSnapKind: null,
+        wallPlacementAnchorAngleSnapLockedDeg: null,
+        wallJointSession: null,
+        pendingWindowPlacement: null,
+        pendingDoorPlacement: null,
+        wallMoveCopyCoordinateModalOpen: false,
+        wallMoveCopySession: {
+          mode: "move",
+          sourceWallId: wallId,
+          workingWallId: wallId,
+          phase: "pickAnchor",
+          anchorWorldMm: null,
+          previewTargetMm: null,
+          lastSnapKind: null,
+          angleSnapLockedDeg: null,
+        },
+        selectedEntityIds: [wallId],
+        lastError: null,
+      });
+    },
+
+    startWallCopyFromContextMenu: (wallId) => {
+      const r = duplicateWallWithDependents(get().currentProject, wallId);
+      if ("error" in r) {
+        set({ lastError: r.error, wallContextMenu: null });
+        return;
+      }
+      set({
+        currentProject: r.project,
+        wallContextMenu: null,
+        wallPlacementSession: null,
+        wallCoordinateModalOpen: false,
+        wallJointSession: null,
+        pendingWindowPlacement: null,
+        pendingDoorPlacement: null,
+        wallMoveCopyCoordinateModalOpen: false,
+        wallMoveCopySession: {
+          mode: "copy",
+          sourceWallId: wallId,
+          workingWallId: r.newWallId,
+          phase: "pickAnchor",
+          anchorWorldMm: null,
+          previewTargetMm: null,
+          lastSnapKind: null,
+          angleSnapLockedDeg: null,
+        },
+        selectedEntityIds: [r.newWallId],
+        dirty: true,
+        lastError: null,
+      });
+    },
+
+    cancelWallMoveCopy: () => {
+      const s = get().wallMoveCopySession;
+      if (!s) {
+        return;
+      }
+      let proj = get().currentProject;
+      if (s.mode === "copy") {
+        proj = deleteEntitiesFromProject(proj, new Set([s.workingWallId]));
+      }
+      set({
+        currentProject: proj,
+        wallMoveCopySession: null,
+        wallMoveCopyCoordinateModalOpen: false,
+        wallCoordinateModalOpen: false,
+        selectedEntityIds: proj.walls.some((w) => w.id === s.sourceWallId) ? [s.sourceWallId] : [],
+        dirty: true,
+        lastError: null,
+      });
+    },
+
+    wallMoveCopyPreviewMove: (worldMm, viewport, opts) => {
+      const s = get().wallMoveCopySession;
+      if (!s || s.phase !== "pickTarget" || !s.anchorWorldMm) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      let previewEnd = snap.point;
+      const skipAngleSnap = get().wallMoveCopyCoordinateModalOpen || Boolean(opts?.altKey);
+      let angleSnapLocked: number | null = s.angleSnapLockedDeg ?? null;
+      if (!skipAngleSnap) {
+        const r = applyWallDirectionAngleSnapToPoint(s.anchorWorldMm, previewEnd, angleSnapLocked, opts);
+        previewEnd = r.point;
+        angleSnapLocked = r.nextLockedDeg;
+      } else {
+        angleSnapLocked = null;
+      }
+      set({
+        wallMoveCopySession: {
+          ...s,
+          previewTargetMm: previewEnd,
+          lastSnapKind: snap.kind,
+          angleSnapLockedDeg: angleSnapLocked,
+        },
+      });
+    },
+
+    wallMoveCopyPrimaryClick: (worldMm, viewport, opts) => {
+      const s = get().wallMoveCopySession;
+      if (!s) {
+        return;
+      }
+      const wall = get().currentProject.walls.find((w) => w.id === s.workingWallId);
+      if (!wall) {
+        get().cancelWallMoveCopy();
+        return;
+      }
+      if (s.phase === "pickAnchor") {
+        const snap = resolvePlacementSnap(get, worldMm, viewport);
+        const { point } = closestPointOnSegment(wall.start, wall.end, snap.point);
+        set({
+          wallMoveCopySession: {
+            ...s,
+            phase: "pickTarget",
+            anchorWorldMm: point,
+            previewTargetMm: point,
+            lastSnapKind: snap.kind,
+            angleSnapLockedDeg: null,
+          },
+          lastError: null,
+        });
+        return;
+      }
+      if (!s.anchorWorldMm) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      let finalPt = snap.point;
+      if (!opts?.altKey) {
+        finalPt = applyWallDirectionAngleSnapToPoint(s.anchorWorldMm, finalPt, s.angleSnapLockedDeg ?? null, {}).point;
+      }
+      get().wallMoveCopyCommitTarget(finalPt);
+    },
+
+    wallMoveCopyCommitTarget: (finalMm) => {
+      const s = get().wallMoveCopySession;
+      if (!s?.anchorWorldMm || s.phase !== "pickTarget") {
+        set({ wallMoveCopyCoordinateModalOpen: false });
+        return;
+      }
+      const dx = finalMm.x - s.anchorWorldMm.x;
+      const dy = finalMm.y - s.anchorWorldMm.y;
+      if (Math.hypot(dx, dy) < MIN_WALL_SEGMENT_LENGTH_MM) {
+        set({ lastError: "Смещение слишком мало.", wallMoveCopyCoordinateModalOpen: false });
+        return;
+      }
+      const proj = translateWallInProject(get().currentProject, s.workingWallId, dx, dy);
+      set({
+        currentProject: touchProjectMeta(proj),
+        wallMoveCopySession: null,
+        wallMoveCopyCoordinateModalOpen: false,
+        wallCoordinateModalOpen: false,
+        selectedEntityIds: [s.workingWallId],
+        dirty: true,
+        lastError: null,
+      });
+    },
+
+    openWallMoveCopyCoordinateModal: () => {
+      const s = get().wallMoveCopySession;
+      if (!s || s.phase !== "pickTarget" || !s.anchorWorldMm) {
+        return;
+      }
+      set({ wallMoveCopyCoordinateModalOpen: true, lastError: null });
+    },
+
+    closeWallMoveCopyCoordinateModal: () => set({ wallMoveCopyCoordinateModalOpen: false }),
+
+    applyWallMoveCopyCoordinateModal: (input) => {
+      const s = get().wallMoveCopySession;
+      if (!s?.anchorWorldMm || s.phase !== "pickTarget") {
+        set({ wallMoveCopyCoordinateModalOpen: false });
+        return;
+      }
+      if (!Number.isFinite(input.dxMm) || !Number.isFinite(input.dyMm)) {
+        set({ lastError: "Введите числовые X и Y (мм)." });
+        return;
+      }
+      const raw = { x: s.anchorWorldMm.x + input.dxMm, y: s.anchorWorldMm.y + input.dyMm };
+      const vp = getViewportForSnapFromStore(get);
+      const snap = resolvePlacementSnap(get, raw, vp);
+      let finalPt = snap.point;
+      finalPt = applyWallDirectionAngleSnapToPoint(s.anchorWorldMm, finalPt, s.angleSnapLockedDeg ?? null, {}).point;
+      get().wallMoveCopyCommitTarget(finalPt);
+    },
+
+    ruler2dPreviewMove: (worldMm, viewport, opts) => {
+      if (get().activeTool !== "ruler") {
+        return;
+      }
+      const rs = get().ruler2dSession;
+      if (!rs || rs.phase !== "stretching" || !rs.firstMm) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      let previewEnd = snap.point;
+      let angleLocked: number | null = rs.angleSnapLockedDeg ?? null;
+      if (!opts?.altKey) {
+        const r = applyWallDirectionAngleSnapToPoint(rs.firstMm, previewEnd, angleLocked, opts);
+        previewEnd = r.point;
+        angleLocked = r.nextLockedDeg;
+      } else {
+        angleLocked = null;
+      }
+      set({
+        ruler2dSession: {
+          ...rs,
+          previewEndMm: previewEnd,
+          lastSnapKind: snap.kind,
+          angleSnapLockedDeg: angleLocked,
+        },
+      });
+    },
+
+    ruler2dPrimaryClick: (worldMm, viewport, opts) => {
+      if (get().activeTool !== "ruler") {
+        return;
+      }
+      const rs = get().ruler2dSession;
+      if (!rs) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      const pt = snap.point;
+
+      if (rs.phase === "pickFirst") {
+        set({
+          ruler2dSession: {
+            phase: "stretching",
+            firstMm: pt,
+            secondMm: null,
+            previewEndMm: pt,
+            lastSnapKind: snap.kind,
+            angleSnapLockedDeg: null,
+          },
+          lastError: null,
+        });
+        return;
+      }
+
+      if (rs.phase === "stretching" && rs.firstMm) {
+        let finalPt = snap.point;
+        if (!opts?.altKey) {
+          finalPt = applyWallDirectionAngleSnapToPoint(rs.firstMm, finalPt, rs.angleSnapLockedDeg ?? null, {}).point;
+        }
+        set({
+          ruler2dSession: {
+            phase: "done",
+            firstMm: rs.firstMm,
+            secondMm: finalPt,
+            previewEndMm: finalPt,
+            lastSnapKind: snap.kind,
+            angleSnapLockedDeg: null,
+          },
+          lastError: null,
+        });
+        return;
+      }
+
+      if (rs.phase === "done") {
+        set({
+          ruler2dSession: {
+            phase: "stretching",
+            firstMm: pt,
+            secondMm: null,
+            previewEndMm: pt,
+            lastSnapKind: snap.kind,
+            angleSnapLockedDeg: null,
+          },
+          lastError: null,
+        });
+      }
+    },
+
+    ruler2dCancel: () => {
+      if (get().activeTool !== "ruler") {
+        return;
+      }
+      const rs = get().ruler2dSession;
+      if (!rs) {
+        set({ activeTool: "select", ruler2dSession: null, lastError: null });
+        return;
+      }
+      if (rs.phase === "pickFirst") {
+        set({ activeTool: "select", ruler2dSession: null, lastError: null });
+        return;
+      }
+      set({ ruler2dSession: initialRuler2dSession(), lastError: null });
+    },
+
+    startLengthChange2dSession: (wallId, movingEnd, worldMm, viewport) => {
+      if (get().activeTool !== "changeLength") {
+        return;
+      }
+      const cp = get().currentProject;
+      const layerView = narrowProjectToActiveLayer(cp);
+      const wall = layerView.walls.find((w) => w.id === wallId);
+      if (!wall) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      const fixed = fixedEndpointForLengthChange(wall, movingEnd);
+      const { ux, uy } = axisFromFixedTowardMoving(wall, movingEnd);
+      const L = lengthFromSnappedPointForWallLengthEdit(
+        fixed,
+        ux,
+        uy,
+        snap.point,
+        MIN_WALL_SEGMENT_LENGTH_MM,
+      );
+      const pm = movingEndpointForLengthMm(fixed, ux, uy, L);
+      set({
+        lengthChange2dSession: {
+          wallId,
+          movingEnd,
+          fixedEndMm: { x: fixed.x, y: fixed.y },
+          axisUx: ux,
+          axisUy: uy,
+          initialLengthMm: wallLengthMm(wall),
+          previewMovingMm: { x: pm.x, y: pm.y },
+          lastSnapKind: snap.kind,
+        },
+        lastError: null,
+      });
+    },
+
+    lengthChange2dPreviewMove: (worldMm, viewport) => {
+      if (get().activeTool !== "changeLength") {
+        return;
+      }
+      const sess = get().lengthChange2dSession;
+      if (!sess) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      const L = lengthFromSnappedPointForWallLengthEdit(
+        sess.fixedEndMm,
+        sess.axisUx,
+        sess.axisUy,
+        snap.point,
+        MIN_WALL_SEGMENT_LENGTH_MM,
+      );
+      const pm = movingEndpointForLengthMm(sess.fixedEndMm, sess.axisUx, sess.axisUy, L);
+      set({
+        lengthChange2dSession: {
+          ...sess,
+          previewMovingMm: { x: pm.x, y: pm.y },
+          lastSnapKind: snap.kind,
+        },
+        lastError: null,
+      });
+    },
+
+    lengthChange2dCommit: () => {
+      if (get().activeTool !== "changeLength") {
+        return;
+      }
+      const sess = get().lengthChange2dSession;
+      if (!sess) {
+        return;
+      }
+      const dx = sess.previewMovingMm.x - sess.fixedEndMm.x;
+      const dy = sess.previewMovingMm.y - sess.fixedEndMm.y;
+      const Lnew = dx * sess.axisUx + dy * sess.axisUy;
+      const r = applyWallLengthChangeInProject(get().currentProject, sess.wallId, sess.movingEnd, Lnew);
+      if ("error" in r) {
+        set({ lastError: r.error });
+        return;
+      }
+      set({
+        currentProject: r.project,
+        dirty: true,
+        lengthChange2dSession: null,
+        lengthChangeCoordinateModalOpen: false,
+        lastError: null,
+      });
+    },
+
+    lengthChange2dEsc: () => {
+      if (get().lengthChangeCoordinateModalOpen) {
+        set({ lengthChangeCoordinateModalOpen: false });
+        return;
+      }
+      if (get().lengthChange2dSession) {
+        set({ lengthChange2dSession: null, lastError: null });
+        return;
+      }
+      if (get().activeTool === "changeLength") {
+        set({ activeTool: "select", lastError: null });
+      }
+    },
+
+    openLengthChangeCoordinateModal: () => {
+      if (get().activeTool !== "changeLength" || !get().lengthChange2dSession) {
+        return;
+      }
+      set({ lengthChangeCoordinateModalOpen: true, lastError: null });
+    },
+
+    closeLengthChangeCoordinateModal: () => set({ lengthChangeCoordinateModalOpen: false }),
+
+    applyLengthChangeCoordinateModal: (input) => {
+      if (get().activeTool !== "changeLength") {
+        return;
+      }
+      const sess = get().lengthChange2dSession;
+      if (!sess) {
+        return;
+      }
+      const d = input.deltaMm;
+      if (!Number.isFinite(d)) {
+        set({ lastError: "Введите числовое значение Δ (мм)." });
+        return;
+      }
+      const Lnew = sess.initialLengthMm + d;
+      if (Lnew < MIN_WALL_SEGMENT_LENGTH_MM) {
+        set({
+          lastError: `Минимальная длина сегмента ${MIN_WALL_SEGMENT_LENGTH_MM} мм.`,
+          lengthChangeCoordinateModalOpen: false,
+        });
+        return;
+      }
+      const r = applyWallLengthChangeInProject(get().currentProject, sess.wallId, sess.movingEnd, Lnew);
+      if ("error" in r) {
+        set({ lastError: r.error, lengthChangeCoordinateModalOpen: false });
+        return;
+      }
+      set({
+        currentProject: r.project,
+        dirty: true,
+        lengthChange2dSession: null,
+        lengthChangeCoordinateModalOpen: false,
         lastError: null,
       });
     },

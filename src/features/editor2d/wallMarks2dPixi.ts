@@ -2,6 +2,7 @@ import { Container, Text } from "pixi.js";
 
 import type { Project } from "@/core/domain/project";
 import { MIN_WALL_MARK_SCREEN_LENGTH_PX, wallSegmentScreenLengthPx } from "@/core/domain/wallMarking";
+import { readableAlongSegmentRotationRad } from "@/core/geometry/readableAlongSegmentRotationRad";
 import { cssHexToPixiNumber } from "@/shared/cssColor";
 
 import { collectDimensionLabelScreenPositions } from "./dimensions2dPixi";
@@ -125,7 +126,7 @@ export function appendWallMarkLabels2d(
 
     const strokePx = Math.max(2, w.thicknessMm * t.zoomPixelsPerMm);
     const fs = Math.max(8, Math.min(10.5, strokePx * 0.22 + 7));
-    const ang = Math.atan2(dy, dx);
+    const ang = readableAlongSegmentRotationRad(Math.atan2(-dy, dx));
     const rApprox = approxLabelRadiusPx(fs, label.length);
 
     const outsetPx = Math.min(LABEL_OUTSET_PX_MAX, Math.max(LABEL_OUTSET_PX_MIN, 10 + strokePx * 0.03));
