@@ -8,6 +8,7 @@ import type { Project } from "./project";
 import type { Wall } from "./wall";
 import {
   hitTestPlacedWindowOnWall,
+  openingMoveDisplayGapsMm,
   pickPlacedWindowOnLayerSlice,
   projectWorldToAlongMm,
   snapOpeningLeftEdgeMm,
@@ -42,6 +43,11 @@ function win(left: number, w: number, id = "o1"): Opening {
 }
 
 describe("openingWindowGeometry", () => {
+  it("openingMoveDisplayGapsMm — зазоры вдоль оси как у offsetFromStartMm (без толщины стены)", () => {
+    expect(openingMoveDisplayGapsMm(1087, 900, 6000)).toEqual({ leftGapMm: 1087, rightGapMm: 4013 });
+    expect(openingMoveDisplayGapsMm(0, 1000, 5000)).toEqual({ leftGapMm: 0, rightGapMm: 4000 });
+  });
+
   it("projectWorldToAlongMm проецирует на ось стены", () => {
     const w = wallH("L1");
     expect(projectWorldToAlongMm(w, { x: 1000, y: 50 })).toBeCloseTo(1000, 3);

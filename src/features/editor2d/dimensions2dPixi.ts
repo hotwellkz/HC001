@@ -45,6 +45,24 @@ export function dimensionLabelScreenPosition(d: Dimension, t: ViewportTransform)
   return planDimensionLabelScreenPosition(c, nx, ny, t);
 }
 
+/**
+ * Мировые центры подписей размеров плана (мм), без pan/zoom — для запретных зон марок стен вдоль оси.
+ */
+export function collectDimensionLabelCentersWorldMmForPlan(
+  project: Project,
+): readonly { readonly x: number; readonly y: number }[] {
+  const layerId = project.activeLayerId;
+  const dims = project.dimensions.filter((d) => !d.layerId || d.layerId === layerId);
+  const out: { x: number; y: number }[] = [];
+  for (const d of dims) {
+    const c = dimensionLabelCenterWorldMm(d);
+    if (c) {
+      out.push({ x: c.mx, y: c.my });
+    }
+  }
+  return out;
+}
+
 /** Экранные позиции подписей размеров (для анти-наложения с марками стен). */
 export function collectDimensionLabelScreenPositions(
   project: Project,

@@ -149,6 +149,9 @@ export function VerticalDimensionMm({
   sx,
   sy,
   labelGapPx = DIMENSION_V_LABEL_GAP_PX,
+  /** Подпись слева от линии (внешний край) или справа — для размеров внутри проёма. */
+  labelSide = "left",
+  textClassName,
   editKey = null,
   interaction,
   reportedValueMm,
@@ -161,6 +164,9 @@ export function VerticalDimensionMm({
   readonly sy: (mm: number) => number;
   /** Дополнительный отступ подписи от линии (px). */
   readonly labelGapPx?: number;
+  readonly labelSide?: "left" | "right";
+  /** Доп. классы для `<text>` (напр. компактный шрифт внутри проёма). */
+  readonly textClassName?: string;
   readonly editKey?: string | null;
   readonly interaction?: WallDetailDimInteraction;
   /** Значение в мм для редактора (модель), не обязательно |y1−y0| на листе. */
@@ -172,7 +178,7 @@ export function VerticalDimensionMm({
   const yT = sy(yLo);
   const yB = sy(yHi);
   const tick = DIMENSION_TICK_HALF_PX;
-  const labelX = xL - tick - labelGapPx;
+  const labelX = labelSide === "left" ? xL - tick - labelGapPx : xL + tick + labelGapPx;
   const labelY = (yT + yB) / 2;
   const key = editKey?.trim() ? editKey : null;
   const canEdit = Boolean(interaction && key);
@@ -184,19 +190,25 @@ export function VerticalDimensionMm({
     (isActive ? " wd-dim-group--edit-active" : "") +
     (isHover ? " wd-dim-group--edit-hover" : "");
   const hitHalf = 36;
+  const hitExtra = labelGapPx + tick + 48;
+  const hitX = labelSide === "left" ? xL - hitHalf - hitExtra : xL - hitHalf;
+  const hitW = hitHalf * 2 + hitExtra;
+  const textCls = textClassName?.trim()
+    ? `wd-dim-text-v ${textClassName.trim()}`
+    : "wd-dim-text-v";
   return (
     <g className={gClass} pointerEvents={canEdit ? "auto" : "none"}>
       <line x1={xL} y1={yT} x2={xL} y2={yB} className="wd-dim-line" vectorEffect="non-scaling-stroke" />
       <line x1={xL - tick} y1={yT} x2={xL + tick} y2={yT} className="wd-dim-cap" vectorEffect="non-scaling-stroke" />
       <line x1={xL - tick} y1={yB} x2={xL + tick} y2={yB} className="wd-dim-cap" vectorEffect="non-scaling-stroke" />
-      <text transform={`translate(${labelX},${labelY}) rotate(-90)`} className="wd-dim-text-v">
+      <text transform={`translate(${labelX},${labelY}) rotate(-90)`} className={textCls}>
         {text}
       </text>
       {canEdit ? (
         <rect
-          x={xL - hitHalf}
+          x={hitX}
           y={Math.min(yT, yB) - 12}
-          width={hitHalf * 2 + labelGapPx + tick}
+          width={hitW}
           height={Math.abs(yB - yT) + 24}
           className="wd-dim-hit"
           fill="transparent"

@@ -239,6 +239,12 @@
   pointer-events: none;
 }
 
+/** Вертикальные размеры внутри проёма — компактнее. */
+.wd-dim-text-v.wd-dim-text-v--opening {
+  font-size: 11px;
+  letter-spacing: -0.03em;
+}
+
 .wd-dim-text-out {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;

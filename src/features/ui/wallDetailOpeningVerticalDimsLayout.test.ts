@@ -1,106 +1,113 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  computeOpeningVerticalDimColumnXmm,
-  minVerticalOpeningDimLineXMm,
-  verticalOpeningDimMinColumnDeltaMm,
-  WALL_DETAIL_OPENING_V_DIM_BASE_OFFSET_MM,
+  computeInsideOpeningVerticalDimPlacementMm,
+  seamCentersInOpeningSpanMm,
+  sipPanelMarkRectsSheetMm,
+  WALL_DETAIL_OPENING_V_DIM_INSET_MM,
 } from "@/features/ui/wallDetailOpeningVerticalDimsLayout";
-import { DIMENSION_V_LABEL_GAP_OPENING_EXTRA_PX, DIMENSION_V_LABEL_GAP_PX } from "@/shared/dimensionStyle";
+import {
+  DIMENSION_FONT_SIZE_WALL_DETAIL_VERTICAL_OPENING_PX,
+  DIMENSION_V_LABEL_GAP_OPENING_INTERIOR_PX,
+} from "@/shared/dimensionStyle";
 
-const labelGap = DIMENSION_V_LABEL_GAP_PX + DIMENSION_V_LABEL_GAP_OPENING_EXTRA_PX;
+const labelGap = DIMENSION_V_LABEL_GAP_OPENING_INTERIOR_PX;
+const fontPx = DIMENSION_FONT_SIZE_WALL_DETAIL_VERTICAL_OPENING_PX;
 
-describe("computeOpeningVerticalDimColumnXmm", () => {
-  it("ставит одно окно справа от проёма с базовым отступом", () => {
-    const m = computeOpeningVerticalDimColumnXmm(
-      [
-        {
-          id: "w1",
-          x0: 1000,
-          x1: 2300,
-          yDimTopMm: 400,
-          yDimBottomMm: 2800,
-          dimTexts: ["900", "1300"],
-        },
-      ],
+describe("computeInsideOpeningVerticalDimPlacementMm", () => {
+  it("ставит ось внутри проёма у правого края при пустых препятствиях", () => {
+    const pl = computeInsideOpeningVerticalDimPlacementMm(
+      {
+        openingId: "o1",
+        x0: 1000,
+        x1: 2250,
+        segments: [
+          { y0Mm: 2400, y1Mm: 2800, text: "900" },
+          { y0Mm: 1100, y1Mm: 2400, text: "1300" },
+        ],
+      },
+      [],
+      [],
       [],
       0.12,
       labelGap,
+      fontPx,
     );
-    expect(m.get("w1")).toBeGreaterThanOrEqual(2300 + WALL_DETAIL_OPENING_V_DIM_BASE_OFFSET_MM - 0.5);
+    expect(pl.isOutsideOpening).toBe(false);
+    expect(pl.xLineMm).toBeGreaterThan(1000 + WALL_DETAIL_OPENING_V_DIM_INSET_MM);
+    expect(pl.xLineMm).toBeLessThanOrEqual(2250 - WALL_DETAIL_OPENING_V_DIM_INSET_MM + 0.5);
+    expect(pl.labelSide).toBe("left");
   });
 
-  it("два окна в одном поясе по Y — второй столбец правее первого", () => {
-    const zoom = 0.12;
-    const m = computeOpeningVerticalDimColumnXmm(
-      [
-        {
-          id: "a",
-          x0: 500,
-          x1: 1800,
-          yDimTopMm: 300,
-          yDimBottomMm: 2800,
-          dimTexts: ["900", "1400"],
-        },
-        {
-          id: "b",
-          x0: 2400,
-          x1: 3700,
-          yDimTopMm: 300,
-          yDimBottomMm: 2800,
-          dimTexts: ["900", "1400"],
-        },
-      ],
+  it("сдвигает ось, если на правом краю каркас", () => {
+    const pl = computeInsideOpeningVerticalDimPlacementMm(
+      {
+        openingId: "o1",
+        x0: 0,
+        x1: 2000,
+        segments: [{ y0Mm: 500, y1Mm: 2500, text: "1300" }],
+      },
+      [{ x0: 1920, x1: 2000, y0: 400, y1: 2600 }],
       [],
-      zoom,
+      [],
+      0.12,
       labelGap,
+      fontPx,
     );
-    const xa = m.get("a")!;
-    const xb = m.get("b")!;
-    expect(xb).toBeGreaterThanOrEqual(xa + verticalOpeningDimMinColumnDeltaMm(zoom, labelGap) - 1);
+    expect(pl.xLineMm).toBeLessThan(1920 - 8);
   });
 
-  it("сдвигает ось от вертикали-препятствия (стык)", () => {
-    const base = computeOpeningVerticalDimColumnXmm(
-      [
-        {
-          id: "w1",
-          x0: 0,
-          x1: 1200,
-          yDimTopMm: 100,
-          yDimBottomMm: 500,
-          dimTexts: ["900"],
-        },
-      ],
+  it("избегает подписи панели в полосе сегмента", () => {
+    const pl = computeInsideOpeningVerticalDimPlacementMm(
+      {
+        openingId: "o1",
+        x0: 500,
+        x1: 2500,
+        segments: [{ y0Mm: 1200, y1Mm: 2200, text: "1300" }],
+      },
+      [],
+      [{ x0: 2100, x1: 2480, y0: 1500, y1: 1900 }],
       [],
       0.12,
       labelGap,
-    ).get("w1")!;
+      fontPx,
+    );
+    expect(pl.xLineMm).toBeLessThan(2080);
+  });
 
-    const shifted = computeOpeningVerticalDimColumnXmm(
-      [
-        {
-          id: "w1",
-          x0: 0,
-          x1: 1200,
-          yDimTopMm: 100,
-          yDimBottomMm: 500,
-          dimTexts: ["900"],
-        },
-      ],
-      [base],
+  it("при невозможности внутри — выносит наружу", () => {
+    const lumber = [{ x0: 15, x1: 1985, y0: 0, y1: 3000 }];
+    const pl = computeInsideOpeningVerticalDimPlacementMm(
+      {
+        openingId: "o1",
+        x0: 0,
+        x1: 2000,
+        segments: [{ y0Mm: 500, y1Mm: 2500, text: "1300" }],
+      },
+      lumber,
+      [],
+      [],
       0.12,
       labelGap,
-    ).get("w1")!;
-
-    expect(shifted).toBeGreaterThan(base + 8);
+      fontPx,
+    );
+    expect(pl.isOutsideOpening).toBe(true);
+    expect(pl.xLineMm).toBeGreaterThan(2000);
   });
 });
 
-describe("minVerticalOpeningDimLineXMm", () => {
-  it("увеличивает X при длинной подписи", () => {
-    const short = minVerticalOpeningDimLineXMm(2000, ["9"], 0.1, labelGap);
-    const long = minVerticalOpeningDimLineXMm(2000, ["9999"], 0.1, labelGap);
-    expect(long).toBeGreaterThanOrEqual(short);
+describe("seamCentersInOpeningSpanMm", () => {
+  it("фильтрует стыки по интервалу проёма", () => {
+    expect(seamCentersInOpeningSpanMm([100, 500, 900, 1200], 400, 1000)).toEqual([500, 900]);
+  });
+});
+
+describe("sipPanelMarkRectsSheetMm", () => {
+  it("строит bbox вокруг центра полосы", () => {
+    const r = sipPanelMarkRectsSheetMm([{ drawX0: 0, drawX1: 100, drawY0: 200, drawY1: 400 }]);
+    expect(r[0]!.x0).toBeLessThan(50);
+    expect(r[0]!.x1).toBeGreaterThan(50);
+    expect(r[0]!.y0).toBeLessThan(300);
+    expect(r[0]!.y1).toBeGreaterThan(300);
   });
 });

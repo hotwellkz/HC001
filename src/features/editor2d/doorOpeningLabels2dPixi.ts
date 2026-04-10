@@ -1,15 +1,13 @@
 import { Container, Text } from "pixi.js";
 
-import { openingCenterOnWallMm } from "@/core/domain/openingPlacement";
 import type { Project } from "@/core/domain/project";
 import { cssHexToPixiNumber } from "@/shared/cssColor";
 
 import { collectDimensionLabelScreenPositions } from "./dimensions2dPixi";
 import { openingPlanLabelRotationRad } from "./openingPlanLabelOrientation2d";
-import { exteriorNormalForWallLabelMm } from "./wallLabelExteriorNormalMm";
+import { computePlanOpeningLabelScreenAnchor } from "./wallLabelLayout2d";
 import type { AppendWallMarkLabels2dOptions, WallMarkAppearance } from "./wallMarks2dPixi";
 import type { ViewportTransform } from "./viewportTransforms";
-import { worldToScreen } from "./viewportTransforms";
 
 function readOpeningLabelColors(): { readonly fill: number; readonly outline: number } {
   const root = document.documentElement;
@@ -17,26 +15,6 @@ function readOpeningLabelColors(): { readonly fill: number; readonly outline: nu
   const fill = cs.getPropertyValue("--color-wall-mark-text").trim() || "#e8ecf1";
   const outline = cs.getPropertyValue("--color-wall-mark-outline").trim() || "#14171b";
   return { fill: cssHexToPixiNumber(fill), outline: cssHexToPixiNumber(outline) };
-}
-
-function screenDist(
-  a: { readonly x: number; readonly y: number },
-  b: { readonly x: number; readonly y: number },
-): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-function isClearOfDimLabels(
-  p: { readonly x: number; readonly y: number },
-  dimCenters: readonly { readonly x: number; readonly y: number }[],
-  radiusPx: number,
-): boolean {
-  for (const d of dimCenters) {
-    if (screenDist(p, d) < 18 + radiusPx * 0.35) {
-      return false;
-    }
-  }
-  return true;
 }
 
 function doorOrderMap(project: Project): ReadonlyMap<string, number> {
@@ -87,44 +65,21 @@ export function appendDoorOpeningLabels2d(
     }
     const num = numberById.get(o.id) ?? 0;
     const line1 = `Д-${num}`;
-    const center = openingCenterOnWallMm(wall, o);
     const dx = wall.end.x - wall.start.x;
     const dy = wall.end.y - wall.start.y;
     const len = Math.hypot(dx, dy);
     if (len < 1e-9) {
       continue;
     }
-    const { nx, ny } = exteriorNormalForWallLabelMm(wall, allWalls, allWalls);
-    const halfT = wall.thicknessMm / 2;
-    const strokePx = Math.max(2, wall.thicknessMm * t.zoomPixelsPerMm);
-    const fs = Math.max(7.2, Math.min(9.2, strokePx * 0.2 + 6.5));
+    const anchor = computePlanOpeningLabelScreenAnchor(wall, o, allWalls, t, dimCenters);
+    const fs = anchor.fontSizePx;
     const lineGapMm = 16 / Math.max(0.01, t.zoomPixelsPerMm);
-    const outsetMm = halfT + 14 / Math.max(0.01, t.zoomPixelsPerMm);
 
     const wMm = Math.round(o.widthMm);
     const hMm = Math.round(o.heightMm);
     const line2 = `${wMm}/${hMm}`;
 
-    const tryOutset = (scale: number) => {
-      const oMm = outsetMm * scale;
-      const bx = center.x + nx * oMm;
-      const by = center.y + ny * oMm;
-      const mid = worldToScreen(bx, by, t);
-      const rApprox = Math.max(12, fs * 2.2);
-      if (!isClearOfDimLabels(mid, dimCenters, rApprox)) {
-        return null;
-      }
-      return { mid };
-    };
-
-    const fallbackPos = (() => {
-      const bx = center.x + nx * outsetMm;
-      const by = center.y + ny * outsetMm;
-      return {
-        mid: worldToScreen(bx, by, t),
-      };
-    })();
-    const pos = tryOutset(1) ?? tryOutset(1.2) ?? tryOutset(1.45) ?? fallbackPos;
+    const pos = { mid: anchor.mid };
     const label = new Text({
       text: `${line1}\n${line2}`,
       style: {

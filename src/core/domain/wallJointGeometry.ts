@@ -229,6 +229,32 @@ export interface TeeJointGeomOk {
 export type TeeJointGeomResult = { ok: true; value: TeeJointGeomOk } | { ok: false; error: string };
 
 /**
+ * Внутренний и наружный углы плана при ортогональной митре: смещение на t/2 вдоль «внутрь/наружу» от пересечения осей C.
+ * waEnd / wbEnd — торцы, сходящиеся в этой вершине.
+ */
+export function miterCornerInnerOuterPlanMm(
+  wa: Wall,
+  waEnd: WallEndSide,
+  wb: Wall,
+  wbEnd: WallEndSide,
+): { readonly inner: Point2D; readonly outer: Point2D } | null {
+  const C = orthogonalCenterlineIntersection(wa, wb);
+  if (!C) {
+    return null;
+  }
+  const uOutA = unitOutwardFromCorner(wa, waEnd, C);
+  const uOutB = unitOutwardFromCorner(wb, wbEnd, C);
+  const uInA = { x: -uOutA.x, y: -uOutA.y };
+  const uInB = { x: -uOutB.x, y: -uOutB.y };
+  const ha = wa.thicknessMm / 2;
+  const hb = wb.thicknessMm / 2;
+  return {
+    inner: { x: C.x + uInA.x * ha + uInB.x * hb, y: C.y + uInA.y * ha + uInB.y * hb },
+    outer: { x: C.x + uOutA.x * ha + uOutB.x * hb, y: C.y + uOutA.y * ha + uOutB.y * hb },
+  };
+}
+
+/**
  * T-стык: примыкающая стена abutting, торец abuttingEnd; main — основная, pointOnMain — точка на оси main.
  */
 export function computeTeeAbutmentGeometry(

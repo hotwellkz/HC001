@@ -23,6 +23,22 @@ export function openingWallEndMarginAlongMm(wall: Wall, project: Project): numbe
   return WINDOW_OPENING_WALL_END_MARGIN_MM;
 }
 
+/**
+ * Зазоры вдоль оси стены `start → end` (как `offsetFromStartMm`): до левого и от правого края проёма.
+ * Наружный контур и углы дома — в `resolveOpeningMovePlanAnchorsMm` (узлы стен `wallJoints`).
+ */
+export function openingMoveDisplayGapsMm(
+  leftEdgeAlongMm: number,
+  openingWidthMm: number,
+  wallLengthMm: number,
+): { readonly leftGapMm: number; readonly rightGapMm: number } {
+  const rightAlong = leftEdgeAlongMm + openingWidthMm;
+  return {
+    leftGapMm: Math.max(0, leftEdgeAlongMm),
+    rightGapMm: Math.max(0, wallLengthMm - rightAlong),
+  };
+}
+
 export type { OpeningAlongAnchor, OpeningAlongAlignment, OpeningPositionSpec } from "./openingWindowTypes";
 
 export function pickClosestWallAlongPoint(

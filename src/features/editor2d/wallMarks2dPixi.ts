@@ -5,7 +5,25 @@ import { MIN_WALL_MARK_SCREEN_LENGTH_PX, wallSegmentScreenLengthPx } from "@/cor
 import { readableAlongSegmentRotationRad } from "@/core/geometry/readableAlongSegmentRotationRad";
 import { cssHexToPixiNumber } from "@/shared/cssColor";
 
-import { collectDimensionLabelScreenPositions } from "./dimensions2dPixi";
+import {
+  collectDimensionLabelCentersWorldMmForPlan,
+  collectDimensionLabelScreenPositions,
+} from "./dimensions2dPixi";
+import {
+  buildWallLabelAlongCandidatesMm,
+  buildWallLabelForbiddenAlongIntervalsMm,
+  collectWallOpeningMarkerLabelObstaclesPx,
+  findBestWallLabelAlongMm,
+  getWallLabelStickyAlongMm,
+  isClearOfOpeningLabelObstaclesPx,
+  isWallLabelStickyAlongStillValid,
+  isWallLabelWorldMmClearOfOpeningZones,
+  mergeWallLabelForbiddenAlongIntervalsMm,
+  setWallLabelStickyAlongMm,
+  shrinkWallLabelFreeSegmentsForHalfWidthMm,
+  wallLabelFreeAlongSegmentsMm,
+  wallLabelPlacementFingerprint,
+} from "./wallLabelLayout2d";
 import { exteriorNormalForWallLabelMm } from "./wallLabelExteriorNormalMm";
 import type { ViewportTransform } from "./viewportTransforms";
 import { worldToScreen } from "./viewportTransforms";
@@ -17,6 +35,8 @@ const LABEL_OUTSET_PX_MIN = 8;
 const LABEL_OUTSET_PX_MAX = 13;
 /** Минимальное расстояние до центра подписи размера, px. */
 const CLEARANCE_FROM_DIM_LABEL_PX = 18;
+/** Зазор марки стены ↔ подпись проёма (экран, px). */
+const CLEARANCE_WALL_MARK_TO_OPENING_LABEL_PX = 5;
 /** Радиус «занятости» подписи стены для анти-наложения, px (оценка). */
 function approxLabelRadiusPx(fontSize: number, labelLen: number): number {
   return Math.max(10, fontSize * (0.4 + 0.2 * Math.max(1, labelLen)));
@@ -93,6 +113,7 @@ export function appendWallMarkLabels2d(
   const { fill: fillCol, outline: outlineCol } = readWallMarkThemeColors();
   const dimProject = options?.dimensionProject;
   const dimCenters = dimProject ? collectDimensionLabelScreenPositions(dimProject, t) : [];
+  const openingLabelObstacles = collectWallOpeningMarkerLabelObstaclesPx(project, t, dimCenters);
 
   const wallsWithLabel = project.walls.filter((w) => {
     const label = w.markLabel?.trim();
@@ -102,10 +123,13 @@ export function appendWallMarkLabels2d(
     return wallSegmentScreenLengthPx(w, t.zoomPixelsPerMm) >= MIN_WALL_MARK_SCREEN_LENGTH_PX;
   });
 
+  const dimWorldMm = dimProject ? collectDimensionLabelCentersWorldMmForPlan(dimProject) : [];
+
   type Candidate = {
     readonly label: string;
     readonly screen: { x: number; y: number };
     readonly ang: number;
+    /** Фактический размер шрифта после подбора позиции. */
     readonly fs: number;
   };
 
@@ -125,51 +149,89 @@ export function appendWallMarkLabels2d(
     const { nx: n0x, ny: n0y } = exteriorNormalForWallLabelMm(w, wallsWithLabel, project.walls);
 
     const strokePx = Math.max(2, w.thicknessMm * t.zoomPixelsPerMm);
-    const fs = Math.max(8, Math.min(10.5, strokePx * 0.22 + 7));
+    const fsBase = Math.max(8, Math.min(10.5, strokePx * 0.22 + 7));
     const ang = readableAlongSegmentRotationRad(Math.atan2(-dy, dx));
-    const rApprox = approxLabelRadiusPx(fs, label.length);
 
     const outsetPx = Math.min(LABEL_OUTSET_PX_MAX, Math.max(LABEL_OUTSET_PX_MIN, 10 + strokePx * 0.03));
     const halfT = w.thicknessMm / 2;
 
-    const mx = (w.start.x + w.end.x) / 2;
-    const my = (w.start.y + w.end.y) / 2;
+    const fingerprint = wallLabelPlacementFingerprint(w, project);
+    const forbiddenRaw = buildWallLabelForbiddenAlongIntervalsMm(w, project, dimWorldMm);
+    const forbidden = mergeWallLabelForbiddenAlongIntervalsMm(forbiddenRaw, len);
+    const freeAlong = wallLabelFreeAlongSegmentsMm(forbidden, len);
 
-    const alongStepsMm = [0, 32, -32, 64, -64, 120, -120];
     const outsetScaleSteps = [1, 0.88, 0.76];
+    const fsScaleSteps = [1, 0.9, 0.82];
 
     let chosen: { x: number; y: number } | null = null;
+    let chosenFs = fsBase;
+    let chosenR = approxLabelRadiusPx(fsBase, label.length);
+    let placedFromSearch = false;
+    let chosenAlongFromStart: number | null = null;
 
-    outer: for (const scale of outsetScaleSteps) {
-      const outsetMm = (outsetPx * scale) / t.zoomPixelsPerMm;
-      for (const along of alongStepsMm) {
-        const ax = mx + ux * along + n0x * (halfT + outsetMm);
-        const ay = my + uy * along + n0y * (halfT + outsetMm);
-        const s = worldToScreen(ax, ay, t);
-        if (
-          isClearOfDimLabels(s, dimCenters, rApprox) &&
-          isClearOfPlacedWallLabels(s, placed, rApprox)
-        ) {
-          chosen = { x: s.x, y: s.y };
-          break outer;
+    const stickyRaw = getWallLabelStickyAlongMm(w.id, fingerprint);
+    const stickyAlong =
+      stickyRaw != null && isWallLabelStickyAlongStillValid(stickyRaw, freeAlong) ? stickyRaw : null;
+
+    outer: for (const fsMult of fsScaleSteps) {
+      const fsTry = Math.max(7, fsBase * fsMult);
+      const rTry = approxLabelRadiusPx(fsTry, label.length);
+      const halfAlongMm = Math.max(36, rTry / Math.max(0.01, t.zoomPixelsPerMm));
+      const shrunk = shrinkWallLabelFreeSegmentsForHalfWidthMm(freeAlong, halfAlongMm);
+      const walkSegments = shrunk.length ? shrunk : freeAlong;
+      const preferredAlong = findBestWallLabelAlongMm(walkSegments, len);
+      const alongCandidates = buildWallLabelAlongCandidatesMm(
+        freeAlong,
+        walkSegments,
+        len,
+        preferredAlong,
+        stickyAlong,
+      );
+
+      for (const scale of outsetScaleSteps) {
+        const outsetMm = (outsetPx * scale) / t.zoomPixelsPerMm;
+        for (const along of alongCandidates) {
+          const ax = w.start.x + ux * along + n0x * (halfT + outsetMm);
+          const ay = w.start.y + uy * along + n0y * (halfT + outsetMm);
+          const s = worldToScreen(ax, ay, t);
+          if (
+            isClearOfDimLabels(s, dimCenters, rTry) &&
+            isClearOfPlacedWallLabels(s, placed, rTry) &&
+            isClearOfOpeningLabelObstaclesPx(
+              s,
+              openingLabelObstacles,
+              w.id,
+              rTry,
+              CLEARANCE_WALL_MARK_TO_OPENING_LABEL_PX,
+            ) &&
+            isWallLabelWorldMmClearOfOpeningZones(ax, ay, w, project, 12)
+          ) {
+            chosen = { x: s.x, y: s.y };
+            chosenFs = fsTry;
+            chosenR = rTry;
+            chosenAlongFromStart = along;
+            placedFromSearch = true;
+            break outer;
+          }
         }
       }
     }
 
-    if (!chosen) {
-      const outsetMm = outsetPx / t.zoomPixelsPerMm;
-      const ax = mx + n0x * (halfT + outsetMm);
-      const ay = my + n0y * (halfT + outsetMm);
-      chosen = worldToScreen(ax, ay, t);
+    if (!chosen || !placedFromSearch) {
+      continue;
+    }
+
+    if (chosenAlongFromStart != null) {
+      setWallLabelStickyAlongMm(w.id, fingerprint, chosenAlongFromStart);
     }
 
     candidates.push({
       label,
       screen: chosen,
       ang,
-      fs,
+      fs: chosenFs,
     });
-    placed.push({ x: chosen.x, y: chosen.y, r: rApprox });
+    placed.push({ x: chosen.x, y: chosen.y, r: chosenR });
   }
 
   for (const c of candidates) {

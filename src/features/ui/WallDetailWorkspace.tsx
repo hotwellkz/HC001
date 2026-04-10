@@ -24,8 +24,8 @@ import {
   lumberPieceWallElevationRectMm,
 } from "@/core/domain/wallCalculation3dSpecs";
 import {
-  DIMENSION_V_LABEL_GAP_OPENING_EXTRA_PX,
-  DIMENSION_V_LABEL_GAP_PX,
+  DIMENSION_FONT_SIZE_WALL_DETAIL_VERTICAL_OPENING_PX,
+  DIMENSION_V_LABEL_GAP_OPENING_INTERIOR_PX,
 } from "@/shared/dimensionStyle";
 import {
   buildWallDetailSipFacadeSlices,
@@ -52,7 +52,12 @@ import {
   type WallDetailDimInteraction,
   type WallDetailDimSegmentView,
 } from "@/features/ui/wallDetailDimensionsSvg";
-import { computeOpeningVerticalDimColumnXmm } from "@/features/ui/wallDetailOpeningVerticalDimsLayout";
+import {
+  computeInsideOpeningVerticalDimPlacementMm,
+  lumberElevationRectsSheetMm,
+  seamCentersInOpeningSpanMm,
+  sipPanelMarkRectsSheetMm,
+} from "@/features/ui/wallDetailOpeningVerticalDimsLayout";
 import {
   computeWallDetailOpeningLabelLayout,
   openingLabelLineHeightPx,
@@ -461,43 +466,79 @@ export function WallDetailWorkspace() {
     [calc, isSipLikeWall],
   );
 
-  const openingVerticalDimLabelGapPx = DIMENSION_V_LABEL_GAP_PX + DIMENSION_V_LABEL_GAP_OPENING_EXTRA_PX;
+  const lumberRectsSheetMm = useMemo(() => {
+    if (!calc || !wall) {
+      return [];
+    }
+    const wallTop = SHEET_WALL_TOP_MM;
+    const rects = lumberPiecesSortedForDisplay(calc.lumberPieces).map((p) =>
+      lumberPieceWallElevationRectMm(p, wall, project, calc),
+    );
+    const base = lumberElevationRectsSheetMm(rects, wallTop, H);
+    const pad = 5;
+    return base.map((r) => ({
+      x0: r.x0 - pad,
+      x1: r.x1 + pad,
+      y0: r.y0 - pad,
+      y1: r.y1 + pad,
+    }));
+  }, [calc, wall, project, H]);
 
-  const openingVerticalDimColumnXmm = useMemo(() => {
+  const sipPanelMarkRectsSheet = useMemo(
+    () => (sipFacadeSlices.length > 0 ? sipPanelMarkRectsSheetMm(sipFacadeSlices) : []),
+    [sipFacadeSlices],
+  );
+
+  const openingInsideVerticalDimByOpeningId = useMemo(() => {
+    const map = new Map<
+      string,
+      { xLineMm: number; labelSide: "left" | "right"; isOutsideOpening: boolean }
+    >();
     if (!wall) {
-      return new Map<string, number>();
+      return map;
     }
     const wallBottom = SHEET_WALL_TOP_MM + H;
-    const items = openingsOnWall.map((o) => {
-      const x = o.offsetFromStartMm ?? 0;
+    const labelGapPx = DIMENSION_V_LABEL_GAP_OPENING_INTERIOR_PX;
+    const fontPx = DIMENSION_FONT_SIZE_WALL_DETAIL_VERTICAL_OPENING_PX;
+    for (const o of openingsOnWall) {
+      const x0 = o.offsetFromStartMm ?? 0;
+      const x1 = x0 + o.widthMm;
       const yTop =
         o.kind === "door" ? wallBottom - o.heightMm : wallBottom - o.heightMm - (o.sillHeightMm ?? 0);
       const openBottom = yTop + o.heightMm;
       const sillMm = o.kind === "window" ? o.sillHeightMm ?? o.position?.sillLevelMm ?? 900 : 0;
-      const yDimBottomMm = o.kind === "window" ? wallBottom : openBottom;
-      const dimTexts =
+      const segments =
         o.kind === "window"
-          ? [`${Math.round(sillMm)}`, `${Math.round(o.heightMm)}`]
-          : [`${Math.round(o.heightMm)}`];
-      return {
-        id: o.id,
-        x0: x,
-        x1: x + o.widthMm,
-        yDimTopMm: yTop,
-        yDimBottomMm,
-        dimTexts,
-      };
-    });
-    const obstacles = [...verticalBoundaryXsForOpeningDims, ...frameStudXsForOpeningDims];
-    return computeOpeningVerticalDimColumnXmm(items, obstacles, zoom, openingVerticalDimLabelGapPx);
+          ? [
+              { y0Mm: openBottom, y1Mm: wallBottom, text: `${Math.round(sillMm)}` },
+              { y0Mm: yTop, y1Mm: openBottom, text: `${Math.round(o.heightMm)}` },
+            ]
+          : [{ y0Mm: yTop, y1Mm: openBottom, text: `${Math.round(o.heightMm)}` }];
+      const seamObstacles = [
+        ...seamCentersInOpeningSpanMm(verticalBoundaryXsForOpeningDims, x0, x1),
+        ...frameStudXsForOpeningDims.filter((cx) => cx > x0 + 1 && cx < x1 - 1),
+      ];
+      const pl = computeInsideOpeningVerticalDimPlacementMm(
+        { openingId: o.id, x0, x1, segments },
+        lumberRectsSheetMm,
+        sipPanelMarkRectsSheet,
+        seamObstacles,
+        zoom,
+        labelGapPx,
+        fontPx,
+      );
+      map.set(o.id, pl);
+    }
+    return map;
   }, [
     wall,
     H,
     openingsOnWall,
+    lumberRectsSheetMm,
+    sipPanelMarkRectsSheet,
     verticalBoundaryXsForOpeningDims,
     frameStudXsForOpeningDims,
     zoom,
-    openingVerticalDimLabelGapPx,
   ]);
 
   const sheetBounds = useMemo(() => {
@@ -530,8 +571,11 @@ export function WallDetailWorkspace() {
       const openTopY = o.kind === "door" ? wallBottom - o.heightMm : wallBottom - o.heightMm - (o.sillHeightMm ?? 0);
       const labelY = openTopY - 14;
       minY = Math.min(minY, labelY - 8);
-      const colX = openingVerticalDimColumnXmm.get(o.id);
-      const reserveRight = colX != null ? colX + 96 : x + o.widthMm + (o.kind === "window" ? 220 : 140);
+      const insidePl = openingInsideVerticalDimByOpeningId.get(o.id);
+      const reserveRight =
+        insidePl != null && insidePl.isOutsideOpening
+          ? insidePl.xLineMm + 72
+          : x + o.widthMm + (o.kind === "window" ? 56 : 48);
       maxX = Math.max(maxX, reserveRight);
     }
 
@@ -565,7 +609,7 @@ export function WallDetailWorkspace() {
     maxY = Math.max(maxY, sheetBottom);
 
     return { minX, minY, maxX, maxY };
-  }, [wall, layout, L, H, calc, project, openingsOnWall, openingVerticalDimColumnXmm]);
+  }, [wall, layout, L, H, calc, project, openingsOnWall, openingInsideVerticalDimByOpeningId]);
 
   const applyFit = useCallback(() => {
     if (!layout) return;
@@ -582,6 +626,10 @@ export function WallDetailWorkspace() {
     setPanX(pad - minX * clamped);
     setPanY(pad - minY * clamped);
   }, [layout, sheetBounds, viewport.w, viewport.h]);
+
+  /** Чтобы auto-fit не срабатывал при каждом изменении zoom (sheetBounds → applyFit). */
+  const applyFitRef = useRef(applyFit);
+  applyFitRef.current = applyFit;
 
   useLayoutEffect(() => {
     const el = wrapRef.current;
@@ -601,10 +649,11 @@ export function WallDetailWorkspace() {
     const gen = ++fitGenerationRef.current;
     const id = requestAnimationFrame(() => {
       if (gen !== fitGenerationRef.current) return;
-      applyFit();
+      applyFitRef.current();
     });
     return () => cancelAnimationFrame(id);
-  }, [wall?.id, L, H, layout, applyFit, viewport.w, viewport.h]);
+    /** Без `applyFit` в deps: иначе каждый zoom меняет sheetBounds → applyFit → сброс масштаба и «дёрганье». */
+  }, [wall?.id, L, H, layout, viewport.w, viewport.h]);
 
   const sx = useCallback((x: number) => panX + x * zoom, [panX, zoom]);
   const sy = useCallback((y: number) => panY + y * zoom, [panY, zoom]);
@@ -720,14 +769,22 @@ export function WallDetailWorkspace() {
 
   const onWheelZoom = useCallback((e: WheelEvent) => {
     e.preventDefault();
-    const el = svgRef.current;
-    if (!el) return;
+    const el = wrapRef.current;
+    if (!el) {
+      return;
+    }
     const rect = el.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
     const sheetX = (mx - panX) / zoom;
     const sheetY = (my - panY) / zoom;
-    const factor = e.deltaY < 0 ? 1.08 : 1 / 1.08;
+    let dy = e.deltaY;
+    if (e.deltaMode === 1) {
+      dy *= 16;
+    } else if (e.deltaMode === 2) {
+      dy *= rect.height;
+    }
+    const factor = dy < 0 ? 1.08 : 1 / 1.08;
     const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom * factor));
     setPanX(mx - sheetX * next);
     setPanY(my - sheetY * next);
@@ -950,7 +1007,9 @@ export function WallDetailWorkspace() {
               const y = o.kind === "door" ? wallBottom - o.heightMm : wallBottom - o.heightMm - (o.sillHeightMm ?? 0);
               const sillMm = o.kind === "window" ? o.sillHeightMm ?? o.position?.sillLevelMm ?? 900 : 0;
               const openBottomMm = y + o.heightMm;
-              const vDimX = openingVerticalDimColumnXmm.get(o.id) ?? x + o.widthMm + 40;
+              const vPl = openingInsideVerticalDimByOpeningId.get(o.id);
+              const vDimX = vPl?.xLineMm ?? x + o.widthMm * 0.82;
+              const vLabelSide = vPl?.labelSide ?? "left";
               const mark = o.markLabel?.trim() || (o.kind === "door" ? `Д_${o.doorSequenceNumber ?? "?"}` : `OK_${o.windowSequenceNumber ?? "?"}`);
               /** Ниже верхней кромки проёма — в верхней трети светового проёма, без «прилипания» к перемычке. */
               const labelCenterYMm = y + o.heightMm * 0.28;
@@ -987,7 +1046,9 @@ export function WallDetailWorkspace() {
                         text={`${Math.round(sillMm)}`}
                         sx={sx}
                         sy={sy}
-                        labelGapPx={openingVerticalDimLabelGapPx}
+                        labelSide={vLabelSide}
+                        textClassName="wd-dim-text-v--opening"
+                        labelGapPx={DIMENSION_V_LABEL_GAP_OPENING_INTERIOR_PX}
                         editKey={wallDetailDimEditHandleKey({ kind: "opening_sill_height", openingId: o.id })}
                         interaction={wallDimInteraction}
                         reportedValueMm={Math.round(sillMm)}
@@ -999,7 +1060,9 @@ export function WallDetailWorkspace() {
                         text={`${Math.round(o.heightMm)}`}
                         sx={sx}
                         sy={sy}
-                        labelGapPx={openingVerticalDimLabelGapPx}
+                        labelSide={vLabelSide}
+                        textClassName="wd-dim-text-v--opening"
+                        labelGapPx={DIMENSION_V_LABEL_GAP_OPENING_INTERIOR_PX}
                         editKey={wallDetailDimEditHandleKey({ kind: "opening_height", openingId: o.id })}
                         interaction={wallDimInteraction}
                         reportedValueMm={Math.round(o.heightMm)}
@@ -1013,7 +1076,9 @@ export function WallDetailWorkspace() {
                       text={`${Math.round(o.heightMm)}`}
                       sx={sx}
                       sy={sy}
-                      labelGapPx={openingVerticalDimLabelGapPx}
+                      labelSide={vLabelSide}
+                      textClassName="wd-dim-text-v--opening"
+                      labelGapPx={DIMENSION_V_LABEL_GAP_OPENING_INTERIOR_PX}
                       editKey={wallDetailDimEditHandleKey({ kind: "opening_height", openingId: o.id })}
                       interaction={wallDimInteraction}
                       reportedValueMm={Math.round(o.heightMm)}

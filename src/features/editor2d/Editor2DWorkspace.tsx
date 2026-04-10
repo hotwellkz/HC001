@@ -34,6 +34,7 @@ import { computeMarqueeSelection } from "./computeMarqueeSelection";
 import { drawRectangleWallPlacementPreview, drawWallPlacementPreview } from "./drawWallPreview2d";
 import { buildScreenGridLines } from "./gridGeometry";
 import { appendWallMarkLabels2d, clearWallMarkLabelContainer } from "./wallMarks2dPixi";
+import { pruneWallLabelStickyState } from "./wallLabelLayout2d";
 import { drawWallJointPickOverlay, type JointHoverState } from "./wallJointMarkers2dPixi";
 import { drawDimensions2d } from "./dimensions2dPixi";
 import { drawOpeningFramingPlan2d } from "./openingFramingPlan2dPixi";
@@ -55,6 +56,7 @@ import {
   snapOpeningLeftEdgeMm,
   validateWindowPlacementOnWall,
 } from "@/core/domain/openingWindowGeometry";
+import { resolveOpeningMovePlanAnchorsMm } from "@/core/domain/openingMovePlanAnchors";
 import { wallLengthMm } from "@/core/domain/wallCalculationGeometry";
 import { wallWithMovedEndAtLength } from "@/core/domain/wallLengthChangeGeometry";
 import type { WallEndSide } from "@/core/domain/wallJoint";
@@ -144,8 +146,19 @@ interface OpeningMoveMetrics {
   readonly wallEndMm: number;
   readonly allowedStartMm: number;
   readonly allowedEndMm: number;
-  readonly leftGapMm: number;
-  readonly rightGapMm: number;
+  /** Вдоль оси стены (как модель). */
+  readonly innerLeftGapMm: number;
+  readonly innerRightGapMm: number;
+  /** До/от наружного угла: + толщина примыкающей стены в углу. */
+  readonly outerLeftGapMm: number;
+  readonly outerRightGapMm: number;
+  readonly thicknessBonusStartMm: number;
+  readonly thicknessBonusEndMm: number;
+  /** Опорные точки вдоль оси (мм от start) для цепочек размеров на грани стены. */
+  readonly innerLeftRefAlongMm: number;
+  readonly outerLeftRefAlongMm: number;
+  readonly innerRightRefAlongMm: number;
+  readonly outerRightRefAlongMm: number;
 }
 
 function openingMoveMetrics(project: Project, openingId: string): OpeningMoveMetrics | null {
@@ -162,7 +175,11 @@ function openingMoveMetrics(project: Project, openingId: string): OpeningMoveMet
   const allowedStartMm = mEdge;
   const allowedEndMm = Math.max(allowedStartMm, L - mEdge);
   const left = o.offsetFromStartMm;
-  const right = o.offsetFromStartMm + o.widthMm;
+  const layerSlice = narrowProjectToActiveLayer(project);
+  const layerWalls = layerSlice.walls;
+  const wallIds = new Set(layerWalls.map((w0) => w0.id));
+  const layerJoints = project.wallJoints.filter((j) => wallIds.has(j.wallAId) && wallIds.has(j.wallBId));
+  const a = resolveOpeningMovePlanAnchorsMm(wall, left, o.widthMm, layerWalls, layerJoints);
   return {
     openingId: o.id,
     wallId: wall.id,
@@ -172,8 +189,16 @@ function openingMoveMetrics(project: Project, openingId: string): OpeningMoveMet
     wallEndMm: L,
     allowedStartMm,
     allowedEndMm,
-    leftGapMm: Math.max(0, left),
-    rightGapMm: Math.max(0, L - right),
+    innerLeftGapMm: a.innerLeftGapMm,
+    innerRightGapMm: a.innerRightGapMm,
+    outerLeftGapMm: a.outerLeftGapMm,
+    outerRightGapMm: a.outerRightGapMm,
+    thicknessBonusStartMm: a.thicknessBonusStartMm,
+    thicknessBonusEndMm: a.thicknessBonusEndMm,
+    innerLeftRefAlongMm: a.innerLeftRefAlongMm,
+    outerLeftRefAlongMm: a.outerLeftRefAlongMm,
+    innerRightRefAlongMm: a.innerRightRefAlongMm,
+    outerRightRefAlongMm: a.outerRightRefAlongMm,
   };
 }
 
@@ -698,6 +723,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       openingsG.clear();
       clearWallMarkLabelContainer(wallLabelsC);
       clearWallMarkLabelContainer(windowOpeningLabelsC);
+      pruneWallLabelStickyState(new Set(currentProject.walls.map((w) => w.id)));
       let firstDraw = true;
       for (const lid of contextIds) {
         const ctxSlice = narrowProjectToLayerSet(currentProject, new Set([lid]));
@@ -766,34 +792,31 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               const halfT = wall.thicknessMm / 2;
               const faceShiftMm = 12 / t.zoomPixelsPerMm;
               const chainShiftMm = 36 / t.zoomPixelsPerMm;
-              const outerLeftMm = m.leftGapMm;
-              const outerRightMm = m.rightGapMm;
-              const innerLeftMm = Math.max(0, outerLeftMm - wall.thicknessMm);
-              const innerRightMm = Math.max(0, outerRightMm - wall.thicknessMm);
-              const faceGeom = (face: "inner" | "outer") => {
-                const faceSign = face === "inner" ? innerSign : -innerSign;
+              const innerLeftMm = m.innerLeftGapMm;
+              const innerRightMm = m.innerRightGapMm;
+              const outerLeftMm = m.outerLeftGapMm;
+              const outerRightMm = m.outerRightGapMm;
+              const faceGeom = (wallFace: "inner" | "outer", leftRefAlong: number, rightRefAlong: number) => {
+                const faceSign = wallFace === "inner" ? innerSign : -innerSign;
                 const baseOff = faceSign * halfT;
-                const thickness = Math.max(0, wall.thicknessMm);
                 const openStart = m.leftEdgeMm;
                 const openEnd = m.leftEdgeMm + m.widthMm;
-                const faceStartAlong = face === "inner" ? Math.min(openStart, thickness) : 0;
-                const faceEndAlong = face === "inner" ? Math.max(openEnd, L - thickness) : L;
                 const pBase = { x: wall.start.x + nx * baseOff, y: wall.start.y + ny * baseOff };
-                const pStart = { x: pBase.x + ux * faceStartAlong, y: pBase.y + uy * faceStartAlong };
-                const pEnd = { x: pBase.x + ux * faceEndAlong, y: pBase.y + uy * faceEndAlong };
+                const pLeftRef = { x: pBase.x + ux * leftRefAlong, y: pBase.y + uy * leftRefAlong };
+                const pRightRef = { x: pBase.x + ux * rightRefAlong, y: pBase.y + uy * rightRefAlong };
                 const pOpenStart = { x: pBase.x + ux * openStart, y: pBase.y + uy * openStart };
                 const pOpenEnd = { x: pBase.x + ux * openEnd, y: pBase.y + uy * openEnd };
                 const nOut = faceSign * (faceShiftMm + chainShiftMm);
                 const shift = (p: { x: number; y: number }) => ({ x: p.x + nx * nOut, y: p.y + ny * nOut });
                 return {
-                  left0: worldToScreen(shift(pStart).x, shift(pStart).y, t),
+                  left0: worldToScreen(shift(pLeftRef).x, shift(pLeftRef).y, t),
                   left1: worldToScreen(shift(pOpenStart).x, shift(pOpenStart).y, t),
                   right0: worldToScreen(shift(pOpenEnd).x, shift(pOpenEnd).y, t),
-                  right1: worldToScreen(shift(pEnd).x, shift(pEnd).y, t),
+                  right1: worldToScreen(shift(pRightRef).x, shift(pRightRef).y, t),
                 };
               };
-              const inner = faceGeom("inner");
-              const outer = faceGeom("outer");
+              const inner = faceGeom("inner", m.innerLeftRefAlongMm, m.innerRightRefAlongMm);
+              const outer = faceGeom("outer", m.outerLeftRefAlongMm, m.outerRightRefAlongMm);
               const drawDim = (
                 s0: { x: number; y: number },
                 s1: { x: number; y: number },
@@ -2445,10 +2468,9 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                 setMoveEdit({ ...moveEdit, error: "Стена не найдена" });
                 return;
               }
-              const thickness = Math.max(0, wall.thicknessMm);
-              const outerValue = moveEdit.face === "inner" ? v + thickness : v;
-              const nextLeft =
-                moveEdit.side === "left" ? m.wallStartMm + outerValue : m.wallEndMm - outerValue - m.widthMm;
+              const refL = moveEdit.face === "inner" ? m.innerLeftRefAlongMm : m.outerLeftRefAlongMm;
+              const refR = moveEdit.face === "inner" ? m.innerRightRefAlongMm : m.outerRightRefAlongMm;
+              const nextLeft = moveEdit.side === "left" ? v + refL : refR - v - m.widthMm;
               if (nextLeft < m.allowedStartMm - 1e-3 || nextLeft + m.widthMm > m.allowedEndMm + 1e-3) {
                 setMoveEdit({ ...moveEdit, error: "Выход за пределы стены" });
                 return;

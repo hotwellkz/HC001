@@ -11,8 +11,11 @@ export const DIMENSION_TEXT_FONT_STACK = 'system-ui, -apple-system, "Segoe UI", 
 /** Как `.wd-dim-text` / `.wd-dim-text-out` в wall-detail-workspace.css */
 export const DIMENSION_FONT_SIZE_PX = 14;
 
-/** Вертикальные размеры проёмов на вкладке «Вид стены» (`.wd-dim-text-v`). */
+/** Вертикальные размеры на вкладке «Вид стены» — общий вертикальный (высота стены и т.п.). */
 export const DIMENSION_FONT_SIZE_WALL_DETAIL_VERTICAL_PX = 12;
+
+/** Вертикальные размеры внутри проёма (компактнее). */
+export const DIMENSION_FONT_SIZE_WALL_DETAIL_VERTICAL_OPENING_PX = 11;
 
 /** Половина длины поперечной засечки на конце размерной линии (полная ≈ 10px). */
 export const DIMENSION_TICK_HALF_PX = 5;
@@ -41,6 +44,9 @@ export const DIMENSION_V_LABEL_GAP_PX = 12;
 
 /** Доп. зазор для вертикалей у проёмов (не прижимать подпись к линии). */
 export const DIMENSION_V_LABEL_GAP_OPENING_EXTRA_PX = 3;
+
+/** Подпись вертикального размера внутри проёма — близко к линии. */
+export const DIMENSION_V_LABEL_GAP_OPENING_INTERIOR_PX = 4;
 
 export const DIMENSION_V_LABEL_GAP_EXTRA_PX = 4;
 
