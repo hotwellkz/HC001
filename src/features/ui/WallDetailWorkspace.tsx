@@ -17,7 +17,8 @@ import {
 import {
   formatLumberFullDisplayMark,
   formatSipPanelDisplayMark,
-  lumberDisplayIndexByPieceId,
+  lumberGroupKeySectionAndLength,
+  lumberGroupedPositionIndexByPieceId,
   lumberPiecesSortedForDisplay,
   wallMarkLabelForDisplay,
 } from "@/core/domain/pieceDisplayMark";
@@ -184,22 +185,41 @@ export function WallDetailWorkspace() {
 
   const wallLabel = wall ? wallMarkLabelForDisplay(wall.markLabel, wall.id.slice(0, 8)) : "";
 
+  const lumberPositionByPieceId = useMemo(
+    () => (calc ? lumberGroupedPositionIndexByPieceId(calc.lumberPieces) : new Map<string, number>()),
+    [calc],
+  );
+
   const lumberRows = useMemo(() => {
     if (!calc || !wall) return [];
-    const idxById = lumberDisplayIndexByPieceId(calc.lumberPieces);
-    return lumberPiecesSortedForDisplay(calc.lumberPieces).map((p) => {
-      const n = idxById.get(p.id) ?? 0;
-      return {
-        n,
-        id: p.id,
-        mark: formatLumberFullDisplayMark(p.wallMark, n),
-        section: `${Math.round(p.sectionThicknessMm)}x${Math.round(p.sectionDepthMm)}`,
-        length: Math.round(p.lengthMm),
-        qty: 1,
-        piece: p,
-      };
-    });
-  }, [calc, wall]);
+    const sorted = lumberPiecesSortedForDisplay(calc.lumberPieces);
+    const wallMark = wallMarkLabelForDisplay(wall.markLabel, wall.id.slice(0, 8));
+    type Agg = { n: number; section: string; length: number; qty: number; sortHint: number };
+    const byKey = new Map<string, Agg>();
+    for (const p of sorted) {
+      const key = lumberGroupKeySectionAndLength(p);
+      const n = lumberPositionByPieceId.get(p.id) ?? 0;
+      const section = `${Math.round(p.sectionThicknessMm)}x${Math.round(p.sectionDepthMm)}`;
+      const length = Math.round(p.lengthMm);
+      const sortHint = p.displayOrder * 1e9 + p.sortKey;
+      const g = byKey.get(key);
+      if (g) {
+        g.qty += 1;
+      } else {
+        byKey.set(key, { n, section, length, qty: 1, sortHint });
+      }
+    }
+    return [...byKey.values()]
+      .sort((a, b) => a.n - b.n || a.sortHint - b.sortHint)
+      .map((r) => ({
+        n: r.n,
+        rowKey: `${r.section}-${r.length}`,
+        mark: formatLumberFullDisplayMark(wallMark, r.n),
+        section: r.section,
+        length: r.length,
+        qty: r.qty,
+      }));
+  }, [calc, wall, lumberPositionByPieceId]);
 
   const wallDetailSipFrameMm = useMemo(() => {
     if (!wall || !calc) return null;
@@ -642,16 +662,17 @@ export function WallDetailWorkspace() {
               : null}
 
             {calc
-              ? lumberRows.map((r) => {
-                  const rr = lumberPieceWallElevationRectMm(r.piece, wall, project, calc);
+              ? lumberPiecesSortedForDisplay(calc.lumberPieces).map((p) => {
+                  const rr = lumberPieceWallElevationRectMm(p, wall, project, calc);
                   const rw = Math.max(1, rr.x1 - rr.x0);
                   const rh = Math.max(1, rr.b1 - rr.b0);
                   const rectTop = wallTop + H - rr.b1;
+                  const n = lumberPositionByPieceId.get(p.id) ?? 0;
                   return (
-                    <g key={`piece-${r.id}`}>
+                    <g key={`piece-${p.id}`}>
                       <rect x={sx(rr.x0)} y={sy(rectTop)} width={rw * zoom} height={rh * zoom} className="wd-piece" />
                       <text x={sx(rr.x0 + rw / 2)} y={sy(rectTop + rh / 2)} className="wd-piece-n">
-                        {r.n}
+                        {n}
                       </text>
                     </g>
                   );
@@ -777,16 +798,20 @@ export function WallDetailWorkspace() {
                 </thead>
                 <tbody>
                   {lumberRows.map((r) => (
-                    <tr key={`${r.mark}-${r.id}`}>
-                      <td>{r.n}</td><td>{r.mark}</td><td>{r.section}</td><td>{r.length}</td><td>{r.qty}</td>
+                    <tr key={r.rowKey}>
+                      <td>{r.n}</td>
+                      <td>{r.mark}</td>
+                      <td>{r.section}</td>
+                      <td>{r.length}</td>
+                      <td>{r.qty}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr>
                     <td colSpan={3}>Итого</td>
-                    <td>{Math.round(lumberRows.reduce((s, r) => s + r.length, 0))}</td>
-                    <td>{lumberRows.length}</td>
+                    <td>{Math.round(lumberRows.reduce((s, r) => s + r.length * r.qty, 0))}</td>
+                    <td>{lumberRows.reduce((s, r) => s + r.qty, 0)}</td>
                   </tr>
                 </tfoot>
               </table>

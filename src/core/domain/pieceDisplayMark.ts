@@ -48,6 +48,33 @@ export function lumberDisplayIndexByPieceId(pieces: readonly LumberPiece[]): Rea
   return m;
 }
 
+/** Сечение + длина (мм, округлённые) — ключ группы для таблицы «Доски по стене». */
+export function lumberGroupKeySectionAndLength(p: LumberPiece): string {
+  const len = Math.round(p.lengthMm);
+  return `${Math.round(p.sectionThicknessMm)}x${Math.round(p.sectionDepthMm)}@${len}`;
+}
+
+/**
+ * Номер позиции на чертеже/в таблице (1-based): одинаковые сечение и длина — один номер.
+ * Порядок позиций — по первому вхождению группы в `lumberPiecesSortedForDisplay`.
+ */
+export function lumberGroupedPositionIndexByPieceId(pieces: readonly LumberPiece[]): ReadonlyMap<string, number> {
+  const sorted = lumberPiecesSortedForDisplay(pieces);
+  const keyToPosition = new Map<string, number>();
+  let nextPosition = 1;
+  const m = new Map<string, number>();
+  for (const p of sorted) {
+    const k = lumberGroupKeySectionAndLength(p);
+    let pos = keyToPosition.get(k);
+    if (pos == null) {
+      pos = nextPosition++;
+      keyToPosition.set(k, pos);
+    }
+    m.set(p.id, pos);
+  }
+  return m;
+}
+
 /** SIP: слева направо вдоль стены; при равных координатах — по доменному index. */
 export function sipRegionsSortedForDisplay(regions: readonly SipPanelRegion[]): SipPanelRegion[] {
   return [...regions].sort((a, b) => a.startOffsetMm - b.startOffsetMm || a.index - b.index);
