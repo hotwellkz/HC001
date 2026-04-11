@@ -27,6 +27,7 @@ import { ProjectOpeningMeshes } from "./ProjectOpeningMeshes";
 import { ProjectSipSeamLines } from "./ProjectSipSeamLines";
 import { ProjectSlabs } from "./ProjectSlabs";
 import { ProjectWalls } from "./ProjectWalls";
+import { ProjectFloorBeams } from "./ProjectFloorBeams";
 import { useEditor3dThemeColors } from "./useEditor3dThemeColors";
 
 type CalcFocus = { readonly wallId: string; readonly reactKey: string };
@@ -66,6 +67,7 @@ function editorOverlaySnapshot() {
     layerParamsModalOpen: s.layerParamsModalOpen,
     profilesModalOpen: s.profilesModalOpen,
     addWallModalOpen: s.addWallModalOpen,
+    addFloorBeamModalOpen: s.addFloorBeamModalOpen,
     addFoundationStripModalOpen: s.addFoundationStripModalOpen,
     addFoundationPileModalOpen: s.addFoundationPileModalOpen,
     addSlabModalOpen: s.addSlabModalOpen,
@@ -92,12 +94,14 @@ function editorOverlaySnapshot() {
 
 function SceneFromProject({
   selectedWallEntityId,
+  selectedFloorBeamEntityId,
   selectedOpeningEntityId,
   selectedPileEntityId,
   selectedStripEntityId,
   selectedSlabEntityId,
   calcFocus,
   hoverWallEntityId,
+  hoverFloorBeamEntityId,
   hoverOpeningEntityId,
   hoverPileEntityId,
   hoverStripEntityId,
@@ -107,12 +111,14 @@ function SceneFromProject({
   texturePickLocked,
 }: {
   readonly selectedWallEntityId: string | null;
+  readonly selectedFloorBeamEntityId: string | null;
   readonly selectedOpeningEntityId: string | null;
   readonly selectedPileEntityId: string | null;
   readonly selectedStripEntityId: string | null;
   readonly selectedSlabEntityId: string | null;
   readonly calcFocus: CalcFocus | null;
   readonly hoverWallEntityId: string | null;
+  readonly hoverFloorBeamEntityId: string | null;
   readonly hoverOpeningEntityId: string | null;
   readonly hoverPileEntityId: string | null;
   readonly hoverStripEntityId: string | null;
@@ -141,6 +147,11 @@ function SceneFromProject({
         hoverWallEntityId={hoverWallEntityId}
         texturePickHover={texturePickHover}
         texturePickLocked={texturePickLocked}
+      />
+      <ProjectFloorBeams
+        project={project}
+        selectedBeamEntityId={selectedFloorBeamEntityId}
+        hoverBeamEntityId={hoverFloorBeamEntityId}
       />
       <ProjectFoundationPiles
         project={project}
@@ -184,6 +195,7 @@ function Editor3dCanvasScene({
   setCalcFocus,
   onHoverPickChange,
   hoverWallEntityId,
+  hoverFloorBeamEntityId,
   hoverOpeningEntityId,
   hoverPileEntityId,
   hoverStripEntityId,
@@ -206,6 +218,7 @@ function Editor3dCanvasScene({
   readonly setCalcFocus: (v: CalcFocus | null) => void;
   readonly onHoverPickChange: (p: Editor3dPickPayload | null) => void;
   readonly hoverWallEntityId: string | null;
+  readonly hoverFloorBeamEntityId: string | null;
   readonly hoverOpeningEntityId: string | null;
   readonly hoverPileEntityId: string | null;
   readonly hoverStripEntityId: string | null;
@@ -264,6 +277,14 @@ function Editor3dCanvasScene({
     return project.slabs.some((s) => s.id === id) ? id : null;
   }, [project.slabs, selectedEntityIds]);
 
+  const selectedFloorBeamEntityId = useMemo(() => {
+    if (selectedEntityIds.length !== 1) {
+      return null;
+    }
+    const id = selectedEntityIds[0]!;
+    return project.floorBeams.some((b) => b.id === id) ? id : null;
+  }, [project.floorBeams, selectedEntityIds]);
+
   const show3dGrid = project.viewState.show3dGrid !== false;
 
   return (
@@ -309,12 +330,14 @@ function Editor3dCanvasScene({
       ) : null}
       <SceneFromProject
         selectedWallEntityId={selectedWallEntityId}
+        selectedFloorBeamEntityId={selectedFloorBeamEntityId}
         selectedOpeningEntityId={selectedOpeningEntityId}
         selectedPileEntityId={selectedPileEntityId}
         selectedStripEntityId={selectedStripEntityId}
         selectedSlabEntityId={selectedSlabEntityId}
         calcFocus={calcFocus}
         hoverWallEntityId={hoverWallEntityId}
+        hoverFloorBeamEntityId={hoverFloorBeamEntityId}
         hoverOpeningEntityId={hoverOpeningEntityId}
         hoverPileEntityId={hoverPileEntityId}
         hoverStripEntityId={hoverStripEntityId}
@@ -386,6 +409,7 @@ export function Editor3DWorkspace() {
     textureApply3dToolActive && !textureApply3dParamsModal ? textureToolHoverPick : null;
 
   const hoverWallEntityId = hoverPick?.kind === "wall" ? hoverPick.entityId : null;
+  const hoverFloorBeamEntityId = hoverPick?.kind === "floorBeam" ? hoverPick.entityId : null;
   const hoverOpeningEntityId = hoverPick?.kind === "opening" ? hoverPick.entityId : null;
   const hoverPileEntityId = hoverPick?.kind === "foundationPile" ? hoverPick.entityId : null;
   const hoverStripEntityId = hoverPick?.kind === "foundationStrip" ? hoverPick.entityId : null;
@@ -565,6 +589,20 @@ export function Editor3DWorkspace() {
       };
     }
 
+    const beam = project.floorBeams.find((b) => b.id === id);
+    if (beam) {
+      return {
+        title: "Балка перекрытия",
+        rows: [
+          ["ID", beam.id],
+          ["Профиль", beam.profileId],
+          ["Уровень низа", `${Math.round(beam.baseElevationMm)} мм`],
+          ["Развернуть сечение", beam.sectionRolled ? "да" : "нет"],
+          ["Привязка", beam.linearPlacementMode],
+        ] as const,
+      };
+    }
+
     const slab = project.slabs.find((s) => s.id === id);
     if (slab) {
       const topW = Math.round(slabWorldTopMm(slab, project));
@@ -591,6 +629,9 @@ export function Editor3DWorkspace() {
     }
     if (hoverPick.kind === "wall") {
       return "Стена";
+    }
+    if (hoverPick.kind === "floorBeam") {
+      return "Балка перекрытия";
     }
     if (hoverPick.kind === "foundationPile") {
       return "Свая";
@@ -798,6 +839,7 @@ export function Editor3DWorkspace() {
           setCalcFocus={setCalcFocus}
           onHoverPickChange={onHoverPickChange}
           hoverWallEntityId={hoverWallEntityId}
+          hoverFloorBeamEntityId={hoverFloorBeamEntityId}
           hoverOpeningEntityId={hoverOpeningEntityId}
           hoverPileEntityId={hoverPileEntityId}
           hoverStripEntityId={hoverStripEntityId}

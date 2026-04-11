@@ -116,6 +116,7 @@ export function createDemoProject(): Project {
     foundationStrips: [],
     foundationPiles: [],
     slabs: [],
+    floorBeams: [],
     openingFramingPieces: [],
     openings: [
       {
@@ -159,6 +160,7 @@ export function createDemoProject(): Project {
     }),
     viewState: {
       activeTab: "2d",
+      editor2dPlanScope: "main",
       viewport2d: {
         panXMm: 4000,
         panYMm: 3000,

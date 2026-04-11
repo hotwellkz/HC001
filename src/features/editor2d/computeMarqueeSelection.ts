@@ -10,6 +10,7 @@ import {
   rectsIntersectMm,
   segmentBoundsMm,
 } from "@/core/geometry/axisRect";
+import { floorBeamPlanQuadCornersMm } from "@/core/domain/floorBeamGeometry";
 
 /** Подбор id стен и проёмов, чья 2D-геометрия пересекает прямоугольник выделения (мм). */
 export function computeMarqueeSelection(
@@ -42,6 +43,26 @@ export function computeMarqueeSelection(
   for (const ln of project.planLines) {
     if (rectsIntersectMm(segmentBoundsMm(ln.start, ln.end), rect)) {
       ids.push(ln.id);
+    }
+  }
+
+  for (const bm of project.floorBeams) {
+    const q = floorBeamPlanQuadCornersMm(project, bm);
+    if (!q || q.length === 0) {
+      continue;
+    }
+    let minX = q[0]!.x;
+    let maxX = q[0]!.x;
+    let minY = q[0]!.y;
+    let maxY = q[0]!.y;
+    for (const p of q) {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+    }
+    if (rectsIntersectMm({ minX, maxX, minY, maxY }, rect)) {
+      ids.push(bm.id);
     }
   }
 

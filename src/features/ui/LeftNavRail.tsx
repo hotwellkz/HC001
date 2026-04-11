@@ -13,6 +13,19 @@ function IconFloorPlan({ active }: { readonly active: boolean }) {
   );
 }
 
+function IconFloorStructure({ active }: { readonly active: boolean }) {
+  return (
+    <svg className="lnr-icon" viewBox="0 0 24 24" aria-hidden="true" data-active={active}>
+      <path
+        fill="currentColor"
+        d="M4 5h16v2H4V5zm0 5h16v1.5H4V10zm0 4h16v1.5H4V14zm0 4h16v2H4v-2z"
+        opacity="0.88"
+      />
+      <path fill="currentColor" d="M4 7h16v1H4V7zm0 6h16v1H4v-1z" opacity="0.35" />
+    </svg>
+  );
+}
+
 function IconWallDetail({ active }: { readonly active: boolean }) {
   return (
     <svg className="lnr-icon" viewBox="0 0 24 24" aria-hidden="true" data-active={active}>
@@ -25,12 +38,15 @@ function IconWallDetail({ active }: { readonly active: boolean }) {
 export function LeftNavRail() {
   const activeTab = useAppStore((s) => s.activeTab);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
+  const planScope = useAppStore((s) => s.currentProject.viewState.editor2dPlanScope);
+  const setEditor2dPlanScope = useAppStore((s) => s.setEditor2dPlanScope);
   const openWallDetail = useAppStore((s) => s.openWallDetail);
   const selectedWallId = useAppStore((s) => {
     const sel = new Set(s.selectedEntityIds);
     return s.currentProject.walls.find((w) => sel.has(w.id))?.id ?? null;
   });
-  const floorPlanActive = activeTab === "2d";
+  const floorPlanActive = activeTab === "2d" && planScope === "main";
+  const floorStructureActive = activeTab === "2d" && planScope === "floorStructure";
   const wallDetailActive = activeTab === "wall";
 
   return (
@@ -42,9 +58,26 @@ export function LeftNavRail() {
         aria-label="План этажа"
         aria-pressed={floorPlanActive}
         data-active={floorPlanActive}
-        onClick={() => setActiveTab("2d")}
+        onClick={() => {
+          setActiveTab("2d");
+          setEditor2dPlanScope("main");
+        }}
       >
         <IconFloorPlan active={floorPlanActive} />
+      </button>
+      <button
+        type="button"
+        className="lnr-btn"
+        title="Перекрытие"
+        aria-label="Перекрытие"
+        aria-pressed={floorStructureActive}
+        data-active={floorStructureActive}
+        onClick={() => {
+          setActiveTab("2d");
+          setEditor2dPlanScope("floorStructure");
+        }}
+      >
+        <IconFloorStructure active={floorStructureActive} />
       </button>
       <button
         type="button"

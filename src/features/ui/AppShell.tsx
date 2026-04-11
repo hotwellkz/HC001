@@ -10,6 +10,7 @@ import { FoundationStripAutoPilesModal } from "@/features/ui/FoundationStripAuto
 import { AddSlabModal } from "@/features/ui/AddSlabModal";
 import { AddFoundationStripModal } from "@/features/ui/AddFoundationStripModal";
 import { AddWallModal } from "@/features/ui/AddWallModal";
+import { AddFloorBeamModal } from "@/features/ui/AddFloorBeamModal";
 import { WallJointParamsModal } from "@/features/ui/WallJointParamsModal";
 import { WallCalculationModal } from "@/features/ui/WallCalculationModal";
 import { WindowParamsModal } from "@/features/ui/window-modal/WindowParamsModal";
@@ -83,6 +84,7 @@ export function AppShell() {
       <LayerParamsHost />
       <ProfilesHost />
       <AddWallModal />
+      <AddFloorBeamModal />
       <AddFoundationStripModal />
       <AddSlabModal />
       <SlabEditModal />

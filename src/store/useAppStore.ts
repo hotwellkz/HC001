@@ -105,8 +105,13 @@ import { translateWallInProject } from "@/core/domain/wallTranslate";
 import type { WallMoveCopySession } from "@/core/domain/wallMoveCopySession";
 import { initialLine2dSession, type Line2dSession } from "@/core/domain/line2dSession";
 import { initialRuler2dSession, type Ruler2dSession } from "@/core/domain/ruler2dSession";
-import type { LengthChange2dSession } from "@/core/domain/lengthChange2dSession";
-import { applyWallLengthChangeInProject } from "@/core/domain/wallLengthChangeApply";
+import type { LengthChange2dSession, LengthChange2dTarget } from "@/core/domain/lengthChange2dSession";
+import { applyLinearLengthChangeInProject } from "@/core/domain/linearLengthChangeApply";
+import {
+  axisFromFixedTowardMovingFloorBeam,
+  fixedRefEndpointForFloorBeamLengthChange,
+  floorBeamRefLengthMm,
+} from "@/core/domain/floorBeamLengthChangeGeometry";
 import {
   axisFromFixedTowardMoving,
   fixedEndpointForLengthChange,
@@ -118,6 +123,10 @@ import { closestPointOnSegment } from "@/core/domain/wallJointGeometry";
 import { commitWallPlacementSecondPoint } from "@/core/domain/wallPlacementCommit";
 import type { WallPlacementSession } from "@/core/domain/wallPlacement";
 import { initialWallPlacementPhase } from "@/core/domain/wallPlacement";
+import { commitFloorBeamPlacementSecondPoint } from "@/core/domain/floorBeamPlacementCommit";
+import type { FloorBeamPlacementSession } from "@/core/domain/floorBeamPlacement";
+import { initialFloorBeamPlacementPhase } from "@/core/domain/floorBeamPlacement";
+import { beamPlanThicknessAndVerticalMm, isProfileUsableForFloorBeam } from "@/core/domain/floorBeamSection";
 import { applyCornerWallJoint, applyTeeWallJoint } from "@/core/domain/wallJointApply";
 import type { WallEndSide, WallJointKind } from "@/core/domain/wallJoint";
 import type { WallJointSession } from "@/core/domain/wallJointSession";
@@ -158,7 +167,11 @@ import {
 import { pickClosestFoundationPileHandle } from "@/features/editor2d/foundationPilePick2d";
 import { buildWallCalculationForWall, SipWallLayoutError } from "@/core/domain/sipWallLayout";
 import type { WallShapeMode } from "@/core/domain/wallShapeMode";
-import { type EditorTab, viewport3dWithPlanOrbitTargetMm } from "@/core/domain/viewState";
+import {
+  type Editor2dPlanScope,
+  type EditorTab,
+  viewport3dWithPlanOrbitTargetMm,
+} from "@/core/domain/viewState";
 import { setLastOpenedProjectId } from "@/data/lastOpenedProjectId";
 import { createProjectInDb, updateProjectSnapshot } from "@/data/projectFirestoreRepository";
 import { syncProjectToFirestore } from "@/data/projectFirestoreSync";
@@ -315,6 +328,9 @@ interface AppState {
   readonly slabPlacementHistoryBaseline: Project | null;
   readonly slabCoordinateModalOpen: boolean;
   readonly slabEditModal: { readonly slabId: string } | null;
+  readonly addFloorBeamModalOpen: boolean;
+  readonly floorBeamPlacementSession: FloorBeamPlacementSession | null;
+  readonly floorBeamPlacementHistoryBaseline: Project | null;
   readonly wallCoordinateModalOpen: boolean;
   /** Модалка смещения начала стены от опорной точки (Пробел после выбора опоры). */
   readonly wallAnchorCoordinateModalOpen: boolean;
@@ -612,6 +628,28 @@ interface AppActions {
     opts?: { readonly altKey?: boolean },
   ) => void;
   wallPlacementCompleteSecondPoint: (secondSnappedMm: { readonly x: number; readonly y: number }) => void;
+  openAddFloorBeamModal: () => void;
+  closeAddFloorBeamModal: () => void;
+  applyAddFloorBeamModal: (input: {
+    readonly profileId: string;
+    readonly baseElevationMm: number;
+    readonly sectionRolled: boolean;
+  }) => void;
+  cancelFloorBeamPlacement: () => void;
+  floorBeamPlacementBackOrExit: () => void;
+  floorBeamPlacementFirstPointHoverMove: (worldMm: Point2D, viewport: ViewportTransform) => void;
+  floorBeamPlacementPreviewMove: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+    opts?: { readonly altKey?: boolean },
+  ) => void;
+  floorBeamPlacementPrimaryClick: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+    opts?: { readonly altKey?: boolean },
+  ) => void;
+  floorBeamPlacementCompleteSecondPoint: (secondSnappedMm: Point2D) => void;
+  setEditor2dPlanScope: (scope: Editor2dPlanScope) => void;
   setLinearPlacementMode: (mode: LinearProfilePlacementMode) => void;
   setWallShapeMode: (mode: WallShapeMode) => void;
   setSnapToVertex: (value: boolean) => void;
@@ -715,7 +753,7 @@ interface AppActions {
   line2dCancel: () => void;
   /** После выбора торца — начать перетаскивание (клик–движение–клик). */
   startLengthChange2dSession: (
-    wallId: string,
+    target: LengthChange2dTarget,
     movingEnd: WallEndSide,
     worldMm: Point2D,
     viewport: ViewportTransform,
@@ -850,6 +888,9 @@ function historyJumpClearTransientUi(s: AppStore, restored: Project): Partial<Ap
     slabPlacementHistoryBaseline: null,
     slabCoordinateModalOpen: false,
     slabEditModal: null,
+    addFloorBeamModalOpen: false,
+    floorBeamPlacementSession: null,
+    floorBeamPlacementHistoryBaseline: null,
     activeTool: "select",
     wallDetailWallId: wd,
     textureApply3dToolActive: false,
@@ -1118,6 +1159,9 @@ export const useAppStore = create<AppStore>((set, get) => {
     slabPlacementHistoryBaseline: null,
     slabCoordinateModalOpen: false,
     slabEditModal: null,
+    addFloorBeamModalOpen: false,
+    floorBeamPlacementSession: null,
+    floorBeamPlacementHistoryBaseline: null,
     wallCoordinateModalOpen: false,
     wallAnchorCoordinateModalOpen: false,
     wallAnchorPlacementModeActive: false,
@@ -1405,6 +1449,9 @@ export const useAppStore = create<AppStore>((set, get) => {
                 ? "select"
                 : s.activeTool,
           wallPlacementSession: tab === "2d" ? s.wallPlacementSession : null,
+          floorBeamPlacementSession: tab === "2d" ? s.floorBeamPlacementSession : null,
+          floorBeamPlacementHistoryBaseline: tab === "2d" ? s.floorBeamPlacementHistoryBaseline : null,
+          addFloorBeamModalOpen: tab === "2d" ? s.addFloorBeamModalOpen : false,
           wallJointSession: tab === "2d" ? s.wallJointSession : null,
           wallJointParamsModalOpen: tab === "2d" ? s.wallJointParamsModalOpen : false,
           addWallModalOpen: tab === "2d" ? s.addWallModalOpen : false,
@@ -3342,6 +3389,9 @@ export const useAppStore = create<AppStore>((set, get) => {
           shiftDirectionLockUnit: null,
           shiftLockReferenceMm: null,
         },
+        floorBeamPlacementSession: null,
+        floorBeamPlacementHistoryBaseline: null,
+        addFloorBeamModalOpen: false,
         addWallModalOpen: false,
         addWindowModalOpen: false,
         wallJointSession: null,
@@ -3499,6 +3549,39 @@ export const useAppStore = create<AppStore>((set, get) => {
       const p0 = get().currentProject;
       const e2 = p0.settings.editor2d;
       const snap = editor2dSnapSettings(p0);
+
+      const fbs = get().floorBeamPlacementSession;
+      if (fbs?.phase === "waitingSecondPoint" && fbs.firstPointMm) {
+        const uFb = computeShiftDirectionLockUnit({
+          anchor: fbs.firstPointMm,
+          previewEnd: fbs.previewEndMm,
+          cursorWorldMm,
+          viewport,
+          project: p0,
+          snapSettings: snap,
+          gridStepMm: p0.settings.gridStepMm,
+          resolveRawSnap: (raw) =>
+            resolveWallPlacementToolSnap({
+              rawWorldMm: raw,
+              viewport,
+              project: p0,
+              snapSettings: snap,
+              gridStepMm: p0.settings.gridStepMm,
+              linearPlacementMode: e2.linearPlacementMode,
+            }).point,
+        });
+        if (!uFb) {
+          return;
+        }
+        set({
+          floorBeamPlacementSession: {
+            ...fbs,
+            shiftDirectionLockUnit: uFb,
+            shiftLockReferenceMm: null,
+          },
+        });
+        return;
+      }
 
       const ws = get().wallPlacementSession;
       if (ws?.phase === "waitingSecondPoint" && ws.firstPointMm && !get().wallCoordinateModalOpen) {
@@ -3666,12 +3749,23 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
 
     linearPlacementReleaseShiftDirectionLock: () => {
+      const fbs = get().floorBeamPlacementSession;
       const ws = get().wallPlacementSession;
       const rs = get().ruler2dSession;
       const ls = get().line2dSession;
       const mc = get().wallMoveCopySession;
       const ec = get().entityCopySession;
       const lc = get().lengthChange2dSession;
+      const fbClear =
+        fbs && (fbs.shiftDirectionLockUnit != null || fbs.shiftLockReferenceMm != null)
+          ? {
+              floorBeamPlacementSession: {
+                ...fbs,
+                shiftDirectionLockUnit: null,
+                shiftLockReferenceMm: null,
+              },
+            }
+          : {};
       const wClear =
         ws && (ws.shiftDirectionLockUnit != null || ws.shiftLockReferenceMm != null)
           ? {
@@ -3733,7 +3827,8 @@ export const useAppStore = create<AppStore>((set, get) => {
             }
           : {};
       if (
-        Object.keys(wClear).length +
+        Object.keys(fbClear).length +
+          Object.keys(wClear).length +
           Object.keys(rClear).length +
           Object.keys(lLineClear).length +
           Object.keys(mClear).length +
@@ -3741,7 +3836,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           Object.keys(lcClear).length >
         0
       ) {
-        set({ ...wClear, ...rClear, ...lLineClear, ...mClear, ...ecClear, ...lcClear });
+        set({ ...fbClear, ...wClear, ...rClear, ...lLineClear, ...mClear, ...ecClear, ...lcClear });
       }
     },
 
@@ -3913,6 +4008,304 @@ export const useAppStore = create<AppStore>((set, get) => {
           },
           s.wallPlacementHistoryBaseline != null
             ? { historyBefore: s.wallPlacementHistoryBaseline }
+            : {},
+        ),
+      );
+    },
+
+    openAddFloorBeamModal: () => set({ addFloorBeamModalOpen: true, lastError: null }),
+
+    closeAddFloorBeamModal: () => set({ addFloorBeamModalOpen: false }),
+
+    setEditor2dPlanScope: (scope) =>
+      set((s) => {
+        const nextProject = touchProjectMeta(mergeViewState(s.currentProject, { editor2dPlanScope: scope }));
+        if (scope === "main" && s.floorBeamPlacementSession) {
+          return buildProjectMutationState(s, nextProject, {
+            floorBeamPlacementSession: null,
+            floorBeamPlacementHistoryBaseline: null,
+            addFloorBeamModalOpen: false,
+            dirty: true,
+            lastError: null,
+          });
+        }
+        return buildProjectMutationState(s, nextProject, { dirty: true, lastError: null });
+      }),
+
+    applyAddFloorBeamModal: (input) => {
+      const p = get().currentProject;
+      const profile = getProfileById(p, input.profileId);
+      if (!profile) {
+        set({ lastError: "Профиль не найден." });
+        return;
+      }
+      if (!isProfileUsableForFloorBeam(profile)) {
+        set({ lastError: "Выберите профиль для балки/доски (не категория «стена»)." });
+        return;
+      }
+      const { planThicknessMm } = beamPlanThicknessAndVerticalMm(profile, input.sectionRolled);
+      if (!(planThicknessMm > 0)) {
+        set({ lastError: "Некорректные размеры сечения профиля." });
+        return;
+      }
+      if (!Number.isFinite(input.baseElevationMm)) {
+        set({ lastError: "Уровень должен быть числом (мм)." });
+        return;
+      }
+      const phase = initialFloorBeamPlacementPhase(p);
+      const baseline = cloneProjectSnapshot(p);
+      set({
+        floorBeamPlacementHistoryBaseline: baseline,
+        floorBeamPlacementSession: {
+          phase,
+          draft: {
+            profileId: input.profileId,
+            baseElevationMm: input.baseElevationMm,
+            sectionRolled: input.sectionRolled,
+            planThicknessMm,
+          },
+          firstPointMm: null,
+          previewEndMm: null,
+          lastSnapKind: null,
+          angleSnapLockedDeg: null,
+          shiftDirectionLockUnit: null,
+          shiftLockReferenceMm: null,
+        },
+        addFloorBeamModalOpen: false,
+        wallPlacementSession: null,
+        wallPlacementHistoryBaseline: null,
+        addWallModalOpen: false,
+        wallJointSession: null,
+        wallJointParamsModalOpen: false,
+        selectedEntityIds: [],
+        lastError: null,
+      });
+    },
+
+    cancelFloorBeamPlacement: () =>
+      set({
+        floorBeamPlacementSession: null,
+        floorBeamPlacementHistoryBaseline: null,
+        addFloorBeamModalOpen: false,
+        lastError: null,
+      }),
+
+    floorBeamPlacementBackOrExit: () => {
+      const session = get().floorBeamPlacementSession;
+      if (!session) {
+        return;
+      }
+      if (session.phase === "waitingSecondPoint") {
+        set({
+          floorBeamPlacementSession: {
+            ...session,
+            phase: "waitingFirstPoint",
+            firstPointMm: null,
+            previewEndMm: null,
+            lastSnapKind: null,
+            angleSnapLockedDeg: null,
+            shiftDirectionLockUnit: null,
+            shiftLockReferenceMm: null,
+          },
+          lastError: null,
+        });
+        return;
+      }
+      const p = get().currentProject;
+      set({
+        floorBeamPlacementSession: {
+          phase: initialFloorBeamPlacementPhase(p),
+          draft: session.draft,
+          firstPointMm: null,
+          previewEndMm: null,
+          lastSnapKind: null,
+          angleSnapLockedDeg: null,
+          shiftDirectionLockUnit: null,
+          shiftLockReferenceMm: null,
+        },
+        lastError: null,
+      });
+    },
+
+    floorBeamPlacementFirstPointHoverMove: (worldMm, viewport) => {
+      const s = get().floorBeamPlacementSession;
+      if (!s || s.firstPointMm != null) {
+        return;
+      }
+      if (s.phase !== "waitingFirstPoint" && s.phase !== "waitingOriginAndFirst") {
+        return;
+      }
+      if (isSceneCoordinateModalBlocking(get())) {
+        return;
+      }
+      const snap = resolveWallPlacementSnapFromStore(get, worldMm, viewport);
+      set({
+        floorBeamPlacementSession: {
+          ...s,
+          previewEndMm: snap.point,
+          lastSnapKind: snap.kind,
+        },
+      });
+    },
+
+    floorBeamPlacementPreviewMove: (worldMm, viewport, opts) => {
+      const s = get().floorBeamPlacementSession;
+      if (!s || s.phase !== "waitingSecondPoint" || !s.firstPointMm) {
+        return;
+      }
+      if (isSceneCoordinateModalBlocking(get())) {
+        return;
+      }
+      const p0 = get().currentProject;
+      const e2 = p0.settings.editor2d;
+      const r = computeLinearSecondPointPreview({
+        anchor: s.firstPointMm,
+        rawWorldMm: worldMm,
+        viewport,
+        project: p0,
+        snapSettings: editor2dSnapSettings(p0),
+        gridStepMm: p0.settings.gridStepMm,
+        shiftDirectionLockUnit: s.shiftDirectionLockUnit,
+        angleSnapLockedDeg: s.angleSnapLockedDeg,
+        skipAngleSnap: Boolean(opts?.altKey),
+        altKey: Boolean(opts?.altKey),
+        shiftLockFindHit: (args) =>
+          findWallPlacementShiftLockSnapHit({
+            ...args,
+            linearPlacementMode: e2.linearPlacementMode,
+          }),
+      });
+      set({
+        floorBeamPlacementSession: {
+          ...s,
+          previewEndMm: r.previewEnd,
+          lastSnapKind: r.lastSnapKind,
+          angleSnapLockedDeg: r.angleSnapLockedDeg,
+          shiftLockReferenceMm: r.shiftLockReferenceMm,
+        },
+      });
+    },
+
+    floorBeamPlacementPrimaryClick: (worldMm, viewport, opts) => {
+      const p0 = get().currentProject;
+      const session = get().floorBeamPlacementSession;
+      if (!session) {
+        return;
+      }
+
+      if (session.phase === "waitingSecondPoint" && session.firstPointMm) {
+        const e2 = p0.settings.editor2d;
+        const r = computeLinearSecondPointPreview({
+          anchor: session.firstPointMm,
+          rawWorldMm: worldMm,
+          viewport,
+          project: p0,
+          snapSettings: editor2dSnapSettings(p0),
+          gridStepMm: p0.settings.gridStepMm,
+          shiftDirectionLockUnit: session.shiftDirectionLockUnit,
+          angleSnapLockedDeg: session.angleSnapLockedDeg,
+          skipAngleSnap: Boolean(opts?.altKey),
+          altKey: Boolean(opts?.altKey),
+          shiftLockFindHit: (args) =>
+            findWallPlacementShiftLockSnapHit({
+              ...args,
+              linearPlacementMode: e2.linearPlacementMode,
+            }),
+        });
+        get().floorBeamPlacementCompleteSecondPoint(r.previewEnd);
+        return;
+      }
+
+      const snap = resolveWallPlacementSnapFromStore(get, worldMm, viewport);
+      const pt = snap.point;
+
+      if (session.phase === "waitingOriginAndFirst") {
+        const nextOrigin = setProjectOrigin(p0, pt);
+        const v3 = viewport3dWithPlanOrbitTargetMm(p0.viewState.viewport3d, pt);
+        const nextProject = mergeViewState(nextOrigin, { viewport3d: v3 });
+        set((s) => ({
+          ...buildProjectMutationState(
+            s,
+            nextProject,
+            {
+              viewport3d: v3,
+              floorBeamPlacementSession: {
+                ...session,
+                phase: "waitingSecondPoint",
+                firstPointMm: pt,
+                previewEndMm: pt,
+                lastSnapKind: snap.kind,
+                angleSnapLockedDeg: null,
+                shiftDirectionLockUnit: null,
+                shiftLockReferenceMm: null,
+              },
+              dirty: true,
+              lastError: null,
+            },
+            { skipHistory: true },
+          ),
+        }));
+        return;
+      }
+
+      if (session.phase === "waitingFirstPoint") {
+        set({
+          floorBeamPlacementSession: {
+            ...session,
+            phase: "waitingSecondPoint",
+            firstPointMm: pt,
+            previewEndMm: pt,
+            lastSnapKind: snap.kind,
+            angleSnapLockedDeg: null,
+            shiftDirectionLockUnit: null,
+            shiftLockReferenceMm: null,
+          },
+          lastError: null,
+        });
+      }
+    },
+
+    floorBeamPlacementCompleteSecondPoint: (secondSnappedMm) => {
+      const session = get().floorBeamPlacementSession;
+      if (!session || session.phase !== "waitingSecondPoint") {
+        return;
+      }
+      const p0 = get().currentProject;
+      const placementMode = p0.settings.editor2d.linearPlacementMode;
+      const result = commitFloorBeamPlacementSecondPoint(
+        p0,
+        session,
+        session.draft,
+        placementMode,
+        secondSnappedMm,
+      );
+      if ("error" in result) {
+        set({ lastError: result.error });
+        return;
+      }
+      const nextProject = result.project;
+      set((s) =>
+        buildProjectMutationState(
+          s,
+          nextProject,
+          {
+            floorBeamPlacementSession: {
+              phase: initialFloorBeamPlacementPhase(nextProject),
+              draft: session.draft,
+              firstPointMm: null,
+              previewEndMm: null,
+              lastSnapKind: null,
+              angleSnapLockedDeg: null,
+              shiftDirectionLockUnit: null,
+              shiftLockReferenceMm: null,
+            },
+            floorBeamPlacementHistoryBaseline: null,
+            selectedEntityIds: [...result.createdFloorBeamIds],
+            dirty: true,
+            lastError: null,
+          },
+          s.floorBeamPlacementHistoryBaseline != null
+            ? { historyBefore: s.floorBeamPlacementHistoryBaseline }
             : {},
         ),
       );
@@ -5155,19 +5548,38 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({ line2dSession: initialLine2dSession(), lastError: null });
     },
 
-    startLengthChange2dSession: (wallId, movingEnd, worldMm, viewport) => {
+    startLengthChange2dSession: (target, movingEnd, worldMm, viewport) => {
       if (get().activeTool !== "changeLength") {
         return;
       }
       const cp = get().currentProject;
       const layerView = narrowProjectToActiveLayer(cp);
-      const wall = layerView.walls.find((w) => w.id === wallId);
-      if (!wall) {
-        return;
+      let fixed: Point2D;
+      let ux: number;
+      let uy: number;
+      let initialLengthMm: number;
+      if (target.kind === "wall") {
+        const wall = layerView.walls.find((w) => w.id === target.wallId);
+        if (!wall) {
+          return;
+        }
+        fixed = fixedEndpointForLengthChange(wall, movingEnd);
+        const ax = axisFromFixedTowardMoving(wall, movingEnd);
+        ux = ax.ux;
+        uy = ax.uy;
+        initialLengthMm = wallLengthMm(wall);
+      } else {
+        const beam = layerView.floorBeams.find((b) => b.id === target.beamId);
+        if (!beam) {
+          return;
+        }
+        fixed = fixedRefEndpointForFloorBeamLengthChange(beam, movingEnd);
+        const ax = axisFromFixedTowardMovingFloorBeam(beam, movingEnd);
+        ux = ax.ux;
+        uy = ax.uy;
+        initialLengthMm = floorBeamRefLengthMm(beam);
       }
       const snap = resolvePlacementSnap(get, worldMm, viewport);
-      const fixed = fixedEndpointForLengthChange(wall, movingEnd);
-      const { ux, uy } = axisFromFixedTowardMoving(wall, movingEnd);
       const L = lengthFromSnappedPointForWallLengthEdit(
         fixed,
         ux,
@@ -5180,12 +5592,12 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({
         lengthChangeHistoryBaseline: baseline,
         lengthChange2dSession: {
-          wallId,
+          target,
           movingEnd,
           fixedEndMm: { x: fixed.x, y: fixed.y },
           axisUx: ux,
           axisUy: uy,
-          initialLengthMm: wallLengthMm(wall),
+          initialLengthMm,
           previewMovingMm: { x: pm.x, y: pm.y },
           lastSnapKind: snap.kind,
           shiftDirectionLockUnit: null,
@@ -5245,7 +5657,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       const dx = sess.previewMovingMm.x - sess.fixedEndMm.x;
       const dy = sess.previewMovingMm.y - sess.fixedEndMm.y;
       const Lnew = dx * sess.axisUx + dy * sess.axisUy;
-      const r = applyWallLengthChangeInProject(get().currentProject, sess.wallId, sess.movingEnd, Lnew);
+      const r = applyLinearLengthChangeInProject(get().currentProject, sess.target, sess.movingEnd, Lnew);
       if ("error" in r) {
         set({ lastError: r.error });
         return;
@@ -5310,7 +5722,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         });
         return;
       }
-      const r = applyWallLengthChangeInProject(get().currentProject, sess.wallId, sess.movingEnd, Lnew);
+      const r = applyLinearLengthChangeInProject(get().currentProject, sess.target, sess.movingEnd, Lnew);
       if ("error" in r) {
         set({ lastError: r.error, lengthChangeCoordinateModalOpen: false });
         return;

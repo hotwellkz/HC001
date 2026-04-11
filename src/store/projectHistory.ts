@@ -65,8 +65,16 @@ export function filterSelectionToExistingProjectIds(
   const strips = new Set(project.foundationStrips.map((s) => s.id));
   const piles = new Set(project.foundationPiles.map((p) => p.id));
   const slabs = new Set(project.slabs.map((s) => s.id));
+  const beams = new Set(project.floorBeams.map((b) => b.id));
   return ids.filter(
     (id) =>
-      wall.has(id) || op.has(id) || lines.has(id) || dims.has(id) || strips.has(id) || piles.has(id) || slabs.has(id),
+      wall.has(id) ||
+      op.has(id) ||
+      lines.has(id) ||
+      dims.has(id) ||
+      strips.has(id) ||
+      piles.has(id) ||
+      slabs.has(id) ||
+      beams.has(id),
   );
 }

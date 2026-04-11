@@ -1,7 +1,14 @@
 import type { Opening3dMeshKind } from "./opening3dAssemblySpecs";
 
 /** Тип интерактивного объекта 3D (расширяемо). */
-export type Editor3dPickKind = "opening" | "foundationPile" | "foundationStrip" | "slab" | "wall" | "calc";
+export type Editor3dPickKind =
+  | "opening"
+  | "foundationPile"
+  | "foundationStrip"
+  | "slab"
+  | "wall"
+  | "floorBeam"
+  | "calc";
 
 /**
  * Метаданные для raycast / picking.

@@ -8,6 +8,7 @@ export interface SelectAllEditorSnapshot {
   readonly activeTool: SelectAllActiveTool;
   readonly activeTab: string;
   readonly wallPlacementSession: unknown | null;
+  readonly floorBeamPlacementSession: unknown | null;
   readonly slabPlacementSession: unknown | null;
   readonly foundationStripPlacementSession: unknown | null;
   readonly foundationPilePlacementSession: unknown | null;
@@ -33,6 +34,10 @@ export function entityIdsForSelectAll2d(project: Project, snap: SelectAllEditorS
 
   if (snap.wallPlacementSession) {
     return layerView.walls.map((w) => w.id);
+  }
+
+  if (snap.floorBeamPlacementSession) {
+    return layerView.floorBeams.map((b) => b.id);
   }
 
   if (snap.slabPlacementSession) {
@@ -88,6 +93,9 @@ export function entityIdsForSelectAll2d(project: Project, snap: SelectAllEditorS
   }
   for (const sl of layerView.slabs) {
     ids.push(sl.id);
+  }
+  for (const bm of layerView.floorBeams) {
+    ids.push(bm.id);
   }
   return ids;
 }

@@ -20,6 +20,7 @@ import type { PlanLine } from "./planLine";
 import type { Wall } from "./wall";
 import type { WallCalculationResult } from "./wallCalculation";
 import type { WallJoint } from "./wallJoint";
+import type { FloorBeamEntity } from "./floorBeam";
 
 export interface Project {
   readonly meta: ProjectMeta;
@@ -38,6 +39,8 @@ export interface Project {
   readonly foundationPiles: readonly FoundationPileEntity[];
   /** Плиты (контур в плане, уровень и толщина по Z). */
   readonly slabs: readonly SlabEntity[];
+  /** Балки/доски перекрытия (линейные элементы по профилю). */
+  readonly floorBeams: readonly FloorBeamEntity[];
   /** Результаты производственного расчёта по стенам (SIP-раскладка, пиломатериалы). */
   readonly wallCalculations: readonly WallCalculationResult[];
   /** Узлы соединения стен (углы, примыкания); персистится в snapshot. */

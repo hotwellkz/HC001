@@ -74,6 +74,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/slabEntity" }
     },
+    "floorBeams": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/floorBeamEntity" }
+    },
     "wallCalculations": {
       "type": "array",
       "items": { "$ref": "#/$defs/wallCalculationResult" }
@@ -853,6 +857,37 @@
         "updatedAt": { "type": "string", "minLength": 1 }
       }
     },
+    "floorBeamEntity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "layerId",
+        "profileId",
+        "refStartMm",
+        "refEndMm",
+        "linearPlacementMode",
+        "sectionRolled",
+        "baseElevationMm",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "layerId": { "type": "string", "minLength": 1 },
+        "profileId": { "type": "string", "minLength": 1 },
+        "refStartMm": { "$ref": "#/$defs/point2d" },
+        "refEndMm": { "$ref": "#/$defs/point2d" },
+        "linearPlacementMode": {
+          "type": "string",
+          "enum": ["center", "leftEdge", "rightEdge"]
+        },
+        "sectionRolled": { "type": "boolean" },
+        "baseElevationMm": { "type": "number" },
+        "createdAt": { "type": "string", "minLength": 1 },
+        "updatedAt": { "type": "string", "minLength": 1 }
+      }
+    },
     "dimension": {
       "type": "object",
       "additionalProperties": false,
@@ -926,6 +961,7 @@
         "show3dLayerDoors": { "type": "boolean" },
         "show3dGrid": { "type": "boolean" },
         "activeTab": { "type": "string", "enum": ["2d", "3d", "spec", "wall"] },
+        "editor2dPlanScope": { "type": "string", "enum": ["main", "floorStructure"] },
         "viewport2d": {
           "type": "object",
           "additionalProperties": false,

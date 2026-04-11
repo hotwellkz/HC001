@@ -3,6 +3,9 @@ import type { Layer } from "./layer";
 import type { Project } from "./project";
 import type { SlabEntity } from "./slab";
 import type { Wall } from "./wall";
+import type { FloorBeamEntity } from "./floorBeam";
+import { beamPlanThicknessAndVerticalMm } from "./floorBeamSection";
+import { getProfileById } from "./profileOps";
 
 /** Результат расчёта вертикального положения одного слоя в стеке (мм от нуля проекта). */
 export interface LayerVerticalSlice {
@@ -19,6 +22,13 @@ function layerLevelMode(layer: Layer): Layer["levelMode"] {
 function wallBottomForStackMm(wall: Wall, layerComputedBaseMm: number): number {
   if (wall.baseElevationMm != null && Number.isFinite(wall.baseElevationMm)) {
     return wall.baseElevationMm;
+  }
+  return layerComputedBaseMm;
+}
+
+function floorBeamBottomForStackMm(beam: FloorBeamEntity, layerComputedBaseMm: number): number {
+  if (beam.baseElevationMm != null && Number.isFinite(beam.baseElevationMm)) {
+    return beam.baseElevationMm;
   }
   return layerComputedBaseMm;
 }
@@ -66,6 +76,23 @@ export function maxGeometryTopMmForLayer(
     }
     any = true;
     maxTop = Math.max(maxTop, layerComputedBaseMm + p.levelMm);
+  }
+
+  for (const b of project.floorBeams) {
+    if (b.layerId !== layerId) {
+      continue;
+    }
+    const profile = getProfileById(project, b.profileId);
+    if (!profile) {
+      continue;
+    }
+    const { verticalMm } = beamPlanThicknessAndVerticalMm(profile, b.sectionRolled);
+    if (!(verticalMm > 0)) {
+      continue;
+    }
+    any = true;
+    const bot = floorBeamBottomForStackMm(b, layerComputedBaseMm);
+    maxTop = Math.max(maxTop, bot + verticalMm);
   }
 
   return any ? maxTop : null;
@@ -141,6 +168,18 @@ export function wallWorldBottomMmFromMap(
 
 export function wallWorldBottomMm(wall: Wall, project: Project): number {
   return wallWorldBottomMmFromMap(wall, computeLayerVerticalStack(project), project);
+}
+
+/** Низ балки перекрытия в мировых мм. */
+export function floorBeamWorldBottomMmFromMap(
+  beam: FloorBeamEntity,
+  verticalById: ReadonlyMap<string, LayerVerticalSlice>,
+  project: Project,
+): number {
+  if (beam.baseElevationMm != null && Number.isFinite(beam.baseElevationMm)) {
+    return beam.baseElevationMm;
+  }
+  return verticalById.get(beam.layerId)?.computedBaseMm ?? getLayerById(project, beam.layerId)?.elevationMm ?? 0;
 }
 
 /** Расчётный низ слоя для рендеринга (лента, сваи и т.д.). */

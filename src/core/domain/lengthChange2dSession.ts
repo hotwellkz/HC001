@@ -2,12 +2,16 @@ import type { Point2D } from "../geometry/types";
 import type { SnapKind } from "../geometry/snap2d";
 import type { WallEndSide } from "./wallJoint";
 
+export type LengthChange2dTarget =
+  | { readonly kind: "wall"; readonly wallId: string }
+  | { readonly kind: "floorBeam"; readonly beamId: string };
+
 /**
- * Инструмент «Изменение длины» на 2D: после выбора торца стены — перетаскивание
+ * Инструмент «Изменение длины» на 2D: после выбора торца линейного объекта — перетаскивание
  * (клик–движение–клик) с фиксацией противоположного конца.
  */
 export interface LengthChange2dSession {
-  readonly wallId: string;
+  readonly target: LengthChange2dTarget;
   readonly movingEnd: WallEndSide;
   /** Неподвижный конец в мировых координатах (мм). */
   readonly fixedEndMm: Point2D;

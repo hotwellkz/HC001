@@ -116,6 +116,7 @@ function IconGridVisibility() {
 }
 
 export function LinearPlacementRail() {
+  const planScope = useAppStore((s) => s.currentProject.viewState.editor2dPlanScope);
   const shapeMode = useAppStore((s) => s.currentProject.settings.editor2d.wallShapeMode);
   const setShapeMode = useAppStore((s) => s.setWallShapeMode);
   const mode = useAppStore((s) => s.currentProject.settings.editor2d.linearPlacementMode);
@@ -131,25 +132,31 @@ export function LinearPlacementRail() {
   const show2dLayers = useAppStore((s) => s.currentProject.viewState.show2dProfileLayers);
   const setShow2dProfileLayers = useAppStore((s) => s.setShow2dProfileLayers);
 
+  const showWallShapes = planScope === "main";
+
   return (
-    <aside className="lpr" aria-label="Режимы построения стены">
-      <div className="lpr-group" aria-label="Форма контура">
-        {SHAPES.map(({ mode: m, title, icon }) => (
-          <button
-            key={m}
-            type="button"
-            className="lpr-btn"
-            title={title}
-            aria-label={title}
-            aria-pressed={shapeMode === m}
-            data-active={shapeMode === m}
-            onClick={() => setShapeMode(m)}
-          >
-            {icon}
-          </button>
-        ))}
-      </div>
-      <div className="lpr-divider" role="separator" aria-hidden="true" />
+    <aside className="lpr" aria-label={showWallShapes ? "Режимы построения стены" : "Привязка профиля к линии"}>
+      {showWallShapes ? (
+        <>
+          <div className="lpr-group" aria-label="Форма контура">
+            {SHAPES.map(({ mode: m, title, icon }) => (
+              <button
+                key={m}
+                type="button"
+                className="lpr-btn"
+                title={title}
+                aria-label={title}
+                aria-pressed={shapeMode === m}
+                data-active={shapeMode === m}
+                onClick={() => setShapeMode(m)}
+              >
+                {icon}
+              </button>
+            ))}
+          </div>
+          <div className="lpr-divider" role="separator" aria-hidden="true" />
+        </>
+      ) : null}
       <div className="lpr-group" aria-label="Положение по толщине">
         {MODES.map(({ mode: m, title, icon }) => (
           <button

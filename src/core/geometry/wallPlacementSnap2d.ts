@@ -3,6 +3,12 @@ import type { Project } from "../domain/project";
 import { getProfileById } from "../domain/profileOps";
 import { resolveWallProfileLayerStripsMm } from "../domain/wallProfileLayers";
 import type { Wall } from "../domain/wall";
+import type { FloorBeamEntity } from "../domain/floorBeam";
+import {
+  floorBeamCenterlineEndpointsMm,
+  floorBeamOuterLongEdgeSegmentMm,
+  floorBeamPlanQuadCornersMm,
+} from "../domain/floorBeamGeometry";
 import { isOpeningPlacedOnWall } from "../domain/opening";
 import type { LinearProfilePlacementMode } from "./linearPlacementGeometry";
 import type { Point2D } from "./types";
@@ -41,11 +47,21 @@ function dedupeVerticesMm(points: readonly Point2D[], epsMm: number): Point2D[] 
   return out;
 }
 
-/** Вершины: оси стен + начало координат. */
-function collectCenterModeVerticesMm(project: Project, walls: readonly Wall[]): Point2D[] {
+/** Вершины: оси стен + балки перекрытия + начало координат. */
+function collectCenterModeVerticesMm(
+  project: Project,
+  walls: readonly Wall[],
+  floorBeams: readonly FloorBeamEntity[],
+): Point2D[] {
   const raw: Point2D[] = [];
   for (const w of walls) {
     raw.push({ x: w.start.x, y: w.start.y }, { x: w.end.x, y: w.end.y });
+  }
+  for (const b of floorBeams) {
+    const e = floorBeamCenterlineEndpointsMm(project, b);
+    if (e) {
+      raw.push({ x: e.cs.x, y: e.cs.y }, { x: e.ce.x, y: e.ce.y });
+    }
   }
   if (project.projectOrigin) {
     const o = project.projectOrigin;
@@ -61,6 +77,7 @@ function collectCenterModeVerticesMm(project: Project, walls: readonly Wall[]): 
 function collectFaceModeVerticesMm(
   project: Project,
   walls: readonly Wall[],
+  floorBeams: readonly FloorBeamEntity[],
   face: "left" | "right",
 ): Point2D[] {
   const raw: Point2D[] = [];
@@ -103,6 +120,17 @@ function collectFaceModeVerticesMm(
       }
     }
   }
+  for (const b of floorBeams) {
+    const q = floorBeamPlanQuadCornersMm(project, b);
+    if (!q || q.length !== 4) {
+      continue;
+    }
+    if (face === "left") {
+      raw.push(q[0]!, q[1]!);
+    } else {
+      raw.push(q[3]!, q[2]!);
+    }
+  }
   return dedupeVerticesMm(raw, VERT_MERGE_MM);
 }
 
@@ -110,6 +138,7 @@ function collectFaceModeEdgeSegmentsMm(
   walls: readonly Wall[],
   face: "left" | "right",
   project: Project,
+  floorBeams: readonly FloorBeamEntity[],
 ): ReadonlyArray<{ readonly a: Point2D; readonly b: Point2D; readonly wallId: string }> {
   const segs: { a: Point2D; b: Point2D; wallId: string }[] = [];
   for (const w of walls) {
@@ -149,6 +178,12 @@ function collectFaceModeEdgeSegmentsMm(
     const b = { x: ex + px * off, y: ey + py * off };
     segs.push({ a, b, wallId: w.id });
   }
+  for (const b of floorBeams) {
+    const seg = floorBeamOuterLongEdgeSegmentMm(project, b, face);
+    if (seg) {
+      segs.push({ a: seg.a, b: seg.b, wallId: b.id });
+    }
+  }
   return segs;
 }
 
@@ -173,6 +208,7 @@ export function resolveWallPlacementToolSnap(input: {
 
   const layerIds = layerIdsForSnapGeometry(project);
   const walls = project.walls.filter((w) => layerIds.has(w.layerId));
+  const floorBeams = project.floorBeams.filter((b) => layerIds.has(b.layerId));
   const planLines = project.planLines.filter((l) => layerIds.has(l.layerId));
 
   const face: "left" | "right" | null =
@@ -182,8 +218,8 @@ export function resolveWallPlacementToolSnap(input: {
   if (snapSettings.snapToVertex) {
     const vertsBase =
       face === null
-        ? collectCenterModeVerticesMm(project, walls)
-        : collectFaceModeVerticesMm(project, walls, face);
+        ? collectCenterModeVerticesMm(project, walls, floorBeams)
+        : collectFaceModeVerticesMm(project, walls, floorBeams, face);
     const plVerts: Point2D[] = [];
     for (const pl of planLines) {
       plVerts.push(pl.start, pl.end);
@@ -222,8 +258,22 @@ export function resolveWallPlacementToolSnap(input: {
           bestE = { point: { x: q.x, y: q.y }, dist: d, wallId: w.id };
         }
       }
+      for (const b of floorBeams) {
+        const ends = floorBeamCenterlineEndpointsMm(project, b);
+        if (!ends) {
+          continue;
+        }
+        const { point: q, t } = closestPointOnSegment(raw, ends.cs, ends.ce);
+        if (t <= ENDPOINT_EPS || t >= 1 - ENDPOINT_EPS) {
+          continue;
+        }
+        const d = screenDistancePx(raw, q, viewport);
+        if (d <= WALL_PLACEMENT_EDGE_PX && (!bestE || d < bestE.dist)) {
+          bestE = { point: { x: q.x, y: q.y }, dist: d, wallId: b.id };
+        }
+      }
     } else {
-      for (const seg of collectFaceModeEdgeSegmentsMm(walls, face, project)) {
+      for (const seg of collectFaceModeEdgeSegmentsMm(walls, face, project, floorBeams)) {
         const { point: q, t } = closestPointOnSegment(raw, seg.a, seg.b);
         if (t <= ENDPOINT_EPS || t >= 1 - ENDPOINT_EPS) {
           continue;
@@ -315,13 +365,16 @@ export function findWallPlacementShiftLockSnapHit(input: {
 
   const layerIds = layerIdsForSnapGeometry(project);
   const walls = project.walls.filter((w) => layerIds.has(w.layerId));
+  const floorBeamsSl = project.floorBeams.filter((b) => layerIds.has(b.layerId));
   const planLinesSl = project.planLines.filter((l) => layerIds.has(l.layerId));
 
   const face: "left" | "right" | null =
     linearPlacementMode === "leftEdge" ? "left" : linearPlacementMode === "rightEdge" ? "right" : null;
 
   const vertsBase =
-    face === null ? collectCenterModeVerticesMm(project, walls) : collectFaceModeVerticesMm(project, walls, face);
+    face === null
+      ? collectCenterModeVerticesMm(project, walls, floorBeamsSl)
+      : collectFaceModeVerticesMm(project, walls, floorBeamsSl, face);
   const verts: Point2D[] = [...vertsBase];
   for (const pl of planLinesSl) {
     verts.push(pl.start, pl.end);
@@ -364,8 +417,22 @@ export function findWallPlacementShiftLockSnapHit(input: {
         bestE = { point: { x: q.x, y: q.y }, dist: d };
       }
     }
+    for (const b of floorBeamsSl) {
+      const ends = floorBeamCenterlineEndpointsMm(project, b);
+      if (!ends) {
+        continue;
+      }
+      const { point: q, t } = closestPointOnSegment(raw, ends.cs, ends.ce);
+      if (t <= ENDPOINT_EPS || t >= 1 - ENDPOINT_EPS) {
+        continue;
+      }
+      const d = screenDistancePx(raw, q, viewport);
+      if (d <= WALL_PLACEMENT_EDGE_PX && (!bestE || d < bestE.dist)) {
+        bestE = { point: { x: q.x, y: q.y }, dist: d };
+      }
+    }
   } else {
-    for (const seg of collectFaceModeEdgeSegmentsMm(walls, face, project)) {
+    for (const seg of collectFaceModeEdgeSegmentsMm(walls, face, project, floorBeamsSl)) {
       const { point: q, t } = closestPointOnSegment(raw, seg.a, seg.b);
       if (t <= ENDPOINT_EPS || t >= 1 - ENDPOINT_EPS) {
         continue;

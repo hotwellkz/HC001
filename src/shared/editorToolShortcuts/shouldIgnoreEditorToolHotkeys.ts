@@ -8,6 +8,7 @@ export interface EditorToolHotkeyAppSnapshot {
   readonly layerParamsModalOpen: boolean;
   readonly profilesModalOpen: boolean;
   readonly addWallModalOpen: boolean;
+  readonly addFloorBeamModalOpen: boolean;
   readonly addFoundationStripModalOpen: boolean;
   readonly addFoundationPileModalOpen: boolean;
   readonly addSlabModalOpen: boolean;
@@ -49,6 +50,7 @@ export function hasBlockingEditorOverlayModal(app: EditorToolHotkeyAppSnapshot):
     app.layerParamsModalOpen ||
     app.profilesModalOpen ||
     app.addWallModalOpen ||
+    app.addFloorBeamModalOpen ||
     app.addFoundationStripModalOpen ||
     app.addFoundationPileModalOpen ||
     app.addSlabModalOpen ||

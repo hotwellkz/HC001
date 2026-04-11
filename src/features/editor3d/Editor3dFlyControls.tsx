@@ -22,6 +22,7 @@ function editorOverlaySnapshot() {
     layerParamsModalOpen: s.layerParamsModalOpen,
     profilesModalOpen: s.profilesModalOpen,
     addWallModalOpen: s.addWallModalOpen,
+    addFloorBeamModalOpen: s.addFloorBeamModalOpen,
     addFoundationStripModalOpen: s.addFoundationStripModalOpen,
     addFoundationPileModalOpen: s.addFoundationPileModalOpen,
     addSlabModalOpen: s.addSlabModalOpen,

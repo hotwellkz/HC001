@@ -36,6 +36,9 @@ export function resolveObjectEditorForSelection(
   if (project.slabs.some((s) => s.id === id)) {
     return { kind: "slab", slabId: id };
   }
+  if (project.floorBeams.some((b) => b.id === id)) {
+    return { kind: "hint", message: "Балка перекрытия: параметры задаются при создании; удаление — Del или контекстное меню." };
+  }
   const wall = project.walls.find((w) => w.id === id);
   if (wall) {
     return { kind: "wall", wallId: id };

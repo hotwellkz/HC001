@@ -53,6 +53,7 @@ export function createEmptyProject(): Project {
     foundationStrips: [],
     foundationPiles: [],
     slabs: [],
+    floorBeams: [],
     wallCalculations: [],
     wallJoints: [],
     openings: [],
@@ -71,6 +72,7 @@ export function createEmptyProject(): Project {
     }),
     viewState: {
       activeTab: "2d",
+      editor2dPlanScope: "main",
       viewport2d: {
         panXMm: 0,
         panYMm: 0,

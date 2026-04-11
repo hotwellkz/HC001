@@ -3,12 +3,14 @@ import { useEffect, useRef, useState } from "react";
 
 import { linearPlacementModeLabelRu } from "@/core/geometry/linearPlacementGeometry";
 import { wallPlacementHintMessage } from "@/core/domain/wallPlacement";
+import { floorBeamPlacementHintMessage } from "@/core/domain/floorBeamPlacement";
 import {
   narrowProjectToActiveLayer,
   narrowProjectToLayerSet,
   sortedVisibleContextLayerIds,
 } from "@/core/domain/projectLayerSlice";
 import { wallJointHintRu } from "@/core/domain/wallJointSession";
+import { pickNearestLinearProfileLengthEnd } from "@/core/domain/linearLengthChangePick";
 import { pickNearestWallEnd, pickWallSegmentInterior } from "@/core/domain/wallJointPick";
 import { getProfileById } from "@/core/domain/profileOps";
 import { cssHexToPixiNumber } from "@/shared/cssColor";
@@ -81,9 +83,16 @@ import {
   resolveOpeningMovePrimaryNeighborRefsMm,
 } from "@/core/domain/openingMovePlanAnchors";
 import { wallLengthMm } from "@/core/domain/wallCalculationGeometry";
+import { floorBeamWithMovedRefEndAtLength } from "@/core/domain/floorBeamLengthChangeGeometry";
+import type { LengthChange2dTarget } from "@/core/domain/lengthChange2dSession";
 import { wallWithMovedEndAtLength } from "@/core/domain/wallLengthChangeGeometry";
 import type { WallEndSide } from "@/core/domain/wallJoint";
-import { drawLengthChangeDragOverlay, drawLengthChangeEndHover } from "./lengthChange2dPixi";
+import type { Point2D } from "@/core/geometry/types";
+import {
+  drawLengthChangeDragOverlay,
+  drawLengthChangeDragOverlayForSegment,
+  drawLengthChangeEndHoverAtPoint,
+} from "./lengthChange2dPixi";
 
 import "./wall-placement-hint.css";
 import "./wall-context-menu.css";
@@ -97,6 +106,8 @@ import {
 import { rectangleCornersFromDiagonalMm } from "@/core/domain/slabPolygon";
 import { drawSlabPlacementPreview2d, drawSlabs2d } from "./drawSlabs2d";
 import { pickClosestSlabAtPoint } from "./slabPick2d";
+import { drawFloorBeams2d } from "./floorBeams2dPixi";
+import { pickFloorBeamAtPlanPoint } from "./floorBeamPick2d";
 import { drawEntityCopyGhost2d } from "./entityCopyGhost2d";
 import { drawEntityCopySnapMarkers2d } from "./entityCopySnapMarkers2d";
 
@@ -344,6 +355,7 @@ function wallInnerNormalSign(project: Project, wallId: string): 1 | -1 {
 
 export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   const wallPlacementSession = useAppStore((s) => s.wallPlacementSession);
+  const floorBeamPlacementSession = useAppStore((s) => s.floorBeamPlacementSession);
   const wallMoveCopySession = useAppStore((s) => s.wallMoveCopySession);
   const wallContextMenu = useAppStore((s) => s.wallContextMenu);
   const foundationPileContextMenu = useAppStore((s) => s.foundationPileContextMenu);
@@ -351,7 +363,11 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   const entityCopySession = useAppStore((s) => s.entityCopySession);
   const editor2dSecondaryContextMenu = useAppStore((s) => s.editor2dSecondaryContextMenu);
   const jointHoverRef = useRef<JointHoverState>(null);
-  const lengthChangeHoverRef = useRef<{ readonly wallId: string; readonly end: WallEndSide } | null>(null);
+  const lengthChangeHoverRef = useRef<{
+    readonly target: LengthChange2dTarget;
+    readonly end: WallEndSide;
+    readonly hoverPointMm: Point2D;
+  } | null>(null);
   /** Превью установки окна: стена + левый край проёма (мм от start), валидность. */
   const windowPlacementHoverRef = useRef<{
     readonly wallId: string;
@@ -429,6 +445,12 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   }, [wallPlacementSession]);
 
   useEffect(() => {
+    if (!floorBeamPlacementSession) {
+      setCoordHud(null);
+    }
+  }, [floorBeamPlacementSession]);
+
+  useEffect(() => {
     if (!wallMoveCopySession) {
       setCoordHud(null);
     }
@@ -483,6 +505,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               layerParamsModalOpen: stA.layerParamsModalOpen,
               profilesModalOpen: stA.profilesModalOpen,
               addWallModalOpen: stA.addWallModalOpen,
+              addFloorBeamModalOpen: stA.addFloorBeamModalOpen,
               addFoundationStripModalOpen: stA.addFoundationStripModalOpen,
               addFoundationPileModalOpen: stA.addFoundationPileModalOpen,
               addSlabModalOpen: stA.addSlabModalOpen,
@@ -518,6 +541,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           activeTool: stA.activeTool,
           activeTab: stA.activeTab,
           wallPlacementSession: stA.wallPlacementSession,
+          floorBeamPlacementSession: stA.floorBeamPlacementSession,
           slabPlacementSession: stA.slabPlacementSession,
           foundationStripPlacementSession: stA.foundationStripPlacementSession,
           foundationPilePlacementSession: stA.foundationPilePlacementSession,
@@ -541,6 +565,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             layerParamsModalOpen: st0.layerParamsModalOpen,
             profilesModalOpen: st0.profilesModalOpen,
             addWallModalOpen: st0.addWallModalOpen,
+            addFloorBeamModalOpen: st0.addFloorBeamModalOpen,
             addFoundationStripModalOpen: st0.addFoundationStripModalOpen,
             addFoundationPileModalOpen: st0.addFoundationPileModalOpen,
             addSlabModalOpen: st0.addSlabModalOpen,
@@ -693,6 +718,13 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           }
           e.preventDefault();
           useAppStore.getState().wallPlacementBackOrExit();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          return;
+        }
+        if (stEsc.floorBeamPlacementSession) {
+          e.preventDefault();
+          useAppStore.getState().floorBeamPlacementBackOrExit();
           setWallHintRef.current(null);
           setCoordHudRef.current(null);
           return;
@@ -882,6 +914,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       pendingWindowPlacement ||
       pendingDoorPlacement ||
       projectOriginMoveToolActive ||
+      floorBeamPlacementSession ||
       activeToolCrosshair === "line" ||
       activeToolCrosshair === "ruler"
     ) {
@@ -889,7 +922,13 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
     } else {
       el.style.cursor = "";
     }
-  }, [pendingWindowPlacement, pendingDoorPlacement, projectOriginMoveToolActive, activeToolCrosshair]);
+  }, [
+    pendingWindowPlacement,
+    pendingDoorPlacement,
+    projectOriginMoveToolActive,
+    floorBeamPlacementSession,
+    activeToolCrosshair,
+  ]);
 
   useEffect(() => {
     if (!openingMoveModeActive || selectedIds.length !== 1) {
@@ -956,6 +995,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
     const slabPreviewG = new Graphics();
     slabPreviewG.eventMode = "none";
     const wallsG = new Graphics();
+    const floorBeamsG = new Graphics();
+    floorBeamsG.eventMode = "none";
     const planLinesG = new Graphics();
     planLinesG.eventMode = "none";
     const wallCalcG = new Graphics();
@@ -1057,8 +1098,18 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         slabSessCross != null && !st.openingMoveModeActive && !st.projectOriginMoveToolActive;
       const entityCopyCrosshairActive =
         ecSessCross != null && !st.openingMoveModeActive && !st.projectOriginMoveToolActive;
+      const fbs = st.floorBeamPlacementSession;
+      const beamFirstPh = fbs && (fbs.phase === "waitingFirstPoint" || fbs.phase === "waitingOriginAndFirst");
+      const beamPickCrosshair =
+        fbs != null &&
+        (fbs.phase === "waitingSecondPoint" ||
+          fbs.phase === "waitingFirstPoint" ||
+          fbs.phase === "waitingOriginAndFirst") &&
+        !st.openingMoveModeActive &&
+        !st.projectOriginMoveToolActive;
       const show =
         (wallPickCrosshair ||
+          beamPickCrosshair ||
           foundationPickCrosshair ||
           pileMovePickCrosshair ||
           rulerShow ||
@@ -1262,6 +1313,32 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         const scEc = worldToScreen(ptEc.x, ptEc.y, t);
         centerRx = scEc.x;
         centerRy = scEc.y;
+      } else if (beamPickCrosshair && fbs) {
+        if (fbs.phase === "waitingSecondPoint" && fbs.previewEndMm) {
+          const sc = worldToScreen(fbs.previewEndMm.x, fbs.previewEndMm.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        } else if (beamFirstPh && fbs.previewEndMm) {
+          const sc = worldToScreen(fbs.previewEndMm.x, fbs.previewEndMm.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        } else {
+          const snap = resolveWallPlacementToolSnap({
+            rawWorldMm: { x: last.worldX, y: last.worldY },
+            viewport: t,
+            project: proj,
+            snapSettings: {
+              snapToVertex: e2.snapToVertex,
+              snapToEdge: e2.snapToEdge,
+              snapToGrid: e2.snapToGrid,
+            },
+            gridStepMm: proj.settings.gridStepMm,
+            linearPlacementMode: e2.linearPlacementMode,
+          });
+          const sc = worldToScreen(snap.point.x, snap.point.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        }
       } else if (wallPickCrosshair && ws) {
         const am = st.wallAnchorPlacementModeActive;
         const anchorPt = st.wallPlacementAnchorMm;
@@ -1342,6 +1419,12 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         }
       } else if (fpSess) {
         snapActive = Boolean(fpSess.lastSnapKind && fpSess.lastSnapKind !== "none");
+      } else if (beamPickCrosshair && fbs) {
+        if (fbs.phase === "waitingSecondPoint") {
+          snapActive = Boolean(fbs.lastSnapKind && fbs.lastSnapKind !== "none");
+        } else if (beamFirstPh) {
+          snapActive = Boolean(fbs.lastSnapKind && fbs.lastSnapKind !== "none");
+        }
       } else if (wallPickCrosshair && ws) {
         if (ws.phase === "waitingSecondPoint") {
           snapActive = Boolean(ws.lastSnapKind && ws.lastSnapKind !== "none");
@@ -1424,7 +1507,13 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       if (!app) {
         return;
       }
-      const { currentProject, viewport2d, selectedEntityIds, wallPlacementSession } = useAppStore.getState();
+      const {
+        currentProject,
+        viewport2d,
+        selectedEntityIds,
+        wallPlacementSession,
+        floorBeamPlacementSession,
+      } = useAppStore.getState();
       const w = app.renderer.width;
       const h = app.renderer.height;
       const t = buildViewportTransform(w, h, viewport2d.panXMm, viewport2d.panYMm, viewport2d.zoomPixelsPerMm);
@@ -1567,6 +1656,21 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       });
       appendDoorOpeningLabels2d(windowOpeningLabelsC, layerView, t, "active", {
         dimensionProject: currentProject,
+      });
+
+      floorBeamsG.clear();
+      let firstBeamDraw = true;
+      for (const lid of contextIds) {
+        const ctxBeams = narrowProjectToLayerSet(currentProject, new Set([lid]));
+        drawFloorBeams2d(floorBeamsG, currentProject, ctxBeams.floorBeams, t, selected, {
+          appearance: "context",
+          clear: firstBeamDraw,
+        });
+        firstBeamDraw = false;
+      }
+      drawFloorBeams2d(floorBeamsG, currentProject, layerView.floorBeams, t, selected, {
+        appearance: "active",
+        clear: firstBeamDraw,
       });
 
       planLinesG.clear();
@@ -1865,6 +1969,56 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         }
       }
 
+      if (
+        floorBeamPlacementSession?.phase === "waitingSecondPoint" &&
+        floorBeamPlacementSession.firstPointMm &&
+        floorBeamPlacementSession.previewEndMm
+      ) {
+        const placementModeFb = currentProject.settings.editor2d.linearPlacementMode;
+        const thickFb = floorBeamPlacementSession.draft.planThicknessMm;
+        const previewProfileFb = getProfileById(currentProject, floorBeamPlacementSession.draft.profileId);
+        drawWallPlacementPreview(
+          previewG,
+          floorBeamPlacementSession.firstPointMm,
+          floorBeamPlacementSession.previewEndMm,
+          thickFb,
+          placementModeFb,
+          t,
+          {
+            profile: previewProfileFb,
+            show2dProfileLayers: show2dLayers,
+            thicknessMm: thickFb,
+            zoomPixelsPerMm: viewport2d.zoomPixelsPerMm,
+          },
+        );
+        if (
+          floorBeamPlacementSession.angleSnapLockedDeg != null &&
+          floorBeamPlacementSession.shiftDirectionLockUnit == null
+        ) {
+          const f0 = floorBeamPlacementSession.firstPointMm;
+          const e0 = floorBeamPlacementSession.previewEndMm;
+          const a0 = worldToScreen(f0.x, f0.y, t);
+          const b0 = worldToScreen(e0.x, e0.y, t);
+          previewG.moveTo(a0.x, a0.y);
+          previewG.lineTo(b0.x, b0.y);
+          previewG.stroke({ width: 1.75, color: 0x34d399, alpha: 0.55 });
+        }
+        if (floorBeamPlacementSession.shiftDirectionLockUnit && floorBeamPlacementSession.firstPointMm) {
+          drawShiftDirectionLockGuides2d(
+            previewG,
+            floorBeamPlacementSession.firstPointMm,
+            floorBeamPlacementSession.shiftDirectionLockUnit,
+            w,
+            h,
+            t,
+            {
+              referenceMm: floorBeamPlacementSession.shiftLockReferenceMm,
+              previewEndMm: floorBeamPlacementSession.previewEndMm,
+            },
+          );
+        }
+      }
+
       const fsSessPreview = useAppStore.getState().foundationStripPlacementSession;
       if (
         fsSessPreview?.phase === "waitingSecondPoint" &&
@@ -1983,60 +2137,79 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         const layerLc = narrowProjectToActiveLayer(currentProject);
         const lcPaint = stPaint.lengthChange2dSession;
         if (lcPaint) {
-          const wLc = layerLc.walls.find((w0) => w0.id === lcPaint.wallId);
-          if (wLc) {
-            const dx = lcPaint.previewMovingMm.x - lcPaint.fixedEndMm.x;
-            const dy = lcPaint.previewMovingMm.y - lcPaint.fixedEndMm.y;
-            const Lcur = dx * lcPaint.axisUx + dy * lcPaint.axisUy;
-            const wPrev = wallWithMovedEndAtLength(wLc, lcPaint.movingEnd, Lcur);
-            if (wPrev) {
-              const previewProfile = wLc.profileId ? getProfileById(currentProject, wLc.profileId) : undefined;
-              const layeredPreviewOpts = {
-                profile: previewProfile,
-                show2dProfileLayers: show2dLayers,
-                thicknessMm: wLc.thicknessMm,
-                zoomPixelsPerMm: viewport2d.zoomPixelsPerMm,
-              };
-              drawWallPlacementPreview(
-                previewG,
-                wPrev.start,
-                wPrev.end,
-                wLc.thicknessMm,
-                currentProject.settings.editor2d.linearPlacementMode,
-                t,
-                layeredPreviewOpts,
-              );
-            }
-            drawLengthChangeDragOverlay(
-              lengthChangeG,
-              wLc,
-              lcPaint.movingEnd,
-              lcPaint.fixedEndMm,
-              lcPaint.previewMovingMm,
-              t,
-            );
-            if (lcPaint.shiftDirectionLockUnit) {
-              drawShiftDirectionLockGuides2d(
-                previewG,
+          const dx = lcPaint.previewMovingMm.x - lcPaint.fixedEndMm.x;
+          const dy = lcPaint.previewMovingMm.y - lcPaint.fixedEndMm.y;
+          const Lcur = dx * lcPaint.axisUx + dy * lcPaint.axisUy;
+          const lcTarget = lcPaint.target;
+          if (lcTarget.kind === "wall") {
+            const wLc = layerLc.walls.find((w0) => w0.id === lcTarget.wallId);
+            if (wLc) {
+              const wPrev = wallWithMovedEndAtLength(wLc, lcPaint.movingEnd, Lcur);
+              if (wPrev) {
+                const previewProfile = wLc.profileId ? getProfileById(currentProject, wLc.profileId) : undefined;
+                const layeredPreviewOpts = {
+                  profile: previewProfile,
+                  show2dProfileLayers: show2dLayers,
+                  thicknessMm: wLc.thicknessMm,
+                  zoomPixelsPerMm: viewport2d.zoomPixelsPerMm,
+                };
+                drawWallPlacementPreview(
+                  previewG,
+                  wPrev.start,
+                  wPrev.end,
+                  wLc.thicknessMm,
+                  currentProject.settings.editor2d.linearPlacementMode,
+                  t,
+                  layeredPreviewOpts,
+                );
+              }
+              drawLengthChangeDragOverlay(
+                lengthChangeG,
+                wLc,
+                lcPaint.movingEnd,
                 lcPaint.fixedEndMm,
-                lcPaint.shiftDirectionLockUnit,
-                w,
-                h,
+                lcPaint.previewMovingMm,
                 t,
-                {
-                  referenceMm: lcPaint.shiftLockReferenceMm,
-                  previewEndMm: lcPaint.previewMovingMm,
-                },
               );
             }
+          } else {
+            const bLc = layerLc.floorBeams.find((b0) => b0.id === lcTarget.beamId);
+            if (bLc) {
+              const bPrev = floorBeamWithMovedRefEndAtLength(bLc, lcPaint.movingEnd, Lcur);
+              if (bPrev) {
+                drawFloorBeams2d(previewG, currentProject, [bPrev], t, new Set(), { clear: false });
+              }
+              const origMoving =
+                lcPaint.movingEnd === "end"
+                  ? { x: bLc.refEndMm.x, y: bLc.refEndMm.y }
+                  : { x: bLc.refStartMm.x, y: bLc.refStartMm.y };
+              drawLengthChangeDragOverlayForSegment(
+                lengthChangeG,
+                lcPaint.fixedEndMm,
+                lcPaint.previewMovingMm,
+                origMoving,
+                t,
+              );
+            }
+          }
+          if (lcPaint.shiftDirectionLockUnit) {
+            drawShiftDirectionLockGuides2d(
+              previewG,
+              lcPaint.fixedEndMm,
+              lcPaint.shiftDirectionLockUnit,
+              w,
+              h,
+              t,
+              {
+                referenceMm: lcPaint.shiftLockReferenceMm,
+                previewEndMm: lcPaint.previewMovingMm,
+              },
+            );
           }
         } else {
           const h = lengthChangeHoverRef.current;
           if (h) {
-            const wH = layerLc.walls.find((w0) => w0.id === h.wallId);
-            if (wH) {
-              drawLengthChangeEndHover(lengthChangeG, wH, h.end, t);
-            }
+            drawLengthChangeEndHoverAtPoint(lengthChangeG, h.hoverPointMm, t);
           }
         }
       }
@@ -2117,6 +2290,56 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         snapMarkerG.stroke({ width: 2, color: col, alpha: 0.95 });
         snapMarkerG.circle(sc.x, sc.y, 2);
         snapMarkerG.fill({ color: col, alpha: 0.95 });
+      }
+
+      const fbMark = stPaint.floorBeamPlacementSession;
+      const fbFirstPickPh =
+        fbMark &&
+        (fbMark.phase === "waitingFirstPoint" || fbMark.phase === "waitingOriginAndFirst") &&
+        fbMark.firstPointMm == null;
+      if (
+        fbMark?.previewEndMm &&
+        fbMark.lastSnapKind &&
+        fbMark.lastSnapKind !== "none" &&
+        fbFirstPickPh
+      ) {
+        const skFb = fbMark.lastSnapKind;
+        const pFb = fbMark.previewEndMm;
+        const scFb = worldToScreen(pFb.x, pFb.y, t);
+        const colFb = skFb === "vertex" ? 0x5cff8a : skFb === "edge" ? 0x5ab4ff : 0xffc857;
+        snapMarkerG.circle(scFb.x, scFb.y, 7);
+        snapMarkerG.stroke({ width: 2, color: colFb, alpha: 0.95 });
+        snapMarkerG.circle(scFb.x, scFb.y, 2);
+        snapMarkerG.fill({ color: colFb, alpha: 0.95 });
+      } else if (
+        fbMark?.phase === "waitingSecondPoint" &&
+        fbMark.shiftLockReferenceMm &&
+        fbMark.lastSnapKind &&
+        fbMark.lastSnapKind !== "none"
+      ) {
+        const skFb2 = fbMark.lastSnapKind;
+        const pFb2 = fbMark.shiftLockReferenceMm;
+        const scFb2 = worldToScreen(pFb2.x, pFb2.y, t);
+        const colFb2 = skFb2 === "vertex" ? 0x5cff8a : skFb2 === "edge" ? 0x5ab4ff : 0xffc857;
+        snapMarkerG.circle(scFb2.x, scFb2.y, 8);
+        snapMarkerG.stroke({ width: 2, color: colFb2, alpha: 0.95 });
+        snapMarkerG.circle(scFb2.x, scFb2.y, 2);
+        snapMarkerG.fill({ color: colFb2, alpha: 0.95 });
+      } else if (
+        fbMark?.phase === "waitingSecondPoint" &&
+        fbMark.previewEndMm &&
+        fbMark.lastSnapKind &&
+        fbMark.lastSnapKind !== "none" &&
+        fbMark.shiftDirectionLockUnit == null
+      ) {
+        const skFb3 = fbMark.lastSnapKind;
+        const pFb3 = fbMark.previewEndMm;
+        const scFb3 = worldToScreen(pFb3.x, pFb3.y, t);
+        const colFb3 = skFb3 === "vertex" ? 0x5cff8a : skFb3 === "edge" ? 0x5ab4ff : 0xffc857;
+        snapMarkerG.circle(scFb3.x, scFb3.y, 7);
+        snapMarkerG.stroke({ width: 2, color: colFb3, alpha: 0.95 });
+        snapMarkerG.circle(scFb3.x, scFb3.y, 2);
+        snapMarkerG.fill({ color: colFb3, alpha: 0.95 });
       }
 
       const fsMark = stPaint.foundationStripPlacementSession;
@@ -2457,6 +2680,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       worldRoot.addChild(slabsG);
       worldRoot.addChild(slabPreviewG);
       worldRoot.addChild(wallsG);
+      worldRoot.addChild(floorBeamsG);
       worldRoot.addChild(planLinesG);
       worldRoot.addChild(wallCalcG);
       worldRoot.addChild(wallCalcLabelC);
@@ -2615,21 +2839,36 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                       store.setSelectedEntityIds([hitFs.stripId]);
                     }
                   } else {
-                    const hitWall = pickClosestWallAlongPoint(wClick, layerView.walls, segTol);
-                    if (hitWall) {
+                    const hitBeam = pickFloorBeamAtPlanPoint(currentProject, layerView.floorBeams, wClick, segTol);
+                    if (hitBeam) {
                       if (m.shiftKey) {
                         const s = new Set(store.selectedEntityIds);
-                        if (s.has(hitWall.wallId)) {
-                          s.delete(hitWall.wallId);
+                        if (s.has(hitBeam.id)) {
+                          s.delete(hitBeam.id);
                         } else {
-                          s.add(hitWall.wallId);
+                          s.add(hitBeam.id);
                         }
                         store.setSelectedEntityIds([...s]);
                       } else {
-                        store.setSelectedEntityIds([hitWall.wallId]);
+                        store.setSelectedEntityIds([hitBeam.id]);
                       }
                     } else {
-                      store.clearSelection();
+                      const hitWall = pickClosestWallAlongPoint(wClick, layerView.walls, segTol);
+                      if (hitWall) {
+                        if (m.shiftKey) {
+                          const s = new Set(store.selectedEntityIds);
+                          if (s.has(hitWall.wallId)) {
+                            s.delete(hitWall.wallId);
+                          } else {
+                            s.add(hitWall.wallId);
+                          }
+                          store.setSelectedEntityIds([...s]);
+                        } else {
+                          store.setSelectedEntityIds([hitWall.wallId]);
+                        }
+                      } else {
+                        store.clearSelection();
+                      }
                     }
                   }
                 }
@@ -2652,6 +2891,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         const {
           viewport2d,
           wallPlacementSession,
+          floorBeamPlacementSession,
           wallMoveCopySession,
           foundationPileMoveCopySession,
           currentProject,
@@ -2897,8 +3137,23 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               });
               lengthChangeHoverRef.current = null;
             } else if (!lenModal) {
-              const hitEnd = pickNearestWallEnd(p, layerLc.walls, endTol);
-              lengthChangeHoverRef.current = hitEnd ? { wallId: hitEnd.wallId, end: hitEnd.end } : null;
+              const hitEnd = pickNearestLinearProfileLengthEnd(
+                p,
+                currentProject,
+                layerLc.walls,
+                layerLc.floorBeams,
+                endTol,
+              );
+              lengthChangeHoverRef.current = hitEnd
+                ? {
+                    target:
+                      hitEnd.kind === "wall"
+                        ? { kind: "wall", wallId: hitEnd.id }
+                        : { kind: "floorBeam", beamId: hitEnd.id },
+                    end: hitEnd.end,
+                    hoverPointMm: hitEnd.pointMm,
+                  }
+                : null;
               setWallHintRef.current({
                 left: hudLc.hintLeft,
                 top: hudLc.hintTop,
@@ -3164,6 +3419,94 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                 left: hud.hintLeft,
                 top: hud.hintTop,
                 text: `${wallPlacementHintMessage(wallPlacementSession.phase)}\n${modeLabel}${snapLineFirst ? `\n${snapLineFirst}` : ""}`,
+              });
+              setCoordHudRef.current(null);
+            }
+          } else if (floorBeamPlacementSession) {
+            const modeLabelFb = linearPlacementModeLabelRu(currentProject.settings.editor2d.linearPlacementMode);
+            if (floorBeamPlacementSession.phase === "waitingSecondPoint") {
+              const altKeyFb = Boolean((ev as { altKey?: boolean }).altKey);
+              useAppStore.getState().floorBeamPlacementPreviewMove(p, t, { altKey: altKeyFb });
+              const fbsM = useAppStore.getState().floorBeamPlacementSession;
+              let snapLineFb = "";
+              if (fbsM?.lastSnapKind && fbsM.lastSnapKind !== "none") {
+                snapLineFb =
+                  fbsM.lastSnapKind === "vertex"
+                    ? "Привязка: угол"
+                    : fbsM.lastSnapKind === "edge"
+                      ? "Привязка: линия"
+                      : "Привязка: сетка";
+              }
+              const hudFb = computePlacementHudScreenPosition({
+                canvasRect: rect,
+                cursorCanvasX: ev.global.x,
+                cursorCanvasY: ev.global.y,
+                wallCoordinateModalOpen: false,
+                showCoordHud: true,
+              });
+              const shiftHintFb = fbsM?.shiftDirectionLockUnit
+                ? fbsM.shiftLockReferenceMm
+                  ? "\nУгол по Shift · длина по опорной точке (проекция)"
+                  : "\nУгол зафиксирован (Shift) — отпустите для свободного режима"
+                : "\nShift — зафиксировать направление";
+              setWallHintRef.current({
+                left: hudFb.hintLeft,
+                top: hudFb.hintTop,
+                text: `Балка перекрытия · ${floorBeamPlacementHintMessage(floorBeamPlacementSession.phase)}\n${modeLabelFb}${snapLineFb ? `\n${snapLineFb}` : ""}\nAlt — без угловой привязки${shiftHintFb}`,
+              });
+              if (fbsM?.firstPointMm && fbsM.previewEndMm && hudFb.coordHudLeft != null && hudFb.coordHudTop != null) {
+                const dxFb = fbsM.previewEndMm.x - fbsM.firstPointMm.x;
+                const dyFb = fbsM.previewEndMm.y - fbsM.firstPointMm.y;
+                const dFb = Math.hypot(dxFb, dyFb);
+                const relFb = computeAnchorRelativeHud(
+                  fbsM.firstPointMm.x,
+                  fbsM.firstPointMm.y,
+                  fbsM.previewEndMm.x,
+                  fbsM.previewEndMm.y,
+                );
+                const lockedFb = fbsM.angleSnapLockedDeg ?? null;
+                const shiftUFb = fbsM.shiftDirectionLockUnit;
+                const angleShiftDegFb =
+                  shiftUFb != null
+                    ? normalizeAngleDeg360((Math.atan2(shiftUFb.y, shiftUFb.x) * 180) / Math.PI)
+                    : null;
+                setCoordHudRef.current({
+                  left: hudFb.coordHudLeft,
+                  top: hudFb.coordHudTop,
+                  dx: dxFb,
+                  dy: dyFb,
+                  d: dFb,
+                  angleDeg:
+                    angleShiftDegFb != null ? angleShiftDegFb : lockedFb != null ? lockedFb : relFb.angleDeg,
+                  angleSnapLockedDeg: lockedFb,
+                  axisHint: relFb.axisHint,
+                });
+              } else {
+                setCoordHudRef.current(null);
+              }
+            } else {
+              useAppStore.getState().floorBeamPlacementFirstPointHoverMove(p, t);
+              const fbsH = useAppStore.getState().floorBeamPlacementSession;
+              let snapLineFirstFb = "";
+              if (fbsH?.lastSnapKind && fbsH.lastSnapKind !== "none") {
+                snapLineFirstFb =
+                  fbsH.lastSnapKind === "vertex"
+                    ? "Привязка: угол"
+                    : fbsH.lastSnapKind === "edge"
+                      ? "Привязка: линия"
+                      : "Привязка: сетка";
+              }
+              const hudFb0 = computePlacementHudScreenPosition({
+                canvasRect: rect,
+                cursorCanvasX: ev.global.x,
+                cursorCanvasY: ev.global.y,
+                wallCoordinateModalOpen: false,
+                showCoordHud: false,
+              });
+              setWallHintRef.current({
+                left: hudFb0.hintLeft,
+                top: hudFb0.hintTop,
+                text: `Балка перекрытия · ${floorBeamPlacementHintMessage(floorBeamPlacementSession.phase)}\n${modeLabelFb}${snapLineFirstFb ? `\n${snapLineFirstFb}` : ""}`,
               });
               setCoordHudRef.current(null);
             }
@@ -3698,6 +4041,25 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           return;
         }
 
+        const floorBeamPlacementSessionPtr = useAppStore.getState().floorBeamPlacementSession;
+        if (floorBeamPlacementSessionPtr && ev.button === 2) {
+          ev.preventDefault();
+          useAppStore.getState().floorBeamPlacementBackOrExit();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          paint();
+          return;
+        }
+        if (floorBeamPlacementSessionPtr && ev.button === 0) {
+          useAppStore.getState().floorBeamPlacementPrimaryClick(worldMm, t, { altKey: Boolean(ev.altKey) });
+          paint();
+          if (!useAppStore.getState().floorBeamPlacementSession) {
+            setWallHintRef.current(null);
+            setCoordHudRef.current(null);
+          }
+          return;
+        }
+
         if (wallPlacementSession && ev.button === 2) {
           if (useAppStore.getState().wallAnchorCoordinateModalOpen) {
             ev.preventDefault();
@@ -3824,9 +4186,19 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             return;
           }
           const endTol = Math.max(14, 22 / viewport2d.zoomPixelsPerMm);
-          const hitEnd = pickNearestWallEnd(worldMm, layerLc.walls, endTol);
+          const hitEnd = pickNearestLinearProfileLengthEnd(
+            worldMm,
+            useAppStore.getState().currentProject,
+            layerLc.walls,
+            layerLc.floorBeams,
+            endTol,
+          );
           if (hitEnd) {
-            useAppStore.getState().startLengthChange2dSession(hitEnd.wallId, hitEnd.end, worldMm, t);
+            const target: LengthChange2dTarget =
+              hitEnd.kind === "wall"
+                ? { kind: "wall", wallId: hitEnd.id }
+                : { kind: "floorBeam", beamId: hitEnd.id };
+            useAppStore.getState().startLengthChange2dSession(target, hitEnd.end, worldMm, t);
             paint();
             return;
           }
@@ -3870,6 +4242,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           (activeTool === "select" || activeTool === "ruler" || activeTool === "line") &&
           !wallJointSession &&
           !wallPlacementSession &&
+          !useAppStore.getState().floorBeamPlacementSession &&
           !useAppStore.getState().foundationStripPlacementSession &&
           !useAppStore.getState().foundationPilePlacementSession &&
           !useAppStore.getState().slabPlacementSession &&
@@ -4003,6 +4376,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           activeTool === "select" &&
           !wallJointSession &&
           !wallPlacementSession &&
+          !useAppStore.getState().floorBeamPlacementSession &&
           !useAppStore.getState().foundationStripPlacementSession &&
           !useAppStore.getState().foundationPilePlacementSession &&
           !useAppStore.getState().slabPlacementSession &&
@@ -4170,6 +4544,27 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             }
             lastWallClickRef.current = null;
             lastFoundationStripClickRef.current = null;
+            paint();
+            return;
+          }
+          const cpSel = useAppStore.getState().currentProject;
+          const beamHit = pickFloorBeamAtPlanPoint(cpSel, layerView.floorBeams, worldMm, segTolSel);
+          if (beamHit) {
+            const storeBm = useAppStore.getState();
+            if (ev.shiftKey) {
+              const s = new Set(storeBm.selectedEntityIds);
+              if (s.has(beamHit.id)) {
+                s.delete(beamHit.id);
+              } else {
+                s.add(beamHit.id);
+              }
+              storeBm.setSelectedEntityIds([...s]);
+            } else {
+              storeBm.setSelectedEntityIds([beamHit.id]);
+            }
+            lastWallClickRef.current = null;
+            lastFoundationStripClickRef.current = null;
+            lastSlabClickRef.current = null;
             paint();
             return;
           }
