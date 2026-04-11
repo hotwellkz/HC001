@@ -1,4 +1,5 @@
 import type { FoundationPileEntity } from "./foundationPile";
+import { newEntityId } from "./ids";
 import type { Project } from "./project";
 import { touchProjectMeta } from "./projectFactory";
 
@@ -27,4 +28,26 @@ export function translateFoundationPilesInProject(
       : p,
   );
   return touchProjectMeta({ ...project, foundationPiles: piles });
+}
+
+export function duplicateFoundationPileInProject(
+  project: Project,
+  sourcePileId: string,
+): { readonly project: Project; readonly newPileId: string } | { readonly error: string } {
+  const pile = project.foundationPiles.find((p) => p.id === sourcePileId);
+  if (!pile) {
+    return { error: "Свая не найдена." };
+  }
+  const t = nowIso();
+  const { autoPileBatchId: _dropAuto, ...rest } = pile;
+  const dup: FoundationPileEntity = {
+    ...rest,
+    id: newEntityId(),
+    createdAt: t,
+    updatedAt: t,
+  };
+  return {
+    project: touchProjectMeta({ ...project, foundationPiles: [...project.foundationPiles, dup] }),
+    newPileId: dup.id,
+  };
 }

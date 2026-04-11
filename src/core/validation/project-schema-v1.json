@@ -160,6 +160,37 @@
         "end": { "$ref": "#/$defs/point2d" }
       }
     },
+    "foundationStripAutoPileSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pileKind",
+        "maxStepMm",
+        "depthBelowStripMm",
+        "placeAtCorners",
+        "placeAtJoints",
+        "centerIntermediate",
+        "replaceExistingAuto"
+      ],
+      "properties": {
+        "pileKind": { "type": "string", "enum": ["reinforcedConcrete", "screw"] },
+        "maxStepMm": { "type": "number", "exclusiveMinimum": 0 },
+        "depthBelowStripMm": { "type": "number", "exclusiveMinimum": 0 },
+        "placeAtCorners": { "type": "boolean" },
+        "placeAtJoints": { "type": "boolean" },
+        "centerIntermediate": { "type": "boolean" },
+        "replaceExistingAuto": { "type": "boolean" }
+      }
+    },
+    "foundationStripAutoPilePersist": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["settings", "batchId"],
+      "properties": {
+        "batchId": { "type": "string", "minLength": 1 },
+        "settings": { "$ref": "#/$defs/foundationStripAutoPileSettings" }
+      }
+    },
     "foundationStripSegment": {
       "type": "object",
       "additionalProperties": false,
@@ -188,7 +219,8 @@
         "sideOutMm": { "type": "number" },
         "sideInMm": { "type": "number" },
         "createdAt": { "type": "string", "minLength": 1 },
-        "placementGroupId": { "type": "string" }
+        "placementGroupId": { "type": "string" },
+        "autoPile": { "$ref": "#/$defs/foundationStripAutoPilePersist" }
       }
     },
     "foundationStripFootprintPoly": {
@@ -225,7 +257,8 @@
             "minItems": 3,
             "items": { "$ref": "#/$defs/point2d" }
           }
-        }
+        },
+        "autoPile": { "$ref": "#/$defs/foundationStripAutoPilePersist" }
       }
     },
     "foundationStripOrthoRing": {
@@ -255,7 +288,8 @@
         "depthMm": { "type": "number" },
         "sideOutMm": { "type": "number" },
         "sideInMm": { "type": "number" },
-        "createdAt": { "type": "string", "minLength": 1 }
+        "createdAt": { "type": "string", "minLength": 1 },
+        "autoPile": { "$ref": "#/$defs/foundationStripAutoPilePersist" }
       }
     },
     "foundationPile": {
@@ -285,7 +319,8 @@
         "heightMm": { "type": "number" },
         "levelMm": { "type": "number" },
         "createdAt": { "type": "string", "minLength": 1 },
-        "updatedAt": { "type": "string", "minLength": 1 }
+        "updatedAt": { "type": "string", "minLength": 1 },
+        "autoPileBatchId": { "type": "string", "minLength": 1 }
       }
     },
     "wall": {

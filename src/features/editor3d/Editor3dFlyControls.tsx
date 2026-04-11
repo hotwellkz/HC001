@@ -36,6 +36,7 @@ function editorOverlaySnapshot() {
     lengthChangeCoordinateModalOpen: s.lengthChangeCoordinateModalOpen,
     projectOriginCoordinateModalOpen: s.projectOriginCoordinateModalOpen,
     openingAlongMoveNumericModalOpen: s.openingAlongMoveNumericModalOpen,
+    foundationStripAutoPilesModal: s.foundationStripAutoPilesModal,
   };
 }
 

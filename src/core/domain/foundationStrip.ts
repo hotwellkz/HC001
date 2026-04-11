@@ -1,4 +1,22 @@
 import type { Point2D } from "../geometry/types";
+import type { FoundationPileKind } from "./foundationPile";
+
+/** Параметры вкладки «Авто-сваи» для связанной группы лент (персистится на каждой сущности группы). */
+export interface FoundationStripAutoPileSettings {
+  readonly pileKind: FoundationPileKind;
+  readonly maxStepMm: number;
+  /** Глубина ствола ниже низа ленты (мм). */
+  readonly depthBelowStripMm: number;
+  readonly placeAtCorners: boolean;
+  readonly placeAtJoints: boolean;
+  readonly centerIntermediate: boolean;
+  readonly replaceExistingAuto: boolean;
+}
+
+export interface FoundationStripAutoPilePersisted {
+  readonly settings: FoundationStripAutoPileSettings;
+  readonly batchId: string;
+}
 
 /** Участок ленточного фундамента на плане (ось совпадает с линией привязки к стене). */
 export interface FoundationStripSegmentEntity {
@@ -16,6 +34,7 @@ export interface FoundationStripSegmentEntity {
   readonly createdAt: string;
   /** Один контур прямоугольника — четыре стороны с одним id группы. */
   readonly placementGroupId?: string;
+  readonly autoPile?: FoundationStripAutoPilePersisted;
 }
 
 /**
@@ -35,6 +54,7 @@ export interface FoundationStripOrthoRingEntity {
   readonly sideOutMm: number;
   readonly sideInMm: number;
   readonly createdAt: string;
+  readonly autoPile?: FoundationStripAutoPilePersisted;
 }
 
 /**
@@ -51,6 +71,7 @@ export interface FoundationStripFootprintPolyEntity {
   readonly createdAt: string;
   readonly outerRingMm: readonly Point2D[];
   readonly holeRingsMm: readonly (readonly Point2D[])[];
+  readonly autoPile?: FoundationStripAutoPilePersisted;
 }
 
 export type FoundationStripEntity =

@@ -155,6 +155,7 @@ export function collectWallPlanVertexSnapCandidatesMm(project: Project, layerIds
 export function collectFoundationPlanVertexSnapCandidatesMm(
   project: Project,
   layerIds: ReadonlySet<string>,
+  excludeFoundationPileId?: string,
 ): Point2D[] {
   const raw: Point2D[] = [];
   for (const fs of project.foundationStrips) {
@@ -187,6 +188,9 @@ export function collectFoundationPlanVertexSnapCandidatesMm(
     if (!layerIds.has(p.layerId)) {
       continue;
     }
+    if (excludeFoundationPileId != null && p.id === excludeFoundationPileId) {
+      continue;
+    }
     const h = Math.max(p.capSizeMm, p.sizeMm) / 2;
     raw.push(
       { x: p.centerX - h, y: p.centerY - h },
@@ -209,8 +213,10 @@ export function resolveSnap2d(input: {
   readonly project: Project;
   readonly snapSettings: SnapSettings2d;
   readonly gridStepMm: number;
+  /** Исключить сваю из кандидатов привязки (перенос/копия этой сваи). */
+  readonly excludeFoundationPileId?: string;
 }): SnapResult2d {
-  const { rawWorldMm, viewport, project, snapSettings, gridStepMm } = input;
+  const { rawWorldMm, viewport, project, snapSettings, gridStepMm, excludeFoundationPileId } = input;
   const raw = rawWorldMm;
 
   if (!viewport) {
@@ -226,7 +232,10 @@ export function resolveSnap2d(input: {
 
   if (snapSettings.snapToVertex) {
     const vertexCandidates = dedupeVerticesMm(
-      [...collectWallPlanVertexSnapCandidatesMm(project, layerIds), ...collectFoundationPlanVertexSnapCandidatesMm(project, layerIds)],
+      [
+        ...collectWallPlanVertexSnapCandidatesMm(project, layerIds),
+        ...collectFoundationPlanVertexSnapCandidatesMm(project, layerIds, excludeFoundationPileId),
+      ],
       SNAP_VERTEX_MERGE_EPS_MM,
     );
     for (const pt of vertexCandidates) {
@@ -315,6 +324,9 @@ export function resolveSnap2d(input: {
     }
     for (const pile of project.foundationPiles) {
       if (!layerIds.has(pile.layerId)) {
+        continue;
+      }
+      if (excludeFoundationPileId != null && pile.id === excludeFoundationPileId) {
         continue;
       }
       const h = pile.capSizeMm / 2;

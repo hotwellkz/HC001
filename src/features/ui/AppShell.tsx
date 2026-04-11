@@ -6,6 +6,7 @@ import { useEditorToolShortcuts } from "@/features/editor2d/useEditorToolShortcu
 import { useOpeningPropertiesKeyboard } from "@/features/project/useOpeningPropertiesKeyboard";
 import { useProjectUndoRedoHotkeys } from "@/features/project/useProjectUndoRedoHotkeys";
 import { AddFoundationPileModal } from "@/features/ui/AddFoundationPileModal";
+import { FoundationStripAutoPilesModal } from "@/features/ui/FoundationStripAutoPilesModal";
 import { AddFoundationStripModal } from "@/features/ui/AddFoundationStripModal";
 import { AddWallModal } from "@/features/ui/AddWallModal";
 import { WallJointParamsModal } from "@/features/ui/WallJointParamsModal";
@@ -80,6 +81,7 @@ export function AppShell() {
       <AddWallModal />
       <AddFoundationStripModal />
       <AddFoundationPileModal />
+      <FoundationStripAutoPilesModal />
       <WallJointParamsModal />
       <WallCoordinateModal />
       <ProjectOriginCoordinateModal />

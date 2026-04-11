@@ -329,6 +329,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   const wallPlacementSession = useAppStore((s) => s.wallPlacementSession);
   const wallMoveCopySession = useAppStore((s) => s.wallMoveCopySession);
   const wallContextMenu = useAppStore((s) => s.wallContextMenu);
+  const foundationPileContextMenu = useAppStore((s) => s.foundationPileContextMenu);
+  const foundationPileMoveCopySession = useAppStore((s) => s.foundationPileMoveCopySession);
   const jointHoverRef = useRef<JointHoverState>(null);
   const lengthChangeHoverRef = useRef<{ readonly wallId: string; readonly end: WallEndSide } | null>(null);
   /** Превью установки окна: стена + левый край проёма (мм от start), валидность. */
@@ -346,6 +348,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   const foundationPileDragHistoryBaselineRef = useRef<ReturnType<typeof cloneProjectSnapshot> | null>(null);
   const lastOpeningClickRef = useRef<{ readonly id: string; readonly t: number } | null>(null);
   const lastWallClickRef = useRef<{ readonly id: string; readonly t: number } | null>(null);
+  const lastFoundationStripClickRef = useRef<{ readonly id: string; readonly t: number } | null>(null);
   const hostRef = useRef<HTMLDivElement>(null);
   /** Координаты курсора в CSS px относительно контейнера 2D (совпадают с областью canvas). */
   const lastPointerAnchorCrosshairRef = useRef({ inside: false, cssX: 0, cssY: 0, worldX: 0, worldY: 0 });
@@ -410,12 +413,19 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   }, [wallMoveCopySession]);
 
   useEffect(() => {
+    if (!foundationPileMoveCopySession) {
+      setCoordHud(null);
+    }
+  }, [foundationPileMoveCopySession]);
+
+  useEffect(() => {
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null;
-      if (t?.closest?.(".ed2d-wall-ctx")) {
+      if (t?.closest?.(".ed2d-wall-ctx") || t?.closest?.(".ed2d-fpile-ctx")) {
         return;
       }
       useAppStore.getState().closeWallContextMenu();
+      useAppStore.getState().closeFoundationPileContextMenu();
     };
     window.addEventListener("mousedown", onDown, true);
     return () => window.removeEventListener("mousedown", onDown, true);
@@ -454,6 +464,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               lengthChangeCoordinateModalOpen: stA.lengthChangeCoordinateModalOpen,
               projectOriginCoordinateModalOpen: stA.projectOriginCoordinateModalOpen,
               openingAlongMoveNumericModalOpen: stA.openingAlongMoveNumericModalOpen,
+              foundationStripAutoPilesModal: stA.foundationStripAutoPilesModal,
             },
             {
               shortcutsSettingsModalOpen: uiA.shortcutsSettingsModalOpen,
@@ -504,6 +515,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             lengthChangeCoordinateModalOpen: st0.lengthChangeCoordinateModalOpen,
             projectOriginCoordinateModalOpen: st0.projectOriginCoordinateModalOpen,
             openingAlongMoveNumericModalOpen: st0.openingAlongMoveNumericModalOpen,
+            foundationStripAutoPilesModal: st0.foundationStripAutoPilesModal,
           })
         ) {
           return;
@@ -536,6 +548,13 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           e.preventDefault();
           useAppStore.getState().lengthChange2dEsc();
           lengthChangeHoverRef.current = null;
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          return;
+        }
+        if (useAppStore.getState().foundationPileMoveCopySession) {
+          e.preventDefault();
+          useAppStore.getState().cancelFoundationPileMoveCopy();
           setWallHintRef.current(null);
           setCoordHudRef.current(null);
           return;
@@ -894,12 +913,16 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const ws = st.wallPlacementSession;
       const fsSess = st.foundationStripPlacementSession;
       const fpSess = st.foundationPilePlacementSession;
+      const fpMc = st.foundationPileMoveCopySession;
       const firstPh =
         ws && (ws.phase === "waitingFirstWallPoint" || ws.phase === "waitingOriginAndFirst");
       const foundationPickCrosshair =
         (fsSess != null || fpSess != null) &&
+        fpMc == null &&
         !st.openingMoveModeActive &&
         !st.projectOriginMoveToolActive;
+      const pileMovePickCrosshair =
+        fpMc != null && !st.openingMoveModeActive && !st.projectOriginMoveToolActive;
       const wallPickCrosshair =
         ws != null &&
         !st.wallCoordinateModalOpen &&
@@ -919,7 +942,12 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         !st.lengthChangeCoordinateModalOpen &&
         !st.projectOriginMoveToolActive;
       const show =
-        (wallPickCrosshair || foundationPickCrosshair || rulerShow || lineToolShow || lengthChangeShow) &&
+        (wallPickCrosshair ||
+          foundationPickCrosshair ||
+          pileMovePickCrosshair ||
+          rulerShow ||
+          lineToolShow ||
+          lengthChangeShow) &&
         !panning.active &&
         !marquee &&
         lastPointerAnchorCrosshairRef.current.inside;
@@ -1015,6 +1043,31 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           centerRx = sc.x;
           centerRy = sc.y;
         }
+      } else if (fpMc) {
+        if (fpMc.phase === "pickTarget" && fpMc.baseOffsetFromCenterMm && fpMc.previewCenterMm) {
+          const off = fpMc.baseOffsetFromCenterMm;
+          const pc = fpMc.previewCenterMm;
+          const basePt = { x: pc.x + off.x, y: pc.y + off.y };
+          const sc = worldToScreen(basePt.x, basePt.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        } else {
+          const snap = resolveSnap2d({
+            rawWorldMm: { x: last.worldX, y: last.worldY },
+            viewport: t,
+            project: proj,
+            snapSettings: {
+              snapToVertex: e2.snapToVertex,
+              snapToEdge: e2.snapToEdge,
+              snapToGrid: e2.snapToGrid,
+            },
+            gridStepMm: proj.settings.gridStepMm,
+            excludeFoundationPileId: fpMc.workingPileId,
+          });
+          const sc = worldToScreen(snap.point.x, snap.point.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        }
       } else if (fsSess) {
         if (fsSess.phase === "waitingSecondPoint" && fsSess.previewEndMm) {
           const sc = worldToScreen(fsSess.previewEndMm.x, fsSess.previewEndMm.y, t);
@@ -1100,7 +1153,25 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const cssY = centerRy * scaleY;
 
       let snapActive = false;
-      if (fsSess) {
+      if (fpMc) {
+        if (fpMc.phase === "pickTarget") {
+          snapActive = Boolean(fpMc.lastSnapKind && fpMc.lastSnapKind !== "none");
+        } else {
+          const snP = resolveSnap2d({
+            rawWorldMm: { x: last.worldX, y: last.worldY },
+            viewport: t,
+            project: proj,
+            snapSettings: {
+              snapToVertex: e2.snapToVertex,
+              snapToEdge: e2.snapToEdge,
+              snapToGrid: e2.snapToGrid,
+            },
+            gridStepMm: proj.settings.gridStepMm,
+            excludeFoundationPileId: fpMc.workingPileId,
+          });
+          snapActive = snP.kind !== "none";
+        }
+      } else if (fsSess) {
         if (fsSess.phase === "waitingSecondPoint") {
           snapActive = Boolean(fsSess.lastSnapKind && fsSess.lastSnapKind !== "none");
         } else {
@@ -1231,12 +1302,14 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         drawFoundationPiles2d(foundationPilesG, ctxPiles.foundationPiles, t, selected, {
           appearance: "context",
           clear: firstPileDraw,
+          anchorMarkersZoomPxPerMm: viewport2d.zoomPixelsPerMm,
         });
         firstPileDraw = false;
       }
       drawFoundationPiles2d(foundationPilesG, layerView.foundationPiles, t, selected, {
         appearance: "active",
         clear: firstPileDraw,
+        anchorMarkersZoomPxPerMm: viewport2d.zoomPixelsPerMm,
       });
 
       wallsG.clear();
@@ -1621,6 +1694,22 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           appearance: "active",
           clear: false,
         });
+      }
+
+      const fpMcPaint = useAppStore.getState().foundationPileMoveCopySession;
+      if (fpMcPaint?.phase === "pickTarget" && fpMcPaint.previewCenterMm) {
+        const ent = currentProject.foundationPiles.find((p0) => p0.id === fpMcPaint.workingPileId);
+        if (ent) {
+          const ghost: FoundationPileEntity = {
+            ...ent,
+            centerX: fpMcPaint.previewCenterMm.x,
+            centerY: fpMcPaint.previewCenterMm.y,
+          };
+          drawFoundationPiles2d(previewG, [ghost], t, new Set(), {
+            appearance: "ghost",
+            clear: false,
+          });
+        }
       }
 
       const wmPaint = useAppStore.getState().wallMoveCopySession;
@@ -2295,6 +2384,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           viewport2d,
           wallPlacementSession,
           wallMoveCopySession,
+          foundationPileMoveCopySession,
           currentProject,
           wallJointSession,
           wallCoordinateModalOpen,
@@ -2850,6 +2940,67 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             }
             setCoordHudRef.current(null);
             paint();
+          } else if (foundationPileMoveCopySession) {
+            const fpM0 = useAppStore.getState().foundationPileMoveCopySession;
+            const titleP = fpM0?.mode === "copy" ? "Копирование сваи" : "Перенос сваи";
+            if (fpM0?.phase === "pickTarget") {
+              useAppStore.getState().foundationPileMoveCopyPreviewMove(p, t);
+              const fpM2 = useAppStore.getState().foundationPileMoveCopySession;
+              let snapP = "";
+              if (fpM2?.lastSnapKind && fpM2.lastSnapKind !== "none") {
+                snapP =
+                  fpM2.lastSnapKind === "vertex"
+                    ? "\nПривязка: угол / узел"
+                    : fpM2.lastSnapKind === "edge"
+                      ? "\nПривязка: кромка"
+                      : "\nПривязка: сетка";
+              }
+              const hudP = computePlacementHudScreenPosition({
+                canvasRect: rect,
+                cursorCanvasX: ev.global.x,
+                cursorCanvasY: ev.global.y,
+                wallCoordinateModalOpen: false,
+                showCoordHud: false,
+              });
+              setWallHintRef.current({
+                left: hudP.hintLeft,
+                top: hudP.hintTop,
+                text: `${titleP}\nУкажите новое положение\nЛКМ — зафиксировать · ПКМ / Esc — отмена${snapP}`,
+              });
+              const pileRef = currentProject.foundationPiles.find((p0) => p0.id === fpM2?.workingPileId);
+              if (fpM2?.previewCenterMm && pileRef && hudP.coordHudLeft != null && hudP.coordHudTop != null) {
+                const dx = fpM2.previewCenterMm.x - pileRef.centerX;
+                const dy = fpM2.previewCenterMm.y - pileRef.centerY;
+                const d = Math.hypot(dx, dy);
+                setCoordHudRef.current({
+                  left: hudP.coordHudLeft,
+                  top: hudP.coordHudTop,
+                  dx,
+                  dy,
+                  d,
+                  angleDeg: undefined,
+                  angleSnapLockedDeg: null,
+                  axisHint: null,
+                });
+              } else {
+                setCoordHudRef.current(null);
+              }
+            } else {
+              const hudPb = computePlacementHudScreenPosition({
+                canvasRect: rect,
+                cursorCanvasX: ev.global.x,
+                cursorCanvasY: ev.global.y,
+                wallCoordinateModalOpen: false,
+                showCoordHud: false,
+              });
+              setWallHintRef.current({
+                left: hudPb.hintLeft,
+                top: hudPb.hintTop,
+                text: `${titleP}\nВыберите базовую точку сваи (центр или угол) · ЛКМ\nПКМ / Esc — отмена`,
+              });
+              setCoordHudRef.current(null);
+            }
+            paint();
           } else if (wallMoveCopySession) {
             const stMc = useAppStore.getState();
             const wm = stMc.wallMoveCopySession;
@@ -3147,6 +3298,26 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           return;
         }
 
+        const foundationPileMoveCopySessionPtr = useAppStore.getState().foundationPileMoveCopySession;
+        if (foundationPileMoveCopySessionPtr && ev.button === 2) {
+          ev.preventDefault();
+          useAppStore.getState().cancelFoundationPileMoveCopy();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          paint();
+          return;
+        }
+
+        if (foundationPileMoveCopySessionPtr && ev.button === 0) {
+          useAppStore.getState().foundationPileMoveCopyPrimaryClick(worldMm, t);
+          paint();
+          if (!useAppStore.getState().foundationPileMoveCopySession) {
+            setWallHintRef.current(null);
+            setCoordHudRef.current(null);
+          }
+          return;
+        }
+
         const wallMoveCopySessionPtr = useAppStore.getState().wallMoveCopySession;
         if (wallMoveCopySessionPtr && ev.button === 2) {
           ev.preventDefault();
@@ -3244,7 +3415,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           !useAppStore.getState().foundationPilePlacementSession &&
           !useAppStore.getState().pendingWindowPlacement &&
           !useAppStore.getState().pendingDoorPlacement &&
-          !useAppStore.getState().wallMoveCopySession
+          !useAppStore.getState().wallMoveCopySession &&
+          !useAppStore.getState().foundationPileMoveCopySession
         ) {
           ev.preventDefault();
           const cpRm = useAppStore.getState().currentProject;
@@ -3260,6 +3432,21 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               wallId: wallHitRm.wallId,
               clientX: sx,
               clientY: sy,
+            });
+            paint();
+            return;
+          }
+          const pileTolRm = Math.max(14, 22 / viewport2d.zoomPixelsPerMm);
+          const pileHitRm = pickClosestFoundationPileAtPoint(worldMm, layerRm.foundationPiles, pileTolRm);
+          if (activeTool === "select" && pileHitRm) {
+            const canvasRmP = app.canvas as HTMLCanvasElement;
+            const rectRmP = canvasRmP.getBoundingClientRect();
+            const sxP = rectRmP.left + (ev.global.x / w) * rectRmP.width;
+            const syP = rectRmP.top + (ev.global.y / h) * rectRmP.height;
+            useAppStore.getState().openFoundationPileContextMenu({
+              pileId: pileHitRm.pileId,
+              clientX: sxP,
+              clientY: syP,
             });
             paint();
             return;
@@ -3289,7 +3476,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           !useAppStore.getState().foundationPilePlacementSession &&
           !useAppStore.getState().pendingWindowPlacement &&
           !useAppStore.getState().pendingDoorPlacement &&
-          !useAppStore.getState().wallMoveCopySession
+          !useAppStore.getState().wallMoveCopySession &&
+          !useAppStore.getState().foundationPileMoveCopySession
         ) {
           const moveMode = useAppStore.getState().openingMoveModeActive;
           if (moveMode) {
@@ -3374,6 +3562,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               storeLn.setSelectedEntityIds([lineHit.planLineId]);
             }
             lastWallClickRef.current = null;
+            lastFoundationStripClickRef.current = null;
             paint();
             return;
           }
@@ -3394,20 +3583,23 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             const stAfter = useAppStore.getState();
             const pileIdSet = new Set(stAfter.currentProject.foundationPiles.map((p) => p.id));
             const pileIds = stAfter.selectedEntityIds.filter((id) => pileIdSet.has(id));
-            foundationPilePointerRef.current = {
-              pointerId: ev.pointerId,
-              sx: ev.global.x,
-              sy: ev.global.y,
-              lastWorldMm: { x: worldMm.x, y: worldMm.y },
-              dragActive: false,
-              pileIds,
-            };
-            try {
-              canvas.setPointerCapture(ev.pointerId);
-            } catch {
-              /* ignore */
+            if (!stAfter.foundationPileMoveCopySession) {
+              foundationPilePointerRef.current = {
+                pointerId: ev.pointerId,
+                sx: ev.global.x,
+                sy: ev.global.y,
+                lastWorldMm: { x: worldMm.x, y: worldMm.y },
+                dragActive: false,
+                pileIds,
+              };
+              try {
+                canvas.setPointerCapture(ev.pointerId);
+              } catch {
+                /* ignore */
+              }
             }
             lastWallClickRef.current = null;
+            lastFoundationStripClickRef.current = null;
             paint();
             return;
           }
@@ -3424,6 +3616,14 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               storeFs.setSelectedEntityIds([...s]);
             } else {
               storeFs.setSelectedEntityIds([fsHit.stripId]);
+            }
+            const nowStrip = Date.now();
+            const prevStrip = lastFoundationStripClickRef.current;
+            if (prevStrip && prevStrip.id === fsHit.stripId && nowStrip - prevStrip.t < 480) {
+              storeFs.openFoundationStripAutoPilesModal(fsHit.stripId);
+              lastFoundationStripClickRef.current = null;
+            } else {
+              lastFoundationStripClickRef.current = { id: fsHit.stripId, t: nowStrip };
             }
             lastWallClickRef.current = null;
             paint();
@@ -3448,6 +3648,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             } else {
               lastWallClickRef.current = { id: wallHit.wallId, t: now };
             }
+            lastFoundationStripClickRef.current = null;
             paint();
             return;
           }
@@ -3591,6 +3792,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           !st.pendingWindowPlacement &&
           !st.pendingDoorPlacement &&
           !st.wallMoveCopySession &&
+          !st.foundationPileMoveCopySession &&
           !st.foundationStripPlacementSession &&
           !st.foundationPilePlacementSession &&
           st.activeTool !== "ruler" &&
@@ -3605,6 +3807,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           st.pendingWindowPlacement ||
           st.pendingDoorPlacement ||
           st.wallMoveCopySession ||
+          st.foundationPileMoveCopySession ||
           st.foundationStripPlacementSession ||
           st.foundationPilePlacementSession ||
           st.activeTool === "ruler" ||
@@ -3760,7 +3963,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       {wallContextMenu ? (
         <div
           className="ed2d-wall-ctx"
-          style={{ left: wallContextMenu.clientX, top: wallContextMenu.clientY }}
+          style={{ position: "fixed", left: wallContextMenu.clientX, top: wallContextMenu.clientY, zIndex: 50 }}
           role="menu"
           aria-label="Действия со стеной"
         >
@@ -3785,6 +3988,39 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             className="ed2d-wall-ctx__item"
             role="menuitem"
             onClick={() => useAppStore.getState().deleteWallFromContextMenu(wallContextMenu.wallId)}
+          >
+            Удалить
+          </button>
+        </div>
+      ) : null}
+      {foundationPileContextMenu ? (
+        <div
+          className="ed2d-fpile-ctx"
+          style={{ position: "fixed", left: foundationPileContextMenu.clientX, top: foundationPileContextMenu.clientY, zIndex: 50 }}
+          role="menu"
+          aria-label="Действия со сваей"
+        >
+          <button
+            type="button"
+            className="ed2d-wall-ctx__item"
+            role="menuitem"
+            onClick={() => useAppStore.getState().startFoundationPileMoveFromContextMenu(foundationPileContextMenu.pileId)}
+          >
+            Переместить
+          </button>
+          <button
+            type="button"
+            className="ed2d-wall-ctx__item"
+            role="menuitem"
+            onClick={() => useAppStore.getState().startFoundationPileCopyFromContextMenu(foundationPileContextMenu.pileId)}
+          >
+            Копировать
+          </button>
+          <button
+            type="button"
+            className="ed2d-wall-ctx__item"
+            role="menuitem"
+            onClick={() => useAppStore.getState().deleteFoundationPileFromContextMenu(foundationPileContextMenu.pileId)}
           >
             Удалить
           </button>

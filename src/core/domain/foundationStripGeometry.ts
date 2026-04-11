@@ -29,6 +29,60 @@ export function foundationStripSegmentFootprintQuadMm(
   return [outerA, outerB, innerB, innerA];
 }
 
+/**
+ * Смещение от опорной оси (граница сторона1/сторона2) к линии геометрического центра сечения ленты (мм)
+ * вдоль нормали «внутрь материала» (от внешнего края к внутреннему).
+ */
+export function foundationStripMaterialCenterOffsetFromAxisMm(sideOutMm: number, sideInMm: number): number {
+  return (sideInMm - sideOutMm) / 2;
+}
+
+/** Концы отрезка оси проходящей через центр сечения (не опорная ось сегмента). */
+export function foundationStripSegmentMaterialCenterAxisMm(
+  e: FoundationStripSegmentEntity,
+): { readonly start: Point2D; readonly end: Point2D } {
+  const d = foundationStripMaterialCenterOffsetFromAxisMm(e.sideOutMm, e.sideInMm);
+  const { nx, ny } = normalizeVec2(e.outwardNormalX, e.outwardNormalY);
+  return {
+    start: { x: e.axisStart.x - nx * d, y: e.axisStart.y - ny * d },
+    end: { x: e.axisEnd.x - nx * d, y: e.axisEnd.y - ny * d },
+  };
+}
+
+/**
+ * Замкнутая полилиния (CCW) по линии центра сечения ортогонального кольца — не по осевому прямоугольнику привязки.
+ */
+export function foundationStripOrthoRingMaterialCenterLoopMm(e: FoundationStripOrthoRingEntity): Point2D[] {
+  const {
+    axisXminMm: xmin,
+    axisXmaxMm: xmax,
+    axisYminMm: ymin,
+    axisYmaxMm: ymax,
+    sideOutMm,
+    sideInMm,
+  } = e;
+  const d = foundationStripMaterialCenterOffsetFromAxisMm(sideOutMm, sideInMm);
+  let x0 = xmin + d;
+  let x1 = xmax - d;
+  let y0 = ymin + d;
+  let y1 = ymax - d;
+  if (x1 - x0 < 1e-6) {
+    const mx = (xmin + xmax) / 2;
+    x0 = mx;
+    x1 = mx;
+  }
+  if (y1 - y0 < 1e-6) {
+    const my = (ymin + ymax) / 2;
+    y0 = my;
+    y1 = my;
+  }
+  const p0 = { x: x0, y: y0 };
+  const p1 = { x: x1, y: y0 };
+  const p2 = { x: x1, y: y1 };
+  const p3 = { x: x0, y: y1 };
+  return [p0, p1, p2, p3, p0];
+}
+
 /** Четыре осевых стороны ортогонального прямоугольника (CCW по внешнему контуру здания). */
 export function foundationStripOrthoRectangleAxesMm(
   xmin: number,

@@ -1,4 +1,5 @@
-.ed2d-wall-ctx {
+.ed2d-wall-ctx,
+.ed2d-fpile-ctx {
   position: fixed;
   z-index: 50;
   min-width: 148px;

@@ -22,6 +22,8 @@ export interface EditorToolHotkeyAppSnapshot {
   readonly lengthChangeCoordinateModalOpen: boolean;
   readonly projectOriginCoordinateModalOpen: boolean;
   readonly openingAlongMoveNumericModalOpen: boolean;
+  /** Модалка «Авто-сваи» для ленты фундамента. */
+  readonly foundationStripAutoPilesModal: unknown;
 }
 
 export interface EditorToolHotkeyIgnoreOptions {
@@ -45,6 +47,7 @@ export function hasBlockingEditorOverlayModal(app: EditorToolHotkeyAppSnapshot):
     app.doorEditModal != null ||
     app.wallJointParamsModalOpen ||
     app.wallCalculationModalOpen ||
+    app.foundationStripAutoPilesModal != null ||
     isSceneCoordinateModalBlocking(app)
   );
 }

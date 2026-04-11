@@ -125,6 +125,25 @@ export function pointInFootprintPolyEntityMm(p: Point2D, e: FoundationStripFootp
   return true;
 }
 
+/** Точка внутри тела ленты (включая границу) для любого вида сущности. */
+export function pointInFoundationStripEntityMm(p: Point2D, e: FoundationStripEntity): boolean {
+  if (e.kind === "segment") {
+    const quad = foundationStripSegmentFootprintQuadMm(
+      e.axisStart,
+      e.axisEnd,
+      e.outwardNormalX,
+      e.outwardNormalY,
+      e.sideOutMm,
+      e.sideInMm,
+    );
+    return pointInPolygonRayCastMm(p, quad);
+  }
+  if (e.kind === "ortho_ring") {
+    return pointInFoundationStripOrthoRingMm(p, e);
+  }
+  return pointInFootprintPolyEntityMm(p, e);
+}
+
 function minDistPointToPolygonBoundaryMm(p: Point2D, poly: readonly Point2D[]): number {
   let best = Infinity;
   const n = poly.length;
@@ -486,6 +505,34 @@ export function mergeTouchingFoundationStripBands(
     out.push(...mergeGroupEntities(peers, slackMm, newId));
   }
   return out;
+}
+
+/**
+ * Все ленты на слое, соприкасающиеся/пересекающиеся с лентой `seedStripId`
+ * (та же логика, что у merge), без объединения в одну сущность.
+ */
+export function getConnectedFoundationStripsOnLayer(
+  entities: readonly FoundationStripEntity[],
+  layerId: string,
+  seedStripId: string,
+  slackMm: number = FOUNDATION_STRIP_MERGE_SLACK_MM,
+): FoundationStripEntity[] {
+  const onLayer = entities.filter((e) => e.layerId === layerId);
+  const seedIdx = onLayer.findIndex((e) => e.id === seedStripId);
+  if (seedIdx < 0) {
+    return [];
+  }
+  const n = onLayer.length;
+  const uf = new UnionFind(n);
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (shouldMergePairMm(onLayer[i]!, onLayer[j]!, slackMm)) {
+        uf.union(i, j);
+      }
+    }
+  }
+  const root = uf.find(seedIdx);
+  return onLayer.filter((_, i) => uf.find(i) === root);
 }
 
 export function foundationStripEntityCoversPlanPointMm(e: FoundationStripEntity, p: Point2D): boolean {

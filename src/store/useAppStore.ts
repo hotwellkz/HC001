@@ -105,20 +105,30 @@ import type { WallJointSession } from "@/core/domain/wallJointSession";
 import { pickNearestWallEnd, pickWallSegmentInterior } from "@/core/domain/wallJointPick";
 import { narrowProjectToActiveLayer } from "@/core/domain/projectLayerSlice";
 import type { FoundationPileEntity, FoundationPileKind } from "@/core/domain/foundationPile";
-import { translateFoundationPilesInProject } from "@/core/domain/foundationPileOps";
-import type { FoundationStripSegmentEntity } from "@/core/domain/foundationStrip";
+import type { FoundationPileMoveCopySession } from "@/core/domain/foundationPileMoveCopySession";
+import { duplicateFoundationPileInProject, translateFoundationPilesInProject } from "@/core/domain/foundationPileOps";
+import type { FoundationStripAutoPileSettings, FoundationStripSegmentEntity } from "@/core/domain/foundationStrip";
+import {
+  applyAutoPilePersistToStripGroup,
+  buildFoundationPileEntitiesFromAutoLayout,
+  computeAutoFoundationPileLayout,
+  removeFoundationPilesWithBatchId,
+  removeFoundationPilesWithUnreferencedAutoBatchOnLayer,
+} from "@/core/domain/foundationStripAutoPiles";
 import {
   buildOrthoRectangleFoundationStripRingEntity,
   mergeCollinearFoundationStripSegments,
 } from "@/core/domain/foundationStripGeometry";
 import {
   findFoundationStripIdContainingPlanPointMm,
+  getConnectedFoundationStripsOnLayer,
   mergeTouchingFoundationStripBands,
 } from "@/core/domain/foundationStripMerge";
 import {
   pickOutwardNormalForStripAxisMm,
   referenceWallIdFromSnapForFoundationStrip,
 } from "@/features/editor2d/foundationStripNormals2d";
+import { pickClosestFoundationPileHandle } from "@/features/editor2d/foundationPilePick2d";
 import { buildWallCalculationForWall, SipWallLayoutError } from "@/core/domain/sipWallLayout";
 import type { WallShapeMode } from "@/core/domain/wallShapeMode";
 import { type EditorTab, viewport3dWithPlanOrbitTargetMm } from "@/core/domain/viewState";
@@ -243,6 +253,8 @@ interface AppState {
   readonly addFoundationPileModalOpen: boolean;
   readonly foundationPilePlacementSession: FoundationPilePlacementSession | null;
   readonly foundationPilePlacementHistoryBaseline: Project | null;
+  /** Двойной клик по ленте: параметры авто-свай для связной группы лент. */
+  readonly foundationStripAutoPilesModal: { readonly seedStripId: string } | null;
   readonly wallCoordinateModalOpen: boolean;
   /** Модалка смещения начала стены от опорной точки (Пробел после выбора опоры). */
   readonly wallAnchorCoordinateModalOpen: boolean;
@@ -255,8 +267,12 @@ interface AppState {
   readonly wallPlacementAnchorAngleSnapLockedDeg: number | null;
   /** Контекстное меню стены на 2D (экранные координаты). */
   readonly wallContextMenu: { readonly wallId: string; readonly clientX: number; readonly clientY: number } | null;
+  /** Контекстное меню сваи на 2D (экранные координаты, position: fixed). */
+  readonly foundationPileContextMenu: { readonly pileId: string; readonly clientX: number; readonly clientY: number } | null;
   /** Перенос или копия стены двумя точками (как постановка стены). */
   readonly wallMoveCopySession: WallMoveCopySession | null;
+  /** Перенос или копия сваи: базовая точка → цель с привязкой. */
+  readonly foundationPileMoveCopySession: FoundationPileMoveCopySession | null;
   /** Пробел: смещение второй точки переноса/копии. */
   readonly wallMoveCopyCoordinateModalOpen: boolean;
   readonly wallCalculationModalOpen: boolean;
@@ -269,6 +285,8 @@ interface AppState {
   readonly pendingOpeningPlacementHistoryBaseline: Project | null;
   /** Снимок до переноса/копии стены. */
   readonly wallMoveCopyHistoryBaseline: Project | null;
+  /** Снимок до переноса/копии сваи. */
+  readonly foundationPileMoveCopyHistoryBaseline: Project | null;
   /** Снимок до изменения длины по торцу. */
   readonly lengthChangeHistoryBaseline: Project | null;
   readonly persistenceReady: boolean;
@@ -384,6 +402,12 @@ interface AppActions {
     dyMm: number,
     opts?: { readonly skipHistory?: boolean },
   ) => void;
+  openFoundationStripAutoPilesModal: (seedStripId: string) => void;
+  closeFoundationStripAutoPilesModal: () => void;
+  applyFoundationStripAutoPiles: (
+    action: "buildNew" | "update" | "delete",
+    settings: FoundationStripAutoPileSettings,
+  ) => void;
   openAddWindowModal: () => void;
   closeAddWindowModal: () => void;
   openAddDoorModal: () => void;
@@ -487,6 +511,18 @@ interface AppActions {
   deleteWallFromContextMenu: (wallId: string) => void;
   startWallMoveFromContextMenu: (wallId: string) => void;
   startWallCopyFromContextMenu: (wallId: string) => void;
+  openFoundationPileContextMenu: (input: {
+    readonly pileId: string;
+    readonly clientX: number;
+    readonly clientY: number;
+  }) => void;
+  closeFoundationPileContextMenu: () => void;
+  deleteFoundationPileFromContextMenu: (pileId: string) => void;
+  startFoundationPileMoveFromContextMenu: (pileId: string) => void;
+  startFoundationPileCopyFromContextMenu: (pileId: string) => void;
+  cancelFoundationPileMoveCopy: () => void;
+  foundationPileMoveCopyPreviewMove: (worldMm: Point2D, viewport: ViewportTransform) => void;
+  foundationPileMoveCopyPrimaryClick: (worldMm: Point2D, viewport: ViewportTransform) => void;
   cancelWallMoveCopy: () => void;
   wallMoveCopyPreviewMove: (
     worldMm: Point2D,
@@ -628,6 +664,9 @@ function historyJumpClearTransientUi(s: AppStore, restored: Project): Partial<Ap
     wallPlacementAnchorLastSnapKind: null,
     wallPlacementAnchorAngleSnapLockedDeg: null,
     wallContextMenu: null,
+    foundationPileContextMenu: null,
+    foundationPileMoveCopySession: null,
+    foundationPileMoveCopyHistoryBaseline: null,
     openingMoveModeActive: false,
     ruler2dSession: null,
     line2dSession: null,
@@ -650,6 +689,7 @@ function historyJumpClearTransientUi(s: AppStore, restored: Project): Partial<Ap
     addFoundationPileModalOpen: false,
     foundationPilePlacementSession: null,
     foundationPilePlacementHistoryBaseline: null,
+    foundationStripAutoPilesModal: null,
     activeTool: "select",
     wallDetailWallId: wd,
   };
@@ -681,6 +721,7 @@ function resolvePlacementSnap(
   get: () => AppStore,
   rawWorldMm: { readonly x: number; readonly y: number },
   viewport: ViewportTransform | null,
+  excludeFoundationPileId?: string,
 ) {
   const p0 = get().currentProject;
   const e2 = p0.settings.editor2d;
@@ -694,6 +735,7 @@ function resolvePlacementSnap(
       snapToGrid: e2.snapToGrid,
     },
     gridStepMm: p0.settings.gridStepMm,
+    excludeFoundationPileId,
   });
 }
 
@@ -737,6 +779,105 @@ function mergeViewState(
   };
 }
 
+function runFoundationStripAutoPilesImpl(
+  get: () => AppStore,
+  set: (partial: Partial<AppStore> | ((s: AppStore) => Partial<AppStore>)) => void,
+  action: "buildNew" | "update" | "delete",
+  settings: FoundationStripAutoPileSettings,
+): void {
+  const modal = get().foundationStripAutoPilesModal;
+  if (!modal) {
+    return;
+  }
+  const p0 = get().currentProject;
+  const seed = p0.foundationStrips.find((s) => s.id === modal.seedStripId);
+  if (!seed) {
+    set({ lastError: "Лента не найдена.", foundationStripAutoPilesModal: null });
+    return;
+  }
+  const layerId = seed.layerId;
+  const group = getConnectedFoundationStripsOnLayer(p0.foundationStrips, layerId, modal.seedStripId);
+  const groupIds = new Set(group.map((s) => s.id));
+
+  if (action === "delete") {
+    const historyBefore = cloneProjectSnapshot(p0);
+    const batchIds = new Set(group.map((s) => s.autoPile?.batchId).filter((x): x is string => Boolean(x)));
+    const strips = p0.foundationStrips.map((s) => (groupIds.has(s.id) ? { ...s, autoPile: undefined } : s));
+    let piles: FoundationPileEntity[] = [...p0.foundationPiles];
+    for (const bid of batchIds) {
+      piles = removeFoundationPilesWithBatchId(piles, bid);
+    }
+    piles = removeFoundationPilesWithUnreferencedAutoBatchOnLayer(piles, strips, layerId);
+    const next = touchProjectMeta({ ...p0, foundationPiles: piles, foundationStrips: strips });
+    set((st) =>
+      buildProjectMutationState(
+        st,
+        next,
+        {
+          foundationStripAutoPilesModal: null,
+          dirty: true,
+          lastError: null,
+        },
+        { historyBefore },
+      ),
+    );
+    return;
+  }
+
+  if (settings.pileKind !== "reinforcedConcrete") {
+    set({ lastError: "Авто-сваи пока только для железобетонной сваи." });
+    return;
+  }
+
+  const layout = computeAutoFoundationPileLayout(group, settings);
+  if (!layout || layout.pileCentersMm.length === 0) {
+    set({ lastError: "Не удалось построить сетку свай (проверьте геометрию лент)." });
+    return;
+  }
+
+  /** Снимок до любых правок foundationPiles/foundationStrips — один шаг Undo откатывает всё действие целиком. */
+  const historyBefore = cloneProjectSnapshot(p0);
+
+  const oldBatches = new Set(group.map((s) => s.autoPile?.batchId).filter((x): x is string => Boolean(x)));
+  let batchId: string;
+  if (action === "update" && oldBatches.size === 1) {
+    batchId = [...oldBatches][0]!;
+  } else {
+    batchId = newEntityId();
+  }
+
+  let piles: FoundationPileEntity[] = [...p0.foundationPiles];
+  for (const bid of oldBatches) {
+    piles = removeFoundationPilesWithBatchId(piles, bid);
+  }
+  piles = removeFoundationPilesWithUnreferencedAutoBatchOnLayer(piles, p0.foundationStrips, layerId);
+
+  const newPiles = buildFoundationPileEntitiesFromAutoLayout(layout, {
+    layerId,
+    batchId,
+    newPileId: newEntityId,
+    nowIso: () => new Date().toISOString(),
+  });
+  const autoPilePersist = { settings, batchId };
+  const strips = applyAutoPilePersistToStripGroup(p0.foundationStrips, groupIds, autoPilePersist);
+  const next = touchProjectMeta({
+    ...p0,
+    foundationPiles: [...piles, ...newPiles],
+    foundationStrips: strips,
+  });
+  set((st) =>
+    buildProjectMutationState(
+      st,
+      next,
+      {
+        dirty: true,
+        lastError: null,
+      },
+      { historyBefore },
+    ),
+  );
+}
+
 export const useAppStore = create<AppStore>((set, get) => {
   const empty = createEmptyProject();
   return {
@@ -768,6 +909,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     addFoundationPileModalOpen: false,
     foundationPilePlacementSession: null,
     foundationPilePlacementHistoryBaseline: null,
+    foundationStripAutoPilesModal: null,
     wallCoordinateModalOpen: false,
     wallAnchorCoordinateModalOpen: false,
     wallAnchorPlacementModeActive: false,
@@ -776,7 +918,9 @@ export const useAppStore = create<AppStore>((set, get) => {
     wallPlacementAnchorLastSnapKind: null,
     wallPlacementAnchorAngleSnapLockedDeg: null,
     wallContextMenu: null,
+    foundationPileContextMenu: null,
     wallMoveCopySession: null,
+    foundationPileMoveCopySession: null,
     wallMoveCopyCoordinateModalOpen: false,
     wallCalculationModalOpen: false,
     dirty: false,
@@ -785,6 +929,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     wallPlacementHistoryBaseline: null,
     pendingOpeningPlacementHistoryBaseline: null,
     wallMoveCopyHistoryBaseline: null,
+    foundationPileMoveCopyHistoryBaseline: null,
     lengthChangeHistoryBaseline: null,
     persistenceReady: false,
     persistenceStatus: "loading",
@@ -843,16 +988,28 @@ export const useAppStore = create<AppStore>((set, get) => {
           dirty = true;
           projectMutated = true;
         }
+        if (tool !== "select" && s.foundationPileMoveCopySession?.mode === "copy") {
+          proj = touchProjectMeta(
+            deleteEntitiesFromProject(proj, new Set([s.foundationPileMoveCopySession.workingPileId])),
+          );
+          dirty = true;
+          projectMutated = true;
+        }
         const wallMoveCopySession = tool === "select" ? s.wallMoveCopySession : null;
         const wallMoveCopyCoordinateModalOpen = tool === "select" ? s.wallMoveCopyCoordinateModalOpen : false;
         const wallContextMenu = tool === "select" ? s.wallContextMenu : null;
+        const foundationPileMoveCopySession = tool === "select" ? s.foundationPileMoveCopySession : null;
+        const foundationPileContextMenu = tool === "select" ? s.foundationPileContextMenu : null;
         const commonClear = {
           currentProject: proj,
           dirty,
           wallMoveCopyHistoryBaseline: projectMutated ? null : s.wallMoveCopyHistoryBaseline,
+          foundationPileMoveCopyHistoryBaseline: projectMutated ? null : s.foundationPileMoveCopyHistoryBaseline,
           wallMoveCopySession,
           wallMoveCopyCoordinateModalOpen,
           wallContextMenu,
+          foundationPileMoveCopySession,
+          foundationPileContextMenu,
           wallJointSession: null,
           wallJointParamsModalOpen: false,
           wallPlacementSession: null,
@@ -963,9 +1120,17 @@ export const useAppStore = create<AppStore>((set, get) => {
         if (tab !== "2d" && s.wallMoveCopySession?.mode === "copy") {
           proj = deleteEntitiesFromProject(proj, new Set([s.wallMoveCopySession.workingWallId]));
         }
+        if (tab !== "2d" && s.foundationPileMoveCopySession?.mode === "copy") {
+          proj = deleteEntitiesFromProject(proj, new Set([s.foundationPileMoveCopySession.workingPileId]));
+        }
         const modelTouched =
           tab !== "2d" &&
-          Boolean(s.pendingWindowPlacement || s.pendingDoorPlacement || s.wallMoveCopySession?.mode === "copy");
+          Boolean(
+            s.pendingWindowPlacement ||
+              s.pendingDoorPlacement ||
+              s.wallMoveCopySession?.mode === "copy" ||
+              s.foundationPileMoveCopySession?.mode === "copy",
+          );
         const projectForView = modelTouched ? proj : s.currentProject;
         const nextProject = mergeViewState(projectForView, { activeTab: tab });
         const baselinePatch: Partial<AppStore> = {
@@ -975,6 +1140,10 @@ export const useAppStore = create<AppStore>((set, get) => {
               : s.pendingOpeningPlacementHistoryBaseline,
           wallMoveCopyHistoryBaseline:
             tab !== "2d" && s.wallMoveCopySession?.mode === "copy" ? null : s.wallMoveCopyHistoryBaseline,
+          foundationPileMoveCopyHistoryBaseline:
+            tab !== "2d" && s.foundationPileMoveCopySession?.mode === "copy"
+              ? null
+              : s.foundationPileMoveCopyHistoryBaseline,
         };
         const staticPart: Partial<AppStore> = {
           activeTab: tab,
@@ -1000,7 +1169,9 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementAnchorLastSnapKind: tab === "2d" ? s.wallPlacementAnchorLastSnapKind : null,
           wallPlacementAnchorAngleSnapLockedDeg: tab === "2d" ? s.wallPlacementAnchorAngleSnapLockedDeg : null,
           wallContextMenu: tab === "2d" ? s.wallContextMenu : null,
+          foundationPileContextMenu: tab === "2d" ? s.foundationPileContextMenu : null,
           wallMoveCopySession: tab === "2d" ? s.wallMoveCopySession : null,
+          foundationPileMoveCopySession: tab === "2d" ? s.foundationPileMoveCopySession : null,
           wallMoveCopyCoordinateModalOpen: tab === "2d" ? s.wallMoveCopyCoordinateModalOpen : false,
           ruler2dSession: tab === "2d" ? s.ruler2dSession : null,
           line2dSession: tab === "2d" ? s.line2dSession : null,
@@ -1284,6 +1455,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           pendingWindowPlacement: null,
           pendingDoorPlacement: null,
           pendingOpeningPlacementHistoryBaseline: null,
+          foundationStripAutoPilesModal: null,
           lastError: null,
         };
         return mutated ? { ...buildProjectMutationState(s, project, { ...patch, dirty: true }) } : patch;
@@ -1322,6 +1494,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           addFoundationPileModalOpen: false,
           foundationPilePlacementSession: null,
           foundationPilePlacementHistoryBaseline: null,
+          foundationStripAutoPilesModal: null,
           lastError: null,
         };
         return mutated ? { ...buildProjectMutationState(s, project, { ...patch, dirty: true }) } : patch;
@@ -1358,6 +1531,10 @@ export const useAppStore = create<AppStore>((set, get) => {
           addFoundationStripModalOpen: false,
           foundationStripPlacementSession: null,
           foundationStripPlacementHistoryBaseline: null,
+          foundationPileContextMenu: null,
+          foundationPileMoveCopySession: null,
+          foundationPileMoveCopyHistoryBaseline: null,
+          foundationStripAutoPilesModal: null,
           lastError: null,
         };
         return mutated ? { ...buildProjectMutationState(s, project, { ...patch, dirty: true }) } : patch;
@@ -1411,6 +1588,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         foundationStripPlacementHistoryBaseline: null,
         wallPlacementSession: null,
         wallPlacementHistoryBaseline: null,
+        foundationStripAutoPilesModal: null,
         selectedEntityIds: [],
         lastError: null,
       });
@@ -1532,6 +1710,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         addFoundationPileModalOpen: false,
         foundationPilePlacementSession: null,
         foundationPilePlacementHistoryBaseline: null,
+        foundationStripAutoPilesModal: null,
         wallPlacementSession: null,
         wallPlacementHistoryBaseline: null,
         selectedEntityIds: [],
@@ -1721,6 +1900,21 @@ export const useAppStore = create<AppStore>((set, get) => {
       );
     },
 
+    openFoundationStripAutoPilesModal: (seedStripId) =>
+      set({
+        foundationStripAutoPilesModal: { seedStripId },
+        addFoundationStripModalOpen: false,
+        foundationStripPlacementSession: null,
+        foundationStripPlacementHistoryBaseline: null,
+        lastError: null,
+      }),
+
+    closeFoundationStripAutoPilesModal: () => set({ foundationStripAutoPilesModal: null }),
+
+    applyFoundationStripAutoPiles: (action, settings) => {
+      runFoundationStripAutoPilesImpl(get, set, action, settings);
+    },
+
     openAddWindowModal: () =>
       set((s) => {
         const { project, mutated } = projectWithoutPendingOpeningDrafts(
@@ -1738,6 +1932,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           addFoundationPileModalOpen: false,
           foundationPilePlacementSession: null,
           foundationPilePlacementHistoryBaseline: null,
+          foundationStripAutoPilesModal: null,
           wallPlacementSession: null,
           wallJointSession: null,
           wallJointParamsModalOpen: false,
@@ -2491,7 +2686,10 @@ export const useAppStore = create<AppStore>((set, get) => {
         wallPlacementAnchorAngleSnapLockedDeg: null,
         wallAnchorCoordinateModalOpen: false,
         wallContextMenu: null,
+        foundationPileContextMenu: null,
         wallMoveCopySession: null,
+        foundationPileMoveCopySession: null,
+        foundationPileMoveCopyHistoryBaseline: null,
         wallMoveCopyCoordinateModalOpen: false,
         selectedEntityIds: [],
         lastError: null,
@@ -3145,6 +3343,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     openWallContextMenu: (input) =>
       set({
         wallContextMenu: { wallId: input.wallId, clientX: input.clientX, clientY: input.clientY },
+        foundationPileContextMenu: null,
         lastError: null,
       }),
 
@@ -3156,7 +3355,10 @@ export const useAppStore = create<AppStore>((set, get) => {
       set((s) =>
         buildProjectMutationState(s, next, {
           wallContextMenu: null,
+          foundationPileContextMenu: null,
           wallMoveCopySession: null,
+          foundationPileMoveCopySession: null,
+          foundationPileMoveCopyHistoryBaseline: null,
           wallMoveCopyCoordinateModalOpen: false,
           wallMoveCopyHistoryBaseline: null,
           selectedEntityIds: selectedEntityIds.filter((id) => id !== wallId),
@@ -3164,6 +3366,208 @@ export const useAppStore = create<AppStore>((set, get) => {
           dirty: true,
           lastError: null,
         }),
+      );
+    },
+
+    openFoundationPileContextMenu: (input) =>
+      set({
+        foundationPileContextMenu: {
+          pileId: input.pileId,
+          clientX: input.clientX,
+          clientY: input.clientY,
+        },
+        wallContextMenu: null,
+        lastError: null,
+      }),
+
+    closeFoundationPileContextMenu: () => set({ foundationPileContextMenu: null }),
+
+    deleteFoundationPileFromContextMenu: (pileId) => {
+      const { currentProject, selectedEntityIds } = get();
+      const next = deleteEntitiesFromProject(currentProject, new Set([pileId]));
+      set((s) =>
+        buildProjectMutationState(s, next, {
+          foundationPileContextMenu: null,
+          foundationPileMoveCopySession: null,
+          foundationPileMoveCopyHistoryBaseline: null,
+          selectedEntityIds: selectedEntityIds.filter((id) => id !== pileId),
+          dirty: true,
+          lastError: null,
+        }),
+      );
+    },
+
+    startFoundationPileMoveFromContextMenu: (pileId) => {
+      const pile = get().currentProject.foundationPiles.find((p) => p.id === pileId);
+      if (!pile) {
+        set({ lastError: "Свая не найдена.", foundationPileContextMenu: null });
+        return;
+      }
+      const baseline = cloneProjectSnapshot(get().currentProject);
+      set({
+        foundationPileMoveCopyHistoryBaseline: baseline,
+        foundationPileContextMenu: null,
+        wallContextMenu: null,
+        wallMoveCopySession: null,
+        wallMoveCopyCoordinateModalOpen: false,
+        wallMoveCopyHistoryBaseline: null,
+        foundationPileMoveCopySession: {
+          mode: "move",
+          sourcePileId: pileId,
+          workingPileId: pileId,
+          phase: "pickBase",
+          baseOffsetFromCenterMm: null,
+          previewCenterMm: null,
+          lastSnapKind: null,
+        },
+        selectedEntityIds: [pileId],
+        lastError: null,
+      });
+    },
+
+    startFoundationPileCopyFromContextMenu: (pileId) => {
+      const p0 = get().currentProject;
+      const baseline = cloneProjectSnapshot(p0);
+      const r = duplicateFoundationPileInProject(p0, pileId);
+      if ("error" in r) {
+        set({ lastError: r.error, foundationPileContextMenu: null });
+        return;
+      }
+      set((s) =>
+        buildProjectMutationState(
+          s,
+          r.project,
+          {
+            foundationPileMoveCopyHistoryBaseline: baseline,
+            foundationPileContextMenu: null,
+            wallContextMenu: null,
+            wallMoveCopySession: null,
+            wallMoveCopyCoordinateModalOpen: false,
+            wallMoveCopyHistoryBaseline: null,
+            foundationPileMoveCopySession: {
+              mode: "copy",
+              sourcePileId: pileId,
+              workingPileId: r.newPileId,
+              phase: "pickBase",
+              baseOffsetFromCenterMm: null,
+              previewCenterMm: null,
+              lastSnapKind: null,
+            },
+            selectedEntityIds: [r.newPileId],
+            dirty: true,
+            lastError: null,
+          },
+          { skipHistory: true },
+        ),
+      );
+    },
+
+    cancelFoundationPileMoveCopy: () => {
+      const s = get().foundationPileMoveCopySession;
+      if (!s) {
+        return;
+      }
+      runWithoutProjectHistory(() => {
+        let proj = get().currentProject;
+        if (s.mode === "copy") {
+          proj = deleteEntitiesFromProject(proj, new Set([s.workingPileId]));
+        }
+        set({
+          currentProject: touchProjectMeta(proj),
+          foundationPileMoveCopySession: null,
+          foundationPileMoveCopyHistoryBaseline: null,
+          selectedEntityIds: proj.foundationPiles.some((p) => p.id === s.sourcePileId) ? [s.sourcePileId] : [],
+          dirty: true,
+          lastError: null,
+        });
+      });
+    },
+
+    foundationPileMoveCopyPreviewMove: (worldMm, viewport) => {
+      const s = get().foundationPileMoveCopySession;
+      if (!s || s.phase !== "pickTarget" || !s.baseOffsetFromCenterMm) {
+        return;
+      }
+      if (isSceneCoordinateModalBlocking(get())) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport, s.workingPileId);
+      const off = s.baseOffsetFromCenterMm;
+      const previewCenterMm = { x: snap.point.x - off.x, y: snap.point.y - off.y };
+      set({
+        foundationPileMoveCopySession: {
+          ...s,
+          previewCenterMm,
+          lastSnapKind: snap.kind,
+        },
+      });
+    },
+
+    foundationPileMoveCopyPrimaryClick: (worldMm, viewport) => {
+      if (isSceneCoordinateModalBlocking(get())) {
+        return;
+      }
+      const s = get().foundationPileMoveCopySession;
+      if (!s) {
+        return;
+      }
+      const pile = get().currentProject.foundationPiles.find((p) => p.id === s.workingPileId);
+      if (!pile) {
+        get().cancelFoundationPileMoveCopy();
+        return;
+      }
+      if (s.phase === "pickBase") {
+        const tolPx = 18;
+        const hit = pickClosestFoundationPileHandle(worldMm, pile, viewport, tolPx);
+        if (!hit) {
+          set({ lastError: "Выберите центр или угол сваи (ближайшая ручка)." });
+          return;
+        }
+        const baseOffsetFromCenterMm = {
+          x: hit.pointMm.x - pile.centerX,
+          y: hit.pointMm.y - pile.centerY,
+        };
+        set({
+          foundationPileMoveCopySession: {
+            ...s,
+            phase: "pickTarget",
+            baseOffsetFromCenterMm,
+            previewCenterMm: { x: pile.centerX, y: pile.centerY },
+            lastSnapKind: null,
+          },
+          lastError: null,
+        });
+        return;
+      }
+      const off = s.baseOffsetFromCenterMm;
+      if (!off) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport, s.workingPileId);
+      const T = snap.point;
+      const finalCenter = { x: T.x - off.x, y: T.y - off.y };
+      const dx = finalCenter.x - pile.centerX;
+      const dy = finalCenter.y - pile.centerY;
+      if (Math.hypot(dx, dy) < MIN_WALL_SEGMENT_LENGTH_MM) {
+        set({ lastError: "Смещение слишком мало." });
+        return;
+      }
+      const proj = translateFoundationPilesInProject(get().currentProject, new Set([s.workingPileId]), dx, dy);
+      set((st) =>
+        buildProjectMutationState(
+          st,
+          touchProjectMeta(proj),
+          {
+            foundationPileMoveCopySession: null,
+            foundationPileMoveCopyHistoryBaseline: null,
+            selectedEntityIds: [s.workingPileId],
+            dirty: true,
+            lastError: null,
+          },
+          {
+            historyBefore: st.foundationPileMoveCopyHistoryBaseline ?? st.currentProject,
+          },
+        ),
       );
     },
 
@@ -3177,6 +3581,9 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({
         wallMoveCopyHistoryBaseline: baseline,
         wallContextMenu: null,
+        foundationPileContextMenu: null,
+        foundationPileMoveCopySession: null,
+        foundationPileMoveCopyHistoryBaseline: null,
         wallPlacementSession: null,
         wallCoordinateModalOpen: false,
         wallAnchorCoordinateModalOpen: false,
@@ -3214,13 +3621,16 @@ export const useAppStore = create<AppStore>((set, get) => {
         set({ lastError: r.error, wallContextMenu: null });
         return;
       }
-      set((s) =>
+        set((s) =>
         buildProjectMutationState(
           s,
           r.project,
           {
             wallMoveCopyHistoryBaseline: baseline,
             wallContextMenu: null,
+            foundationPileContextMenu: null,
+            foundationPileMoveCopySession: null,
+            foundationPileMoveCopyHistoryBaseline: null,
             wallPlacementSession: null,
             wallCoordinateModalOpen: false,
             wallJointSession: null,
@@ -4106,6 +4516,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementHistoryBaseline: null,
           pendingOpeningPlacementHistoryBaseline: null,
           wallMoveCopyHistoryBaseline: null,
+          foundationPileMoveCopyHistoryBaseline: null,
           lengthChangeHistoryBaseline: null,
           layerManagerOpen: false,
           layerParamsModalOpen: false,
@@ -4129,6 +4540,10 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementAnchorPreviewEndMm: null,
           wallPlacementAnchorLastSnapKind: null,
           wallPlacementAnchorAngleSnapLockedDeg: null,
+          wallContextMenu: null,
+          foundationPileContextMenu: null,
+          wallMoveCopySession: null,
+          foundationPileMoveCopySession: null,
           addFoundationStripModalOpen: false,
           foundationStripPlacementSession: null,
           foundationStripPlacementHistoryBaseline: null,
@@ -4163,6 +4578,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         wallPlacementHistoryBaseline: null,
         pendingOpeningPlacementHistoryBaseline: null,
         wallMoveCopyHistoryBaseline: null,
+        foundationPileMoveCopyHistoryBaseline: null,
         lengthChangeHistoryBaseline: null,
         layerManagerOpen: false,
         layerParamsModalOpen: false,
@@ -4186,6 +4602,10 @@ export const useAppStore = create<AppStore>((set, get) => {
         wallPlacementAnchorPreviewEndMm: null,
         wallPlacementAnchorLastSnapKind: null,
         wallPlacementAnchorAngleSnapLockedDeg: null,
+        wallContextMenu: null,
+        foundationPileContextMenu: null,
+        wallMoveCopySession: null,
+        foundationPileMoveCopySession: null,
         addFoundationStripModalOpen: false,
         foundationStripPlacementSession: null,
         foundationStripPlacementHistoryBaseline: null,
@@ -4253,6 +4673,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementHistoryBaseline: null,
           pendingOpeningPlacementHistoryBaseline: null,
           wallMoveCopyHistoryBaseline: null,
+          foundationPileMoveCopyHistoryBaseline: null,
           lengthChangeHistoryBaseline: null,
           layerManagerOpen: false,
           layerParamsModalOpen: false,
@@ -4276,6 +4697,10 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementAnchorPreviewEndMm: null,
           wallPlacementAnchorLastSnapKind: null,
           wallPlacementAnchorAngleSnapLockedDeg: null,
+          wallContextMenu: null,
+          foundationPileContextMenu: null,
+          wallMoveCopySession: null,
+          foundationPileMoveCopySession: null,
           addFoundationStripModalOpen: false,
           foundationStripPlacementSession: null,
           foundationStripPlacementHistoryBaseline: null,

@@ -24,6 +24,7 @@ const baseApp = {
   lengthChangeCoordinateModalOpen: false,
   projectOriginCoordinateModalOpen: false,
   openingAlongMoveNumericModalOpen: false,
+  foundationStripAutoPilesModal: null,
 } as const;
 
 describe("getResolvedShortcutCodes", () => {

@@ -20,4 +20,9 @@ export interface FoundationPileEntity {
   readonly levelMm: number;
   readonly createdAt: string;
   readonly updatedAt: string;
+  /**
+   * Если задано — свая создана автоматически для ленты; при обновлении авто-свай
+   * удаляются только с тем же batchId, что и у сохранённой конфигурации ленты.
+   */
+  readonly autoPileBatchId?: string;
 }
