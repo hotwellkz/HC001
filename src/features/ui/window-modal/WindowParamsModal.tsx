@@ -89,12 +89,22 @@ export function WindowParamsModal() {
   useEffect(() => {
     if (addOpen && !editMode) {
       setActiveTab("form");
-      setFormKey(DEFAULT_WINDOW_FORM_KEY);
-      setWidthStr(String(DEFAULT_WINDOW_WIDTH_MM));
-      setHeightStr(String(DEFAULT_WINDOW_HEIGHT_MM));
-      setViewPreset(DEFAULT_VIEW_PRESET_KEY);
-      setSillStr(String(DEFAULT_SILL_OVERHANG_MM));
-      setIsEmpty(false);
+      const last = useAppStore.getState().lastWindowPlacementParams;
+      if (last) {
+        setFormKey(last.formKey);
+        setWidthStr(String(last.widthMm));
+        setHeightStr(String(last.heightMm));
+        setViewPreset(last.viewPreset);
+        setSillStr(String(last.sillOverhangMm));
+        setIsEmpty(last.isEmptyOpening);
+      } else {
+        setFormKey(DEFAULT_WINDOW_FORM_KEY);
+        setWidthStr(String(DEFAULT_WINDOW_WIDTH_MM));
+        setHeightStr(String(DEFAULT_WINDOW_HEIGHT_MM));
+        setViewPreset(DEFAULT_VIEW_PRESET_KEY);
+        setSillStr(String(DEFAULT_SILL_OVERHANG_MM));
+        setIsEmpty(false);
+      }
       setError(null);
     }
   }, [addOpen, editMode]);

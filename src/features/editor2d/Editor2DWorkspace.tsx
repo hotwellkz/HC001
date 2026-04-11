@@ -494,9 +494,9 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         if (useAppStore.getState().pendingWindowPlacement || useAppStore.getState().pendingDoorPlacement) {
           e.preventDefault();
           if (useAppStore.getState().pendingWindowPlacement) {
-            useAppStore.getState().clearPendingWindowPlacement();
+            useAppStore.getState().abortPendingWindowPlacement();
           } else {
-            useAppStore.getState().clearPendingDoorPlacement();
+            useAppStore.getState().abortPendingDoorPlacement();
           }
           windowPlacementHoverRef.current = null;
           setWallHintRef.current(null);
@@ -2616,9 +2616,9 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         if ((pendingWin || pendingDoor) && ev.button === 2) {
           ev.preventDefault();
           if (pendingWin) {
-            useAppStore.getState().clearPendingWindowPlacement();
+            useAppStore.getState().abortPendingWindowPlacement();
           } else {
-            useAppStore.getState().clearPendingDoorPlacement();
+            useAppStore.getState().abortPendingDoorPlacement();
           }
           windowPlacementHoverRef.current = null;
           setWallHintRef.current(null);

@@ -48,12 +48,22 @@ export function DoorParamsModal() {
   useEffect(() => {
     if (addOpen && !editMode) {
       setActiveTab("form");
-      setHeightStr(String(DEFAULT_DOOR_HEIGHT));
-      setWidthStr(String(DEFAULT_DOOR_WIDTH));
-      setDoorType("single");
-      setDoorSwing("in_right");
-      setDoorTrimStr("50");
-      setIsEmpty(false);
+      const last = useAppStore.getState().lastDoorPlacementParams;
+      if (last) {
+        setHeightStr(String(last.heightMm));
+        setWidthStr(String(last.widthMm));
+        setDoorType(last.doorType);
+        setDoorSwing(last.doorSwing);
+        setDoorTrimStr(String(last.doorTrimMm));
+        setIsEmpty(last.isEmptyOpening);
+      } else {
+        setHeightStr(String(DEFAULT_DOOR_HEIGHT));
+        setWidthStr(String(DEFAULT_DOOR_WIDTH));
+        setDoorType("single");
+        setDoorSwing("in_right");
+        setDoorTrimStr("50");
+        setIsEmpty(false);
+      }
       setError(null);
     }
   }, [addOpen, editMode]);

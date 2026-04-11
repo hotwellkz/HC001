@@ -35,6 +35,8 @@ import { removeUnplacedWindowDraft } from "@/core/domain/openingDraftCleanup";
 import {
   addUnplacedDoorToProject,
   addUnplacedWindowToProject,
+  placedDoorOpeningToDraftPayload,
+  placedWindowOpeningToDraftPayload,
   type AddDoorDraftPayload,
   type AddWindowDraftPayload,
 } from "@/core/domain/openingMutations";
@@ -177,6 +179,10 @@ interface AppState {
   readonly addDoorModalOpen: boolean;
   readonly pendingWindowPlacement: PendingWindowPlacement | null;
   readonly pendingDoorPlacement: PendingDoorPlacement | null;
+  /** Последние параметры «Добавить окно» (липкие вставки и префилл модалки). */
+  readonly lastWindowPlacementParams: AddWindowDraftPayload | null;
+  /** Последние параметры «Добавить дверь». */
+  readonly lastDoorPlacementParams: AddDoorDraftPayload | null;
   readonly windowEditModal: WindowEditModalState | null;
   readonly doorEditModal: DoorEditModalState | null;
   readonly wallJointParamsModalOpen: boolean;
@@ -304,6 +310,12 @@ interface AppActions {
   /** Отмена режима установки: удалить черновик окна без стены. */
   clearPendingWindowPlacement: () => void;
   clearPendingDoorPlacement: () => void;
+  /**
+   * Esc / ПКМ в режиме установки: отменить текущую попытку; инструмент остаётся активным
+   * (новый черновик с теми же параметрами для окна; для двери — шаг назад или новый черновик).
+   */
+  abortPendingWindowPlacement: () => void;
+  abortPendingDoorPlacement: () => void;
   tryCommitPendingWindowPlacementAtWorld: (worldMm: { readonly x: number; readonly y: number }) => void;
   tryCommitPendingDoorPlacementAtWorld: (worldMm: { readonly x: number; readonly y: number }) => void;
   updatePendingDoorSwingAtWorld: (worldMm: { readonly x: number; readonly y: number }) => void;
@@ -349,7 +361,7 @@ interface AppActions {
   cancelWallPlacement: () => void;
   /**
    * Esc / ПКМ: если ждём вторую точку — отменить текущий сегмент и вернуться к первой точке;
-   * иначе полностью выйти из инструмента стены.
+   * иначе сбросить незавершённый штрих, оставаясь в инструменте «Добавить стену» с тем же черновиком.
    */
   wallPlacementBackOrExit: () => void;
   setViewportCanvas2dPx: (width: number, height: number) => void;
@@ -488,6 +500,25 @@ function shouldRecordProjectHistory(): boolean {
   return projectHistorySuppressDepth === 0;
 }
 
+/** Убрать черновики проёмов из проекта при смене инструмента/модалки создания. */
+function projectWithoutPendingOpeningDrafts(
+  currentProject: Project,
+  pendingWindow: PendingWindowPlacement | null,
+  pendingDoor: PendingDoorPlacement | null,
+): { project: Project; mutated: boolean } {
+  let p = currentProject;
+  let mutated = false;
+  if (pendingWindow) {
+    p = removeUnplacedWindowDraft(p, pendingWindow.openingId);
+    mutated = true;
+  }
+  if (pendingDoor) {
+    p = removeUnplacedWindowDraft(p, pendingDoor.openingId);
+    mutated = true;
+  }
+  return { project: p, mutated };
+}
+
 function historyJumpClearTransientUi(s: AppStore, restored: Project): Partial<AppStore> {
   const wd =
     s.wallDetailWallId && restored.walls.some((w) => w.id === s.wallDetailWallId) ? s.wallDetailWallId : null;
@@ -496,6 +527,8 @@ function historyJumpClearTransientUi(s: AppStore, restored: Project): Partial<Ap
     wallJointSession: null,
     pendingWindowPlacement: null,
     pendingDoorPlacement: null,
+    lastWindowPlacementParams: null,
+    lastDoorPlacementParams: null,
     windowEditModal: null,
     doorEditModal: null,
     wallMoveCopySession: null,
@@ -630,6 +663,8 @@ export const useAppStore = create<AppStore>((set, get) => {
     addDoorModalOpen: false,
     pendingWindowPlacement: null,
     pendingDoorPlacement: null,
+    lastWindowPlacementParams: null,
+    lastDoorPlacementParams: null,
     windowEditModal: null,
     doorEditModal: null,
     wallJointParamsModalOpen: false,
@@ -695,8 +730,18 @@ export const useAppStore = create<AppStore>((set, get) => {
         let proj = s.currentProject;
         let dirty = s.dirty;
         let projectMutated = false;
+        if (s.pendingWindowPlacement) {
+          proj = removeUnplacedWindowDraft(proj, s.pendingWindowPlacement.openingId);
+          dirty = true;
+          projectMutated = true;
+        }
+        if (s.pendingDoorPlacement) {
+          proj = removeUnplacedWindowDraft(proj, s.pendingDoorPlacement.openingId);
+          dirty = true;
+          projectMutated = true;
+        }
         if (tool !== "select" && s.wallMoveCopySession?.mode === "copy") {
-          proj = touchProjectMeta(deleteEntitiesFromProject(s.currentProject, new Set([s.wallMoveCopySession.workingWallId])));
+          proj = touchProjectMeta(deleteEntitiesFromProject(proj, new Set([s.wallMoveCopySession.workingWallId])));
           dirty = true;
           projectMutated = true;
         }
@@ -722,6 +767,10 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementAnchorAngleSnapLockedDeg: null,
           addWallModalOpen: false,
           addWindowModalOpen: false,
+          addDoorModalOpen: false,
+          pendingWindowPlacement: null,
+          pendingDoorPlacement: null,
+          pendingOpeningPlacementHistoryBaseline: null,
           projectOriginMoveToolActive: false,
           projectOriginCoordinateModalOpen: false,
           openingAlongMoveNumericModalOpen: false,
@@ -1111,49 +1160,84 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
 
     openAddWallModal: () =>
-      set({
-        addWallModalOpen: true,
-        addWindowModalOpen: false,
-        wallJointSession: null,
-        wallJointParamsModalOpen: false,
+      set((s) => {
+        const { project, mutated } = projectWithoutPendingOpeningDrafts(
+          s.currentProject,
+          s.pendingWindowPlacement,
+          s.pendingDoorPlacement,
+        );
+        const patch: Partial<AppStore> = {
+          addWallModalOpen: true,
+          addWindowModalOpen: false,
+          addDoorModalOpen: false,
+          wallJointSession: null,
+          wallJointParamsModalOpen: false,
+          pendingWindowPlacement: null,
+          pendingDoorPlacement: null,
+          pendingOpeningPlacementHistoryBaseline: null,
+          lastError: null,
+        };
+        return mutated ? { ...buildProjectMutationState(s, project, { ...patch, dirty: true }) } : patch;
       }),
 
     closeAddWallModal: () => set({ addWallModalOpen: false }),
 
     openAddWindowModal: () =>
-      set({
-        addWindowModalOpen: true,
-        addDoorModalOpen: false,
-        addWallModalOpen: false,
-        wallPlacementSession: null,
-        wallJointSession: null,
-        wallJointParamsModalOpen: false,
-        wallCoordinateModalOpen: false,
-        wallAnchorCoordinateModalOpen: false,
-        wallAnchorPlacementModeActive: false,
-        wallPlacementAnchorMm: null,
-        wallPlacementAnchorPreviewEndMm: null,
-        wallPlacementAnchorLastSnapKind: null,
-        wallPlacementAnchorAngleSnapLockedDeg: null,
-        windowEditModal: null,
-        lastError: null,
+      set((s) => {
+        const { project, mutated } = projectWithoutPendingOpeningDrafts(
+          s.currentProject,
+          s.pendingWindowPlacement,
+          s.pendingDoorPlacement,
+        );
+        const patch: Partial<AppStore> = {
+          addWindowModalOpen: true,
+          addDoorModalOpen: false,
+          addWallModalOpen: false,
+          wallPlacementSession: null,
+          wallJointSession: null,
+          wallJointParamsModalOpen: false,
+          wallCoordinateModalOpen: false,
+          wallAnchorCoordinateModalOpen: false,
+          wallAnchorPlacementModeActive: false,
+          wallPlacementAnchorMm: null,
+          wallPlacementAnchorPreviewEndMm: null,
+          wallPlacementAnchorLastSnapKind: null,
+          wallPlacementAnchorAngleSnapLockedDeg: null,
+          windowEditModal: null,
+          pendingWindowPlacement: null,
+          pendingDoorPlacement: null,
+          pendingOpeningPlacementHistoryBaseline: null,
+          lastError: null,
+        };
+        return mutated ? { ...buildProjectMutationState(s, project, { ...patch, dirty: true }) } : patch;
       }),
     openAddDoorModal: () =>
-      set({
-        addDoorModalOpen: true,
-        addWindowModalOpen: false,
-        wallPlacementSession: null,
-        wallJointSession: null,
-        wallJointParamsModalOpen: false,
-        wallCoordinateModalOpen: false,
-        wallAnchorCoordinateModalOpen: false,
-        wallAnchorPlacementModeActive: false,
-        wallPlacementAnchorMm: null,
-        wallPlacementAnchorPreviewEndMm: null,
-        wallPlacementAnchorLastSnapKind: null,
-        wallPlacementAnchorAngleSnapLockedDeg: null,
-        doorEditModal: null,
-        lastError: null,
+      set((s) => {
+        const { project, mutated } = projectWithoutPendingOpeningDrafts(
+          s.currentProject,
+          s.pendingWindowPlacement,
+          s.pendingDoorPlacement,
+        );
+        const patch: Partial<AppStore> = {
+          addDoorModalOpen: true,
+          addWindowModalOpen: false,
+          wallPlacementSession: null,
+          wallJointSession: null,
+          wallJointParamsModalOpen: false,
+          wallCoordinateModalOpen: false,
+          wallAnchorCoordinateModalOpen: false,
+          wallAnchorPlacementModeActive: false,
+          wallPlacementAnchorMm: null,
+          wallPlacementAnchorPreviewEndMm: null,
+          wallPlacementAnchorLastSnapKind: null,
+          wallPlacementAnchorAngleSnapLockedDeg: null,
+          doorEditModal: null,
+          pendingWindowPlacement: null,
+          pendingDoorPlacement: null,
+          pendingOpeningPlacementHistoryBaseline: null,
+          lastError: null,
+        };
+        return mutated ? { ...buildProjectMutationState(s, project, { ...patch, dirty: true }) } : patch;
       }),
 
     closeAddWindowModal: () => set({ addWindowModalOpen: false }),
@@ -1168,6 +1252,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         addWindowModalOpen: false,
         pendingWindowPlacement: { openingId: r.openingId },
         pendingOpeningPlacementHistoryBaseline: baseline,
+        lastWindowPlacementParams: input,
         dirty: true,
         lastError: null,
       });
@@ -1181,6 +1266,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         addDoorModalOpen: false,
         pendingDoorPlacement: { openingId: r.openingId, phase: "pickWall" },
         pendingOpeningPlacementHistoryBaseline: baseline,
+        lastDoorPlacementParams: input,
         dirty: true,
         lastError: null,
       });
@@ -1211,6 +1297,72 @@ export const useAppStore = create<AppStore>((set, get) => {
           ...buildProjectMutationState(s, next, {
             pendingDoorPlacement: null,
             pendingOpeningPlacementHistoryBaseline: null,
+            dirty: true,
+            lastError: null,
+          }),
+        };
+      }),
+
+    abortPendingWindowPlacement: () =>
+      set((s) => {
+        const pend = s.pendingWindowPlacement;
+        if (!pend) {
+          return {};
+        }
+        const cleared = removeUnplacedWindowDraft(s.currentProject, pend.openingId);
+        const params = s.lastWindowPlacementParams;
+        if (!params) {
+          return {
+            ...buildProjectMutationState(s, cleared, {
+              pendingWindowPlacement: null,
+              pendingOpeningPlacementHistoryBaseline: null,
+              dirty: true,
+              lastError: null,
+            }),
+          };
+        }
+        const baseline = cloneProjectSnapshot(cleared);
+        const r = addUnplacedWindowToProject(cleared, params);
+        return {
+          ...buildProjectMutationState(s, r.project, {
+            pendingWindowPlacement: { openingId: r.openingId },
+            pendingOpeningPlacementHistoryBaseline: baseline,
+            dirty: true,
+            lastError: null,
+          }),
+        };
+      }),
+
+    abortPendingDoorPlacement: () =>
+      set((s) => {
+        const pend = s.pendingDoorPlacement;
+        if (!pend) {
+          return {};
+        }
+        if (pend.phase === "chooseSwing") {
+          return {
+            pendingDoorPlacement: { openingId: pend.openingId, phase: "pickWall" },
+            lastError: null,
+          };
+        }
+        const cleared = removeUnplacedWindowDraft(s.currentProject, pend.openingId);
+        const params = s.lastDoorPlacementParams;
+        if (!params) {
+          return {
+            ...buildProjectMutationState(s, cleared, {
+              pendingDoorPlacement: null,
+              pendingOpeningPlacementHistoryBaseline: null,
+              dirty: true,
+              lastError: null,
+            }),
+          };
+        }
+        const baseline = cloneProjectSnapshot(cleared);
+        const r = addUnplacedDoorToProject(cleared, params);
+        return {
+          ...buildProjectMutationState(s, r.project, {
+            pendingDoorPlacement: { openingId: r.openingId, phase: "pickWall" },
+            pendingOpeningPlacementHistoryBaseline: baseline,
             dirty: true,
             lastError: null,
           }),
@@ -1263,22 +1415,44 @@ export const useAppStore = create<AppStore>((set, get) => {
         set({ lastError: fin.error });
         return;
       }
-      set((s) =>
-        buildProjectMutationState(
+      set((s) => {
+        const placedOp = fin.project.openings.find((o) => o.id === pend.openingId);
+        const draftPayload =
+          (placedOp ? placedWindowOpeningToDraftPayload(placedOp) : null) ?? s.lastWindowPlacementParams;
+        if (!draftPayload) {
+          return buildProjectMutationState(
+            s,
+            fin.project,
+            {
+              pendingWindowPlacement: null,
+              pendingOpeningPlacementHistoryBaseline: null,
+              windowEditModal: { openingId: pend.openingId, initialTab: "position" },
+              dirty: true,
+              lastError: null,
+            },
+            {
+              historyBefore: s.pendingOpeningPlacementHistoryBaseline ?? s.currentProject,
+            },
+          );
+        }
+        const baselineNext = cloneProjectSnapshot(fin.project);
+        const r2 = addUnplacedWindowToProject(fin.project, draftPayload);
+        return buildProjectMutationState(
           s,
-          fin.project,
+          r2.project,
           {
-            pendingWindowPlacement: null,
-            pendingOpeningPlacementHistoryBaseline: null,
-            windowEditModal: { openingId: pend.openingId, initialTab: "position" },
+            pendingWindowPlacement: { openingId: r2.openingId },
+            pendingOpeningPlacementHistoryBaseline: baselineNext,
+            lastWindowPlacementParams: draftPayload,
+            windowEditModal: null,
             dirty: true,
             lastError: null,
           },
           {
             historyBefore: s.pendingOpeningPlacementHistoryBaseline ?? s.currentProject,
           },
-        ),
-      );
+        );
+      });
     },
     tryCommitPendingDoorPlacementAtWorld: (worldMm) => {
       const pend0 = get().pendingDoorPlacement;
@@ -1361,22 +1535,44 @@ export const useAppStore = create<AppStore>((set, get) => {
         set({ lastError: placed.error });
         return;
       }
-      set((s) =>
-        buildProjectMutationState(
+      set((s) => {
+        const placedOp = placed.project.openings.find((o) => o.id === pend.openingId);
+        const draftPayload =
+          (placedOp ? placedDoorOpeningToDraftPayload(placedOp) : null) ?? s.lastDoorPlacementParams;
+        if (!draftPayload) {
+          return buildProjectMutationState(
+            s,
+            placed.project,
+            {
+              pendingDoorPlacement: null,
+              pendingOpeningPlacementHistoryBaseline: null,
+              doorEditModal: { openingId: pend.openingId, initialTab: "position" },
+              dirty: true,
+              lastError: null,
+            },
+            {
+              historyBefore: s.pendingOpeningPlacementHistoryBaseline ?? s.currentProject,
+            },
+          );
+        }
+        const baselineNext = cloneProjectSnapshot(placed.project);
+        const r2 = addUnplacedDoorToProject(placed.project, draftPayload);
+        return buildProjectMutationState(
           s,
-          placed.project,
+          r2.project,
           {
-            pendingDoorPlacement: null,
-            pendingOpeningPlacementHistoryBaseline: null,
-            doorEditModal: { openingId: pend.openingId, initialTab: "position" },
+            pendingDoorPlacement: { openingId: r2.openingId, phase: "pickWall" },
+            pendingOpeningPlacementHistoryBaseline: baselineNext,
+            lastDoorPlacementParams: draftPayload,
+            doorEditModal: null,
             dirty: true,
             lastError: null,
           },
           {
             historyBefore: s.pendingOpeningPlacementHistoryBaseline ?? s.currentProject,
           },
-        ),
-      );
+        );
+      });
     },
 
     updatePendingDoorSwingAtWorld: (worldMm) => {
@@ -1791,9 +1987,18 @@ export const useAppStore = create<AppStore>((set, get) => {
         });
         return;
       }
+      const p = get().currentProject;
       set({
-        wallPlacementSession: null,
-        wallPlacementHistoryBaseline: null,
+        wallPlacementSession: {
+          phase: initialWallPlacementPhase(p),
+          draft: session.draft,
+          firstPointMm: null,
+          previewEndMm: null,
+          lastSnapKind: null,
+          angleSnapLockedDeg: null,
+          shiftDirectionLockUnit: null,
+          shiftLockReferenceMm: null,
+        },
         wallCoordinateModalOpen: false,
         wallAnchorCoordinateModalOpen: false,
         wallAnchorPlacementModeActive: false,
@@ -1801,8 +2006,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         wallPlacementAnchorPreviewEndMm: null,
         wallPlacementAnchorLastSnapKind: null,
         wallPlacementAnchorAngleSnapLockedDeg: null,
-        addWallModalOpen: false,
-        addWindowModalOpen: false,
+        lastError: null,
       });
     },
 
@@ -2768,11 +2972,11 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
       const rs = get().ruler2dSession;
       if (!rs) {
-        set({ activeTool: "select", ruler2dSession: null, lastError: null });
+        set({ ruler2dSession: initialRuler2dSession(), lastError: null });
         return;
       }
       if (rs.phase === "pickFirst") {
-        set({ activeTool: "select", ruler2dSession: null, lastError: null });
+        set({ ruler2dSession: initialRuler2dSession(), lastError: null });
         return;
       }
       set({ ruler2dSession: initialRuler2dSession(), lastError: null });
@@ -2868,7 +3072,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         set((s) =>
           buildProjectMutationState(s, nextProject, {
             line2dSession: initialLine2dSession(),
-            selectedEntityIds: [id],
+            selectedEntityIds: [],
             dirty: true,
             lastError: null,
           }),
@@ -2882,11 +3086,11 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
       const ls = get().line2dSession;
       if (!ls) {
-        set({ activeTool: "select", line2dSession: null, lastError: null });
+        set({ line2dSession: initialLine2dSession(), lastError: null });
         return;
       }
       if (ls.phase === "pickFirst") {
-        set({ activeTool: "select", line2dSession: null, lastError: null });
+        set({ line2dSession: initialLine2dSession(), lastError: null });
         return;
       }
       set({ line2dSession: initialLine2dSession(), lastError: null });
@@ -3282,8 +3486,13 @@ export const useAppStore = create<AppStore>((set, get) => {
           profilesModalOpen: false,
           addWallModalOpen: false,
           addWindowModalOpen: false,
+          addDoorModalOpen: false,
           pendingWindowPlacement: null,
+          pendingDoorPlacement: null,
+          lastWindowPlacementParams: null,
+          lastDoorPlacementParams: null,
           windowEditModal: null,
+          doorEditModal: null,
           wallJointParamsModalOpen: false,
           wallJointSession: null,
           wallPlacementSession: null,
@@ -3333,8 +3542,13 @@ export const useAppStore = create<AppStore>((set, get) => {
           profilesModalOpen: false,
           addWallModalOpen: false,
           addWindowModalOpen: false,
+          addDoorModalOpen: false,
           pendingWindowPlacement: null,
+          pendingDoorPlacement: null,
+          lastWindowPlacementParams: null,
+          lastDoorPlacementParams: null,
           windowEditModal: null,
+          doorEditModal: null,
           wallJointParamsModalOpen: false,
           wallJointSession: null,
           wallPlacementSession: null,
@@ -3379,8 +3593,13 @@ export const useAppStore = create<AppStore>((set, get) => {
         profilesModalOpen: false,
         addWallModalOpen: false,
         addWindowModalOpen: false,
+        addDoorModalOpen: false,
         pendingWindowPlacement: null,
+        pendingDoorPlacement: null,
+        lastWindowPlacementParams: null,
+        lastDoorPlacementParams: null,
         windowEditModal: null,
+        doorEditModal: null,
         wallJointParamsModalOpen: false,
         wallJointSession: null,
         wallPlacementSession: null,
@@ -3458,8 +3677,13 @@ export const useAppStore = create<AppStore>((set, get) => {
           profilesModalOpen: false,
           addWallModalOpen: false,
           addWindowModalOpen: false,
+          addDoorModalOpen: false,
           pendingWindowPlacement: null,
+          pendingDoorPlacement: null,
+          lastWindowPlacementParams: null,
+          lastDoorPlacementParams: null,
           windowEditModal: null,
+          doorEditModal: null,
           wallJointParamsModalOpen: false,
           wallJointSession: null,
           wallPlacementSession: null,
