@@ -70,6 +70,7 @@ export function migrateWireV0ToProject(data: Record<string, unknown>): Project {
     activeLayerId,
     visibleLayerIds: [],
     walls,
+    planLines: [],
     wallCalculations: [],
     wallJoints: [],
     openings: data["openings"] as Project["openings"],

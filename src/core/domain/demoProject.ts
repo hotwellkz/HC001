@@ -108,6 +108,7 @@ export function createDemoProject(): Project {
         markLabel: "1S_4",
       },
     ],
+    planLines: [],
     openingFramingPieces: [],
     openings: [
       {

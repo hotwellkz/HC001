@@ -12,6 +12,8 @@ import {
 } from "@/core/domain/layerOps";
 import { normalizeVisibleLayerIds, setVisibleLayerIdsOnProject } from "@/core/domain/layerVisibility";
 import { createDemoProject } from "@/core/domain/demoProject";
+import { newEntityId } from "@/core/domain/ids";
+import { MIN_PLAN_LINE_LENGTH_MM, type PlanLine } from "@/core/domain/planLine";
 import { createEmptyProject, touchProjectMeta } from "@/core/domain/projectFactory";
 import type { Profile } from "@/core/domain/profile";
 import {
@@ -28,6 +30,7 @@ import {
   type WallCalculationResult,
   type WallCalculationStage3Options,
 } from "@/core/domain/wallCalculation";
+import type { DoorOpeningSwing } from "@/core/domain/opening";
 import { removeUnplacedWindowDraft } from "@/core/domain/openingDraftCleanup";
 import {
   addUnplacedDoorToProject,
@@ -50,6 +53,7 @@ import {
 } from "@/core/domain/openingDoorMutations";
 import {
   clampOpeningLeftEdgeMm,
+  clampPlacedOpeningLeftEdgeMm,
   offsetFromStartForCursorCentered,
   pickClosestWallAlongPoint,
   validateWindowPlacementOnWall,
@@ -57,12 +61,28 @@ import {
 import { deleteEntitiesFromProject } from "@/core/domain/projectMutations";
 import { type ViewportTransform } from "@/core/geometry/viewportTransform";
 import type { Point2D } from "@/core/geometry/types";
+import {
+  DOOR_SWING_PICK_DEAD_ZONE_MM,
+  doorCursorLocalDots,
+  resolveDoorSwingWithHysteresis,
+} from "@/core/geometry/doorSwingPick2d";
 import { applyWallDirectionAngleSnapToPoint } from "@/core/geometry/wallDirectionAngleSnap";
 import { resolveSnap2d, type SnapKind } from "@/core/geometry/snap2d";
+import {
+  findWallPlacementShiftLockSnapHit,
+  resolveWallPlacementToolSnap,
+} from "@/core/geometry/wallPlacementSnap2d";
+import {
+  computeLengthChangePreviewAlongAxis,
+  computeLinearSecondPointPreview,
+  computeShiftDirectionLockUnit,
+  unitDirectionOrNull,
+} from "@/core/geometry/shiftDirectionLock2d";
 import { computeProfileThickness, MIN_WALL_SEGMENT_LENGTH_MM, setProjectOrigin } from "@/core/domain/wallOps";
 import { duplicateWallWithDependents } from "@/core/domain/wallDuplicate";
 import { translateWallInProject } from "@/core/domain/wallTranslate";
 import type { WallMoveCopySession } from "@/core/domain/wallMoveCopySession";
+import { initialLine2dSession, type Line2dSession } from "@/core/domain/line2dSession";
 import { initialRuler2dSession, type Ruler2dSession } from "@/core/domain/ruler2dSession";
 import type { LengthChange2dSession } from "@/core/domain/lengthChange2dSession";
 import { applyWallLengthChangeInProject } from "@/core/domain/wallLengthChangeApply";
@@ -95,14 +115,21 @@ import { validateProjectSchema } from "@/core/validation/validateProjectSchema";
 import type { LinearProfilePlacementMode } from "@/core/geometry/linearPlacementGeometry";
 import { isSceneCoordinateModalBlocking } from "@/shared/sceneCoordinateModalLock";
 
-export type ActiveTool = "select" | "pan" | "ruler" | "changeLength";
+export type ActiveTool = "select" | "pan" | "ruler" | "changeLength" | "line";
 
 /** Окно создано из модалки, ожидает привязку к стене (этап 2). */
 export interface PendingWindowPlacement {
   readonly openingId: string;
 }
+export type PendingDoorPlacementPhase = "pickWall" | "chooseSwing";
+
 export interface PendingDoorPlacement {
   readonly openingId: string;
+  readonly phase: PendingDoorPlacementPhase;
+  /** Этап выбора открывания: зафиксированная стена и левый край проёма, мм. */
+  readonly wallId?: string;
+  readonly leftAlongMm?: number;
+  readonly swingPreview?: DoorOpeningSwing;
 }
 
 export type WindowEditModalTab = "form" | "position" | "sip";
@@ -180,6 +207,8 @@ interface AppState {
   readonly wallDetailWallId: string | null;
   /** Замер расстояния на 2D (только при activeTool === "ruler"). */
   readonly ruler2dSession: Ruler2dSession | null;
+  /** Чертежная линия на 2D (только при activeTool === "line"). */
+  readonly line2dSession: Line2dSession | null;
   /** Изменение длины стены по торцу (только при activeTool === "changeLength"). */
   readonly lengthChange2dSession: LengthChange2dSession | null;
   /** Пробел: точный ввод Δ длины (мм) в режиме изменения длины. */
@@ -259,6 +288,7 @@ interface AppActions {
   clearPendingDoorPlacement: () => void;
   tryCommitPendingWindowPlacementAtWorld: (worldMm: { readonly x: number; readonly y: number }) => void;
   tryCommitPendingDoorPlacementAtWorld: (worldMm: { readonly x: number; readonly y: number }) => void;
+  updatePendingDoorSwingAtWorld: (worldMm: { readonly x: number; readonly y: number }) => void;
   closeWindowEditModal: () => void;
   applyWindowEditModal: (payload: SaveWindowParamsPayload) => void;
   closeDoorEditModal: () => void;
@@ -304,6 +334,18 @@ interface AppActions {
     worldMm: { readonly x: number; readonly y: number },
     viewport: ViewportTransform,
     opts?: { readonly altKey?: boolean },
+  ) => void;
+  /** Shift keydown: зафиксировать направление второй точки (стена / линейка / перенос). */
+  linearPlacementEngageShiftDirectionLock: (
+    cursorWorldMm: Point2D,
+    viewport: ViewportTransform,
+  ) => void;
+  /** Shift keyup: снять фиксацию направления. */
+  linearPlacementReleaseShiftDirectionLock: () => void;
+  /** Preview первой точки / начала координат: snap и маркер до клика. */
+  wallPlacementFirstPointHoverMove: (
+    worldMm: { readonly x: number; readonly y: number },
+    viewport: ViewportTransform,
   ) => void;
   wallPlacementPrimaryClick: (
     worldMm: { readonly x: number; readonly y: number },
@@ -351,6 +393,18 @@ interface AppActions {
   ) => void;
   /** Esc: сброс замера или выход из линейки. */
   ruler2dCancel: () => void;
+  line2dPreviewMove: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+    opts?: { readonly altKey?: boolean },
+  ) => void;
+  line2dPrimaryClick: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+    opts?: { readonly altKey?: boolean },
+  ) => void;
+  /** Esc: сброс черновика линии или выход из инструмента. */
+  line2dCancel: () => void;
   /** После выбора торца — начать перетаскивание (клик–движение–клик). */
   startLengthChange2dSession: (
     wallId: string,
@@ -413,6 +467,36 @@ function resolvePlacementSnap(
   });
 }
 
+function resolveWallPlacementSnapFromStore(
+  get: () => AppStore,
+  rawWorldMm: { readonly x: number; readonly y: number },
+  viewport: ViewportTransform | null,
+) {
+  const p0 = get().currentProject;
+  const e2 = p0.settings.editor2d;
+  return resolveWallPlacementToolSnap({
+    rawWorldMm,
+    viewport,
+    project: p0,
+    snapSettings: {
+      snapToVertex: e2.snapToVertex,
+      snapToEdge: e2.snapToEdge,
+      snapToGrid: e2.snapToGrid,
+    },
+    gridStepMm: p0.settings.gridStepMm,
+    linearPlacementMode: e2.linearPlacementMode,
+  });
+}
+
+function editor2dSnapSettings(project: Project) {
+  const e2 = project.settings.editor2d;
+  return {
+    snapToVertex: e2.snapToVertex,
+    snapToEdge: e2.snapToEdge,
+    snapToGrid: e2.snapToGrid,
+  };
+}
+
 function mergeViewState(
   project: Project,
   patch: Partial<Project["viewState"]>,
@@ -467,6 +551,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     openingMoveModeActive: false,
     wallDetailWallId: null,
     ruler2dSession: null,
+    line2dSession: null,
     lengthChange2dSession: null,
     lengthChangeCoordinateModalOpen: false,
     projectOriginMoveToolActive: false,
@@ -535,6 +620,7 @@ export const useAppStore = create<AppStore>((set, get) => {
             ...commonClear,
             openingMoveModeActive: s.openingMoveModeActive,
             ruler2dSession: null,
+            line2dSession: null,
             lengthChange2dSession: null,
             lengthChangeCoordinateModalOpen: false,
           };
@@ -545,6 +631,18 @@ export const useAppStore = create<AppStore>((set, get) => {
             ...commonClear,
             openingMoveModeActive: false,
             ruler2dSession: initialRuler2dSession(),
+            line2dSession: null,
+            lengthChange2dSession: null,
+            lengthChangeCoordinateModalOpen: false,
+          };
+        }
+        if (tool === "line") {
+          return {
+            activeTool: "line",
+            ...commonClear,
+            openingMoveModeActive: false,
+            ruler2dSession: null,
+            line2dSession: initialLine2dSession(),
             lengthChange2dSession: null,
             lengthChangeCoordinateModalOpen: false,
           };
@@ -555,6 +653,7 @@ export const useAppStore = create<AppStore>((set, get) => {
             ...commonClear,
             openingMoveModeActive: false,
             ruler2dSession: null,
+            line2dSession: null,
             lengthChange2dSession: null,
             lengthChangeCoordinateModalOpen: false,
           };
@@ -564,6 +663,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           ...commonClear,
           openingMoveModeActive: false,
           ruler2dSession: null,
+          line2dSession: null,
           lengthChange2dSession: null,
           lengthChangeCoordinateModalOpen: false,
         };
@@ -589,6 +689,9 @@ export const useAppStore = create<AppStore>((set, get) => {
         if (tab !== "2d" && s.pendingWindowPlacement) {
           proj = removeUnplacedWindowDraft(proj, s.pendingWindowPlacement.openingId);
         }
+        if (tab !== "2d" && s.pendingDoorPlacement) {
+          proj = removeUnplacedWindowDraft(proj, s.pendingDoorPlacement.openingId);
+        }
         if (tab !== "2d" && s.wallMoveCopySession?.mode === "copy") {
           proj = deleteEntitiesFromProject(proj, new Set([s.wallMoveCopySession.workingWallId]));
         }
@@ -597,7 +700,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           activeTool:
             tab === "2d"
               ? s.activeTool
-              : s.activeTool === "ruler" || s.activeTool === "changeLength"
+              : s.activeTool === "ruler" || s.activeTool === "changeLength" || s.activeTool === "line"
                 ? "select"
                 : s.activeTool,
           wallPlacementSession: tab === "2d" ? s.wallPlacementSession : null,
@@ -606,6 +709,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           addWallModalOpen: tab === "2d" ? s.addWallModalOpen : false,
           addWindowModalOpen: tab === "2d" ? s.addWindowModalOpen : false,
           pendingWindowPlacement: tab === "2d" ? s.pendingWindowPlacement : null,
+          pendingDoorPlacement: tab === "2d" ? s.pendingDoorPlacement : null,
           windowEditModal: tab === "2d" ? s.windowEditModal : null,
           wallCoordinateModalOpen: tab === "2d" ? s.wallCoordinateModalOpen : false,
           wallAnchorCoordinateModalOpen: tab === "2d" ? s.wallAnchorCoordinateModalOpen : false,
@@ -618,6 +722,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallMoveCopySession: tab === "2d" ? s.wallMoveCopySession : null,
           wallMoveCopyCoordinateModalOpen: tab === "2d" ? s.wallMoveCopyCoordinateModalOpen : false,
           ruler2dSession: tab === "2d" ? s.ruler2dSession : null,
+          line2dSession: tab === "2d" ? s.line2dSession : null,
           lengthChange2dSession: tab === "2d" ? s.lengthChange2dSession : null,
           lengthChangeCoordinateModalOpen: tab === "2d" ? s.lengthChangeCoordinateModalOpen : false,
           openingMoveModeActive: tab === "2d" ? s.openingMoveModeActive : false,
@@ -628,7 +733,10 @@ export const useAppStore = create<AppStore>((set, get) => {
               ? s.wallDetailWallId ?? s.currentProject.walls.find((w) => s.selectedEntityIds.includes(w.id))?.id ?? null
               : s.wallDetailWallId,
           currentProject: mergeViewState(
-            tab !== "2d" && (s.pendingWindowPlacement || s.wallMoveCopySession?.mode === "copy") ? proj : s.currentProject,
+            tab !== "2d" &&
+              (s.pendingWindowPlacement || s.pendingDoorPlacement || s.wallMoveCopySession?.mode === "copy")
+              ? proj
+              : s.currentProject,
             {
               activeTab: tab,
             },
@@ -873,7 +981,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({
         currentProject: r.project,
         addDoorModalOpen: false,
-        pendingDoorPlacement: { openingId: r.openingId },
+        pendingDoorPlacement: { openingId: r.openingId, phase: "pickWall" },
         dirty: true,
         lastError: null,
       });
@@ -959,23 +1067,82 @@ export const useAppStore = create<AppStore>((set, get) => {
       });
     },
     tryCommitPendingDoorPlacementAtWorld: (worldMm) => {
-      const pend = get().pendingDoorPlacement;
-      if (!pend) {
+      const pend0 = get().pendingDoorPlacement;
+      if (!pend0) {
         return;
       }
       const p0 = get().currentProject;
+      const v = get().viewport2d;
+      const sz = get().viewportCanvas2dPx;
+      const tol =
+        sz && sz.width > 0
+          ? Math.max(14, 22 / v.zoomPixelsPerMm)
+          : Math.max(14, 22 / Math.max(0.01, v.zoomPixelsPerMm));
       const layerSlice = narrowProjectToActiveLayer(p0);
-      const hit = pickClosestWallAlongPoint(worldMm, layerSlice.walls, Math.max(14, 22 / get().viewport2d.zoomPixelsPerMm));
-      if (!hit) {
-        set({ lastError: "Наведите курсор на стену и кликните по ней." });
+      const walls = layerSlice.walls;
+
+      if (pend0.phase === "pickWall") {
+        const hit = pickClosestWallAlongPoint(worldMm, walls, tol);
+        if (!hit) {
+          set({ lastError: "Наведите курсор на стену и кликните по ней." });
+          return;
+        }
+        const op = p0.openings.find((o) => o.id === pend0.openingId);
+        if (!op) {
+          set({ pendingDoorPlacement: null, lastError: null });
+          return;
+        }
+        if (op.kind !== "door") {
+          set({ pendingDoorPlacement: null, lastError: null });
+          return;
+        }
+        const wall = p0.walls.find((w) => w.id === hit.wallId);
+        if (!wall) {
+          set({ lastError: "Стена не найдена." });
+          return;
+        }
+        const rawLeft = offsetFromStartForCursorCentered(hit.alongMm, op.widthMm);
+        const left = clampPlacedOpeningLeftEdgeMm(wall, op.widthMm, rawLeft, p0, "door");
+        const vPl = validateWindowPlacementOnWall(wall, left, op.widthMm, p0, op.id, { openingKind: "door" });
+        if (!vPl.ok) {
+          set({ lastError: vPl.reason });
+          return;
+        }
+        const dots = doorCursorLocalDots(worldMm, wall, left, op.widthMm);
+        const swing0 = dots
+          ? resolveDoorSwingWithHysteresis(
+              dots.tDot,
+              dots.nDot,
+              op.doorSwing ?? "in_right",
+              DOOR_SWING_PICK_DEAD_ZONE_MM,
+            )
+          : (op.doorSwing ?? "in_right");
+        set({
+          pendingDoorPlacement: {
+            openingId: pend0.openingId,
+            phase: "chooseSwing",
+            wallId: wall.id,
+            leftAlongMm: left,
+            swingPreview: swing0,
+          },
+          lastError: null,
+        });
         return;
       }
-      const op = p0.openings.find((o) => o.id === pend.openingId);
-      if (!op) {
+
+      const pend = pend0;
+      if (pend.phase !== "chooseSwing" || pend.wallId == null || pend.leftAlongMm == null) {
         set({ pendingDoorPlacement: null, lastError: null });
         return;
       }
-      const placed = placeDraftDoorOnWall(p0, pend.openingId, hit.wallId, offsetFromStartForCursorCentered(hit.alongMm, op.widthMm));
+      const wall = p0.walls.find((w) => w.id === pend.wallId);
+      const op = p0.openings.find((o) => o.id === pend.openingId);
+      if (!wall || !op || op.kind !== "door") {
+        set({ pendingDoorPlacement: null, lastError: null });
+        return;
+      }
+      const swing = pend.swingPreview ?? op.doorSwing ?? "in_right";
+      const placed = placeDraftDoorOnWall(p0, pend.openingId, pend.wallId, pend.leftAlongMm, { doorSwing: swing });
       if ("error" in placed) {
         set({ lastError: placed.error });
         return;
@@ -986,6 +1153,37 @@ export const useAppStore = create<AppStore>((set, get) => {
         doorEditModal: { openingId: pend.openingId, initialTab: "position" },
         dirty: true,
         lastError: null,
+      });
+    },
+
+    updatePendingDoorSwingAtWorld: (worldMm) => {
+      set((s) => {
+        const pend = s.pendingDoorPlacement;
+        if (!pend || pend.phase !== "chooseSwing" || pend.wallId == null || pend.leftAlongMm == null) {
+          return {};
+        }
+        const wall = s.currentProject.walls.find((w) => w.id === pend.wallId);
+        const op = s.currentProject.openings.find((o) => o.id === pend.openingId);
+        if (!wall || !op || op.kind !== "door") {
+          return {};
+        }
+        const dots = doorCursorLocalDots(worldMm, wall, pend.leftAlongMm, op.widthMm);
+        if (!dots) {
+          return {};
+        }
+        const prevSwing = pend.swingPreview ?? op.doorSwing ?? "in_right";
+        const nextSwing = resolveDoorSwingWithHysteresis(
+          dots.tDot,
+          dots.nDot,
+          prevSwing,
+          DOOR_SWING_PICK_DEAD_ZONE_MM,
+        );
+        if (nextSwing === pend.swingPreview) {
+          return {};
+        }
+        return {
+          pendingDoorPlacement: { ...pend, swingPreview: nextSwing },
+        };
       });
     },
 
@@ -1292,6 +1490,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           previewEndMm: null,
           lastSnapKind: null,
           angleSnapLockedDeg: null,
+          shiftDirectionLockUnit: null,
+          shiftLockReferenceMm: null,
         },
         addWallModalOpen: false,
         addWindowModalOpen: false,
@@ -1339,6 +1539,8 @@ export const useAppStore = create<AppStore>((set, get) => {
             previewEndMm: null,
             lastSnapKind: null,
             angleSnapLockedDeg: null,
+            shiftDirectionLockUnit: null,
+            shiftLockReferenceMm: null,
           },
           wallCoordinateModalOpen: false,
           wallAnchorCoordinateModalOpen: false,
@@ -1363,6 +1565,30 @@ export const useAppStore = create<AppStore>((set, get) => {
       });
     },
 
+    wallPlacementFirstPointHoverMove: (worldMm, viewport) => {
+      const s = get().wallPlacementSession;
+      if (!s || s.firstPointMm != null) {
+        return;
+      }
+      if (s.phase !== "waitingFirstWallPoint" && s.phase !== "waitingOriginAndFirst") {
+        return;
+      }
+      if (isSceneCoordinateModalBlocking(get())) {
+        return;
+      }
+      if (get().wallAnchorPlacementModeActive && get().wallPlacementAnchorMm != null) {
+        return;
+      }
+      const snap = resolveWallPlacementSnapFromStore(get, worldMm, viewport);
+      set({
+        wallPlacementSession: {
+          ...s,
+          previewEndMm: snap.point,
+          lastSnapKind: snap.kind,
+        },
+      });
+    },
+
     wallPlacementPreviewMove: (worldMm, viewport, opts) => {
       const s = get().wallPlacementSession;
       if (!s || s.phase !== "waitingSecondPoint" || !s.firstPointMm) {
@@ -1371,27 +1597,236 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (isSceneCoordinateModalBlocking(get())) {
         return;
       }
-      const snap = resolvePlacementSnap(get, worldMm, viewport);
-      let previewEnd = snap.point;
-      const skipAngleSnap = get().wallCoordinateModalOpen || Boolean(opts?.altKey);
-      let angleSnapLocked: number | null = s.angleSnapLockedDeg ?? null;
-
-      if (!skipAngleSnap) {
-        const r = applyWallDirectionAngleSnapToPoint(s.firstPointMm, previewEnd, angleSnapLocked, opts);
-        previewEnd = r.point;
-        angleSnapLocked = r.nextLockedDeg;
-      } else {
-        angleSnapLocked = null;
-      }
-
+      const p0 = get().currentProject;
+      const e2 = p0.settings.editor2d;
+      const r = computeLinearSecondPointPreview({
+        anchor: s.firstPointMm,
+        rawWorldMm: worldMm,
+        viewport,
+        project: p0,
+        snapSettings: editor2dSnapSettings(p0),
+        gridStepMm: p0.settings.gridStepMm,
+        shiftDirectionLockUnit: s.shiftDirectionLockUnit,
+        angleSnapLockedDeg: s.angleSnapLockedDeg,
+        skipAngleSnap: get().wallCoordinateModalOpen || Boolean(opts?.altKey),
+        altKey: Boolean(opts?.altKey),
+        shiftLockFindHit: (args) =>
+          findWallPlacementShiftLockSnapHit({
+            ...args,
+            linearPlacementMode: e2.linearPlacementMode,
+          }),
+      });
       set({
         wallPlacementSession: {
           ...s,
-          previewEndMm: previewEnd,
-          lastSnapKind: snap.kind,
-          angleSnapLockedDeg: angleSnapLocked,
+          previewEndMm: r.previewEnd,
+          lastSnapKind: r.lastSnapKind,
+          angleSnapLockedDeg: r.angleSnapLockedDeg,
+          shiftLockReferenceMm: r.shiftLockReferenceMm,
         },
       });
+    },
+
+    linearPlacementEngageShiftDirectionLock: (cursorWorldMm, viewport) => {
+      if (isSceneCoordinateModalBlocking(get())) {
+        return;
+      }
+      const p0 = get().currentProject;
+      const e2 = p0.settings.editor2d;
+      const snap = editor2dSnapSettings(p0);
+
+      const ws = get().wallPlacementSession;
+      if (ws?.phase === "waitingSecondPoint" && ws.firstPointMm && !get().wallCoordinateModalOpen) {
+        const u = computeShiftDirectionLockUnit({
+          anchor: ws.firstPointMm,
+          previewEnd: ws.previewEndMm,
+          cursorWorldMm,
+          viewport,
+          project: p0,
+          snapSettings: snap,
+          gridStepMm: p0.settings.gridStepMm,
+          resolveRawSnap: (raw) =>
+            resolveWallPlacementToolSnap({
+              rawWorldMm: raw,
+              viewport,
+              project: p0,
+              snapSettings: snap,
+              gridStepMm: p0.settings.gridStepMm,
+              linearPlacementMode: e2.linearPlacementMode,
+            }).point,
+        });
+        if (!u) {
+          return;
+        }
+        set({
+          wallPlacementSession: {
+            ...ws,
+            shiftDirectionLockUnit: u,
+            shiftLockReferenceMm: null,
+          },
+        });
+        return;
+      }
+
+      const lcEng = get().lengthChange2dSession;
+      if (get().activeTool === "changeLength" && lcEng && !get().lengthChangeCoordinateModalOpen) {
+        const uLc =
+          unitDirectionOrNull(lcEng.fixedEndMm, lcEng.previewMovingMm) ?? {
+            x: lcEng.axisUx,
+            y: lcEng.axisUy,
+          };
+        set({
+          lengthChange2dSession: {
+            ...lcEng,
+            shiftDirectionLockUnit: uLc,
+            shiftLockReferenceMm: null,
+          },
+        });
+        return;
+      }
+
+      if (get().activeTool === "ruler") {
+        const rs = get().ruler2dSession;
+        if (rs?.phase === "stretching" && rs.firstMm) {
+          const u = computeShiftDirectionLockUnit({
+            anchor: rs.firstMm,
+            previewEnd: rs.previewEndMm,
+            cursorWorldMm,
+            viewport,
+            project: p0,
+            snapSettings: snap,
+            gridStepMm: p0.settings.gridStepMm,
+          });
+          if (!u) {
+            return;
+          }
+          set({
+            ruler2dSession: {
+              ...rs,
+              shiftDirectionLockUnit: u,
+              shiftLockReferenceMm: null,
+            },
+          });
+        }
+        return;
+      }
+
+      if (get().activeTool === "line") {
+        const ls = get().line2dSession;
+        if (ls?.phase === "stretching" && ls.firstMm) {
+          const u = computeShiftDirectionLockUnit({
+            anchor: ls.firstMm,
+            previewEnd: ls.previewEndMm,
+            cursorWorldMm,
+            viewport,
+            project: p0,
+            snapSettings: snap,
+            gridStepMm: p0.settings.gridStepMm,
+          });
+          if (!u) {
+            return;
+          }
+          set({
+            line2dSession: {
+              ...ls,
+              shiftDirectionLockUnit: u,
+              shiftLockReferenceMm: null,
+            },
+          });
+        }
+        return;
+      }
+
+      const mc = get().wallMoveCopySession;
+      if (mc?.phase === "pickTarget" && mc.anchorWorldMm) {
+        const u = computeShiftDirectionLockUnit({
+          anchor: mc.anchorWorldMm,
+          previewEnd: mc.previewTargetMm,
+          cursorWorldMm,
+          viewport,
+          project: p0,
+          snapSettings: snap,
+          gridStepMm: p0.settings.gridStepMm,
+        });
+        if (!u) {
+          return;
+        }
+        set({
+          wallMoveCopySession: {
+            ...mc,
+            shiftDirectionLockUnit: u,
+            shiftLockReferenceMm: null,
+          },
+        });
+      }
+    },
+
+    linearPlacementReleaseShiftDirectionLock: () => {
+      const ws = get().wallPlacementSession;
+      const rs = get().ruler2dSession;
+      const ls = get().line2dSession;
+      const mc = get().wallMoveCopySession;
+      const lc = get().lengthChange2dSession;
+      const wClear =
+        ws && (ws.shiftDirectionLockUnit != null || ws.shiftLockReferenceMm != null)
+          ? {
+              wallPlacementSession: {
+                ...ws,
+                shiftDirectionLockUnit: null,
+                shiftLockReferenceMm: null,
+              },
+            }
+          : {};
+      const rClear =
+        rs && (rs.shiftDirectionLockUnit != null || rs.shiftLockReferenceMm != null)
+          ? {
+              ruler2dSession: {
+                ...rs,
+                shiftDirectionLockUnit: null,
+                shiftLockReferenceMm: null,
+              },
+            }
+          : {};
+      const lLineClear =
+        ls && (ls.shiftDirectionLockUnit != null || ls.shiftLockReferenceMm != null)
+          ? {
+              line2dSession: {
+                ...ls,
+                shiftDirectionLockUnit: null,
+                shiftLockReferenceMm: null,
+              },
+            }
+          : {};
+      const mClear =
+        mc && (mc.shiftDirectionLockUnit != null || mc.shiftLockReferenceMm != null)
+          ? {
+              wallMoveCopySession: {
+                ...mc,
+                shiftDirectionLockUnit: null,
+                shiftLockReferenceMm: null,
+              },
+            }
+          : {};
+      const lcClear =
+        lc && (lc.shiftDirectionLockUnit != null || lc.shiftLockReferenceMm != null)
+          ? {
+              lengthChange2dSession: {
+                ...lc,
+                shiftDirectionLockUnit: null,
+                shiftLockReferenceMm: null,
+              },
+            }
+          : {};
+      if (
+        Object.keys(wClear).length +
+          Object.keys(rClear).length +
+          Object.keys(lLineClear).length +
+          Object.keys(mClear).length +
+          Object.keys(lcClear).length >
+        0
+      ) {
+        set({ ...wClear, ...rClear, ...lLineClear, ...mClear, ...lcClear });
+      }
     },
 
     wallPlacementPrimaryClick: (worldMm, viewport, opts) => {
@@ -1406,7 +1841,31 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (!session) {
         return;
       }
-      const snap = resolvePlacementSnap(get, worldMm, viewport);
+
+      if (session.phase === "waitingSecondPoint" && session.firstPointMm) {
+        const e2 = p0.settings.editor2d;
+        const r = computeLinearSecondPointPreview({
+          anchor: session.firstPointMm,
+          rawWorldMm: worldMm,
+          viewport,
+          project: p0,
+          snapSettings: editor2dSnapSettings(p0),
+          gridStepMm: p0.settings.gridStepMm,
+          shiftDirectionLockUnit: session.shiftDirectionLockUnit,
+          angleSnapLockedDeg: session.angleSnapLockedDeg,
+          skipAngleSnap: Boolean(opts?.altKey),
+          altKey: Boolean(opts?.altKey),
+          shiftLockFindHit: (args) =>
+            findWallPlacementShiftLockSnapHit({
+              ...args,
+              linearPlacementMode: e2.linearPlacementMode,
+            }),
+        });
+        get().wallPlacementCompleteSecondPoint(r.previewEnd);
+        return;
+      }
+
+      const snap = resolveWallPlacementSnapFromStore(get, worldMm, viewport);
       let pt = snap.point;
 
       const anchorOn = get().wallAnchorPlacementModeActive;
@@ -1456,6 +1915,8 @@ export const useAppStore = create<AppStore>((set, get) => {
             previewEndMm: pt,
             lastSnapKind: snap.kind,
             angleSnapLockedDeg: null,
+            shiftDirectionLockUnit: null,
+            shiftLockReferenceMm: null,
           },
           ...clearAfterWallStart,
           dirty: true,
@@ -1473,24 +1934,13 @@ export const useAppStore = create<AppStore>((set, get) => {
             previewEndMm: pt,
             lastSnapKind: snap.kind,
             angleSnapLockedDeg: null,
+            shiftDirectionLockUnit: null,
+            shiftLockReferenceMm: null,
           },
           ...clearAfterWallStart,
           lastError: null,
         });
         return;
-      }
-
-      if (session.phase === "waitingSecondPoint") {
-        let finalPt = pt;
-        if (!opts?.altKey && session.firstPointMm) {
-          finalPt = applyWallDirectionAngleSnapToPoint(
-            session.firstPointMm,
-            pt,
-            session.angleSnapLockedDeg ?? null,
-            {},
-          ).point;
-        }
-        get().wallPlacementCompleteSecondPoint(finalPt);
       }
     },
 
@@ -1522,6 +1972,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           previewEndMm: null,
           lastSnapKind: null,
           angleSnapLockedDeg: null,
+          shiftDirectionLockUnit: null,
+          shiftLockReferenceMm: null,
         },
         wallCoordinateModalOpen: false,
         wallAnchorCoordinateModalOpen: false,
@@ -1577,7 +2029,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (s.phase !== "waitingFirstWallPoint" && s.phase !== "waitingOriginAndFirst") {
         return;
       }
-      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      const snap = resolveWallPlacementSnapFromStore(get, worldMm, viewport);
       let previewEnd = snap.point;
       let angleLocked = get().wallPlacementAnchorAngleSnapLockedDeg ?? null;
       if (!opts?.altKey) {
@@ -1647,6 +2099,8 @@ export const useAppStore = create<AppStore>((set, get) => {
             previewEndMm: pt,
             lastSnapKind: "none",
             angleSnapLockedDeg: null,
+            shiftDirectionLockUnit: null,
+            shiftLockReferenceMm: null,
           },
           ...clearAfterStart,
           dirty: true,
@@ -1662,6 +2116,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           previewEndMm: pt,
           lastSnapKind: "none",
           angleSnapLockedDeg: null,
+          shiftDirectionLockUnit: null,
+          shiftLockReferenceMm: null,
         },
         ...clearAfterStart,
         lastError: null,
@@ -1720,6 +2176,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           previewTargetMm: null,
           lastSnapKind: null,
           angleSnapLockedDeg: null,
+          shiftDirectionLockUnit: null,
+          shiftLockReferenceMm: null,
         },
         selectedEntityIds: [wallId],
         lastError: null,
@@ -1750,6 +2208,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           previewTargetMm: null,
           lastSnapKind: null,
           angleSnapLockedDeg: null,
+          shiftDirectionLockUnit: null,
+          shiftLockReferenceMm: null,
         },
         selectedEntityIds: [r.newWallId],
         dirty: true,
@@ -1785,23 +2245,26 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (isSceneCoordinateModalBlocking(get())) {
         return;
       }
-      const snap = resolvePlacementSnap(get, worldMm, viewport);
-      let previewEnd = snap.point;
-      const skipAngleSnap = get().wallMoveCopyCoordinateModalOpen || Boolean(opts?.altKey);
-      let angleSnapLocked: number | null = s.angleSnapLockedDeg ?? null;
-      if (!skipAngleSnap) {
-        const r = applyWallDirectionAngleSnapToPoint(s.anchorWorldMm, previewEnd, angleSnapLocked, opts);
-        previewEnd = r.point;
-        angleSnapLocked = r.nextLockedDeg;
-      } else {
-        angleSnapLocked = null;
-      }
+      const p0 = get().currentProject;
+      const r = computeLinearSecondPointPreview({
+        anchor: s.anchorWorldMm,
+        rawWorldMm: worldMm,
+        viewport,
+        project: p0,
+        snapSettings: editor2dSnapSettings(p0),
+        gridStepMm: p0.settings.gridStepMm,
+        shiftDirectionLockUnit: s.shiftDirectionLockUnit,
+        angleSnapLockedDeg: s.angleSnapLockedDeg,
+        skipAngleSnap: get().wallMoveCopyCoordinateModalOpen || Boolean(opts?.altKey),
+        altKey: Boolean(opts?.altKey),
+      });
       set({
         wallMoveCopySession: {
           ...s,
-          previewTargetMm: previewEnd,
-          lastSnapKind: snap.kind,
-          angleSnapLockedDeg: angleSnapLocked,
+          previewTargetMm: r.previewEnd,
+          lastSnapKind: r.lastSnapKind,
+          angleSnapLockedDeg: r.angleSnapLockedDeg,
+          shiftLockReferenceMm: r.shiftLockReferenceMm,
         },
       });
     },
@@ -1830,6 +2293,8 @@ export const useAppStore = create<AppStore>((set, get) => {
             previewTargetMm: point,
             lastSnapKind: snap.kind,
             angleSnapLockedDeg: null,
+            shiftDirectionLockUnit: null,
+            shiftLockReferenceMm: null,
           },
           lastError: null,
         });
@@ -1838,12 +2303,20 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (!s.anchorWorldMm) {
         return;
       }
-      const snap = resolvePlacementSnap(get, worldMm, viewport);
-      let finalPt = snap.point;
-      if (!opts?.altKey) {
-        finalPt = applyWallDirectionAngleSnapToPoint(s.anchorWorldMm, finalPt, s.angleSnapLockedDeg ?? null, {}).point;
-      }
-      get().wallMoveCopyCommitTarget(finalPt);
+      const p0 = get().currentProject;
+      const r = computeLinearSecondPointPreview({
+        anchor: s.anchorWorldMm,
+        rawWorldMm: worldMm,
+        viewport,
+        project: p0,
+        snapSettings: editor2dSnapSettings(p0),
+        gridStepMm: p0.settings.gridStepMm,
+        shiftDirectionLockUnit: s.shiftDirectionLockUnit,
+        angleSnapLockedDeg: s.angleSnapLockedDeg,
+        skipAngleSnap: Boolean(opts?.altKey),
+        altKey: Boolean(opts?.altKey),
+      });
+      get().wallMoveCopyCommitTarget(r.previewEnd);
     },
 
     wallMoveCopyCommitTarget: (finalMm) => {
@@ -1903,22 +2376,26 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (!rs || rs.phase !== "stretching" || !rs.firstMm) {
         return;
       }
-      const snap = resolvePlacementSnap(get, worldMm, viewport);
-      let previewEnd = snap.point;
-      let angleLocked: number | null = rs.angleSnapLockedDeg ?? null;
-      if (!opts?.altKey) {
-        const r = applyWallDirectionAngleSnapToPoint(rs.firstMm, previewEnd, angleLocked, opts);
-        previewEnd = r.point;
-        angleLocked = r.nextLockedDeg;
-      } else {
-        angleLocked = null;
-      }
+      const p0 = get().currentProject;
+      const r = computeLinearSecondPointPreview({
+        anchor: rs.firstMm,
+        rawWorldMm: worldMm,
+        viewport,
+        project: p0,
+        snapSettings: editor2dSnapSettings(p0),
+        gridStepMm: p0.settings.gridStepMm,
+        shiftDirectionLockUnit: rs.shiftDirectionLockUnit,
+        angleSnapLockedDeg: rs.angleSnapLockedDeg,
+        skipAngleSnap: Boolean(opts?.altKey),
+        altKey: Boolean(opts?.altKey),
+      });
       set({
         ruler2dSession: {
           ...rs,
-          previewEndMm: previewEnd,
-          lastSnapKind: snap.kind,
-          angleSnapLockedDeg: angleLocked,
+          previewEndMm: r.previewEnd,
+          lastSnapKind: r.lastSnapKind,
+          angleSnapLockedDeg: r.angleSnapLockedDeg,
+          shiftLockReferenceMm: r.shiftLockReferenceMm,
         },
       });
     },
@@ -1943,6 +2420,8 @@ export const useAppStore = create<AppStore>((set, get) => {
             previewEndMm: pt,
             lastSnapKind: snap.kind,
             angleSnapLockedDeg: null,
+            shiftDirectionLockUnit: null,
+            shiftLockReferenceMm: null,
           },
           lastError: null,
         });
@@ -1950,18 +2429,29 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
 
       if (rs.phase === "stretching" && rs.firstMm) {
-        let finalPt = snap.point;
-        if (!opts?.altKey) {
-          finalPt = applyWallDirectionAngleSnapToPoint(rs.firstMm, finalPt, rs.angleSnapLockedDeg ?? null, {}).point;
-        }
+        const p0 = get().currentProject;
+        const r = computeLinearSecondPointPreview({
+          anchor: rs.firstMm,
+          rawWorldMm: worldMm,
+          viewport,
+          project: p0,
+          snapSettings: editor2dSnapSettings(p0),
+          gridStepMm: p0.settings.gridStepMm,
+          shiftDirectionLockUnit: rs.shiftDirectionLockUnit,
+          angleSnapLockedDeg: rs.angleSnapLockedDeg,
+          skipAngleSnap: Boolean(opts?.altKey),
+          altKey: Boolean(opts?.altKey),
+        });
         set({
           ruler2dSession: {
             phase: "done",
             firstMm: rs.firstMm,
-            secondMm: finalPt,
-            previewEndMm: finalPt,
-            lastSnapKind: snap.kind,
+            secondMm: r.previewEnd,
+            previewEndMm: r.previewEnd,
+            lastSnapKind: r.lastSnapKind,
             angleSnapLockedDeg: null,
+            shiftDirectionLockUnit: null,
+            shiftLockReferenceMm: null,
           },
           lastError: null,
         });
@@ -1977,6 +2467,8 @@ export const useAppStore = create<AppStore>((set, get) => {
             previewEndMm: pt,
             lastSnapKind: snap.kind,
             angleSnapLockedDeg: null,
+            shiftDirectionLockUnit: null,
+            shiftLockReferenceMm: null,
           },
           lastError: null,
         });
@@ -1997,6 +2489,119 @@ export const useAppStore = create<AppStore>((set, get) => {
         return;
       }
       set({ ruler2dSession: initialRuler2dSession(), lastError: null });
+    },
+
+    line2dPreviewMove: (worldMm, viewport, opts) => {
+      if (get().activeTool !== "line") {
+        return;
+      }
+      const ls = get().line2dSession;
+      if (!ls || ls.phase !== "stretching" || !ls.firstMm) {
+        return;
+      }
+      const p0 = get().currentProject;
+      const r = computeLinearSecondPointPreview({
+        anchor: ls.firstMm,
+        rawWorldMm: worldMm,
+        viewport,
+        project: p0,
+        snapSettings: editor2dSnapSettings(p0),
+        gridStepMm: p0.settings.gridStepMm,
+        shiftDirectionLockUnit: ls.shiftDirectionLockUnit,
+        angleSnapLockedDeg: ls.angleSnapLockedDeg,
+        skipAngleSnap: Boolean(opts?.altKey),
+        altKey: Boolean(opts?.altKey),
+      });
+      set({
+        line2dSession: {
+          ...ls,
+          previewEndMm: r.previewEnd,
+          lastSnapKind: r.lastSnapKind,
+          angleSnapLockedDeg: r.angleSnapLockedDeg,
+          shiftLockReferenceMm: r.shiftLockReferenceMm,
+        },
+      });
+    },
+
+    line2dPrimaryClick: (worldMm, viewport, opts) => {
+      if (get().activeTool !== "line") {
+        return;
+      }
+      const ls = get().line2dSession;
+      if (!ls) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      const pt = snap.point;
+
+      if (ls.phase === "pickFirst") {
+        set({
+          line2dSession: {
+            phase: "stretching",
+            firstMm: pt,
+            previewEndMm: pt,
+            lastSnapKind: snap.kind,
+            angleSnapLockedDeg: null,
+            shiftDirectionLockUnit: null,
+            shiftLockReferenceMm: null,
+          },
+          lastError: null,
+        });
+        return;
+      }
+
+      if (ls.phase === "stretching" && ls.firstMm) {
+        const p0 = get().currentProject;
+        const r = computeLinearSecondPointPreview({
+          anchor: ls.firstMm,
+          rawWorldMm: worldMm,
+          viewport,
+          project: p0,
+          snapSettings: editor2dSnapSettings(p0),
+          gridStepMm: p0.settings.gridStepMm,
+          shiftDirectionLockUnit: ls.shiftDirectionLockUnit,
+          angleSnapLockedDeg: ls.angleSnapLockedDeg,
+          skipAngleSnap: Boolean(opts?.altKey),
+          altKey: Boolean(opts?.altKey),
+        });
+        const end = r.previewEnd;
+        const dx = end.x - ls.firstMm.x;
+        const dy = end.y - ls.firstMm.y;
+        if (Math.hypot(dx, dy) < MIN_PLAN_LINE_LENGTH_MM) {
+          set({ lastError: "Сегмент слишком короткий." });
+          return;
+        }
+        const id = newEntityId();
+        const layerId = get().getActiveLayerIdForNewEntities();
+        const line: PlanLine = { id, layerId, start: { x: ls.firstMm.x, y: ls.firstMm.y }, end: { x: end.x, y: end.y } };
+        const nextProject = touchProjectMeta({
+          ...p0,
+          planLines: [...p0.planLines, line],
+        });
+        set({
+          currentProject: nextProject,
+          line2dSession: initialLine2dSession(),
+          selectedEntityIds: [id],
+          dirty: true,
+          lastError: null,
+        });
+      }
+    },
+
+    line2dCancel: () => {
+      if (get().activeTool !== "line") {
+        return;
+      }
+      const ls = get().line2dSession;
+      if (!ls) {
+        set({ activeTool: "select", line2dSession: null, lastError: null });
+        return;
+      }
+      if (ls.phase === "pickFirst") {
+        set({ activeTool: "select", line2dSession: null, lastError: null });
+        return;
+      }
+      set({ line2dSession: initialLine2dSession(), lastError: null });
     },
 
     startLengthChange2dSession: (wallId, movingEnd, worldMm, viewport) => {
@@ -2030,12 +2635,14 @@ export const useAppStore = create<AppStore>((set, get) => {
           initialLengthMm: wallLengthMm(wall),
           previewMovingMm: { x: pm.x, y: pm.y },
           lastSnapKind: snap.kind,
+          shiftDirectionLockUnit: null,
+          shiftLockReferenceMm: null,
         },
         lastError: null,
       });
     },
 
-    lengthChange2dPreviewMove: (worldMm, viewport) => {
+    lengthChange2dPreviewMove: (worldMm, viewport, opts) => {
       if (get().activeTool !== "changeLength") {
         return;
       }
@@ -2046,20 +2653,26 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (isSceneCoordinateModalBlocking(get())) {
         return;
       }
-      const snap = resolvePlacementSnap(get, worldMm, viewport);
-      const L = lengthFromSnappedPointForWallLengthEdit(
-        sess.fixedEndMm,
-        sess.axisUx,
-        sess.axisUy,
-        snap.point,
-        MIN_WALL_SEGMENT_LENGTH_MM,
-      );
-      const pm = movingEndpointForLengthMm(sess.fixedEndMm, sess.axisUx, sess.axisUy, L);
+      const p0 = get().currentProject;
+      const r = computeLengthChangePreviewAlongAxis({
+        fixedEndMm: sess.fixedEndMm,
+        axisUx: sess.axisUx,
+        axisUy: sess.axisUy,
+        rawWorldMm: worldMm,
+        viewport,
+        project: p0,
+        snapSettings: editor2dSnapSettings(p0),
+        gridStepMm: p0.settings.gridStepMm,
+        shiftDirectionLockUnit: sess.shiftDirectionLockUnit,
+        minLenMm: MIN_WALL_SEGMENT_LENGTH_MM,
+        altKey: Boolean(opts?.altKey),
+      });
       set({
         lengthChange2dSession: {
           ...sess,
-          previewMovingMm: { x: pm.x, y: pm.y },
-          lastSnapKind: snap.kind,
+          previewMovingMm: r.previewMovingMm,
+          lastSnapKind: r.lastSnapKind,
+          shiftLockReferenceMm: r.shiftLockReferenceMm,
         },
         lastError: null,
       });

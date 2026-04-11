@@ -45,7 +45,7 @@ function wallStrokeAndFillColor(wall: Wall, project: Project): { stroke: number;
   return { stroke: fill, fill };
 }
 
-function drawDoorSwing2d(
+export function drawDoorSwing2d(
   g: Graphics,
   wall: Wall,
   leftAlongMm: number,

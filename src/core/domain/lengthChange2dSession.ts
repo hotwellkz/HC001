@@ -18,4 +18,8 @@ export interface LengthChange2dSession {
   /** Текущее положение двигаемого торца (мм), вдоль оси. */
   readonly previewMovingMm: Point2D;
   readonly lastSnapKind: SnapKind | null;
+  /** Пока зажат Shift после фиксации: направление изменения длины (совпадает с осью сегмента). */
+  readonly shiftDirectionLockUnit: Point2D | null;
+  /** Опорная точка Q при Shift-lock snap. */
+  readonly shiftLockReferenceMm: Point2D | null;
 }

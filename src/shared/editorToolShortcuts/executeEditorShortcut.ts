@@ -22,6 +22,9 @@ export function executeEditorShortcut(actionId: EditorShortcutActionId): void {
     case "toolRuler":
       store.setActiveTool("ruler");
       return;
+    case "toolLine":
+      store.setActiveTool("line");
+      return;
     case "editSelectedObject":
       projectCommands.openSelectedObjectEditor();
       return;

@@ -28,6 +28,10 @@ export interface WallPlacementSession {
    * null — нет активной защёлки.
    */
   readonly angleSnapLockedDeg: number | null;
+  /** Пока зажат Shift: зафиксированное направление (единичный вектор в плоскости XY). */
+  readonly shiftDirectionLockUnit: Point2D | null;
+  /** Опорная точка Q для snap в режиме Shift (подсветка и проекция). */
+  readonly shiftLockReferenceMm: Point2D | null;
 }
 
 export function initialWallPlacementPhase(project: Project): WallPlacementPhase {

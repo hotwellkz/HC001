@@ -35,11 +35,17 @@
 
 .ed2d-anchor-crosshair__v,
 .ed2d-anchor-crosshair__h {
-  stroke: rgba(28, 30, 34, 0.88);
+  stroke: color-mix(in srgb, var(--color-text-primary, #1c1e22) 78%, transparent);
   stroke-width: 1px;
   stroke-linecap: butt;
   vector-effect: non-scaling-stroke;
   shape-rendering: crispEdges;
+}
+
+/** Активная привязка к стене / сетке — спокойный акцент. */
+.ed2d-anchor-crosshair[data-snap-active="1"] .ed2d-anchor-crosshair__v,
+.ed2d-anchor-crosshair[data-snap-active="1"] .ed2d-anchor-crosshair__h {
+  stroke: color-mix(in srgb, var(--color-accent, #0d9488) 82%, var(--color-text-primary, #1c1e22));
 }
 
 .ed2d-wall-coord-hud {

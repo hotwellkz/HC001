@@ -17,4 +17,6 @@ export interface WallMoveCopySession {
   readonly previewTargetMm: Point2D | null;
   readonly lastSnapKind: SnapKind | null;
   readonly angleSnapLockedDeg: number | null;
+  readonly shiftDirectionLockUnit: Point2D | null;
+  readonly shiftLockReferenceMm: Point2D | null;
 }

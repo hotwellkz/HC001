@@ -1,12 +1,11 @@
 import type { Point2D } from "../geometry/types";
 import type { SnapKind } from "../geometry/snap2d";
 
-export type Ruler2dPhase = "pickFirst" | "stretching" | "done";
+export type Line2dPhase = "pickFirst" | "stretching";
 
-export interface Ruler2dSession {
-  readonly phase: Ruler2dPhase;
+export interface Line2dSession {
+  readonly phase: Line2dPhase;
   readonly firstMm: Point2D | null;
-  readonly secondMm: Point2D | null;
   readonly previewEndMm: Point2D | null;
   readonly lastSnapKind: SnapKind | null;
   readonly angleSnapLockedDeg: number | null;
@@ -14,11 +13,10 @@ export interface Ruler2dSession {
   readonly shiftLockReferenceMm: Point2D | null;
 }
 
-export function initialRuler2dSession(): Ruler2dSession {
+export function initialLine2dSession(): Line2dSession {
   return {
     phase: "pickFirst",
     firstMm: null,
-    secondMm: null,
     previewEndMm: null,
     lastSnapKind: null,
     angleSnapLockedDeg: null,

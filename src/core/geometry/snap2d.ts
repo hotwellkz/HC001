@@ -27,6 +27,8 @@ export interface SnapResult2d {
   readonly kind: SnapKind;
   /** Стена, к кромке которой привязались (edge). */
   readonly wallId?: string;
+  /** Линия чертежа (edge). */
+  readonly planLineId?: string;
 }
 
 /** Слои, по геометрии которых разрешена привязка: активный + видимые контекстные. */
@@ -67,7 +69,7 @@ export function closestPointOnSegment(
 const ENDPOINT_EPS = 1e-5;
 
 /** Четыре угла полосы стены в плане (мм) — та же геометрия, что и в 2D-отрисовке. */
-function wallStripQuadCornersMm(
+export function wallStripQuadCornersMm(
   sx: number,
   sy: number,
   ex: number,
@@ -165,6 +167,7 @@ export function resolveSnap2d(input: {
 
   const layerIds = layerIdsForSnapGeometry(project);
   const walls = project.walls.filter((w) => layerIds.has(w.layerId));
+  const planLines = project.planLines.filter((l) => layerIds.has(l.layerId));
 
   /** Лучший кандидат в категории: минимальная экранная дистанция. */
   let bestVertex: { readonly point: Point2D; readonly dist: number } | null = null;
@@ -177,12 +180,25 @@ export function resolveSnap2d(input: {
         bestVertex = { point: { x: pt.x, y: pt.y }, dist: d };
       }
     }
+    for (const pl of planLines) {
+      for (const pt of [pl.start, pl.end]) {
+        const d = screenDistancePx(raw, pt, viewport);
+        if (d <= SNAP_VERTEX_PX && (!bestVertex || d < bestVertex.dist)) {
+          bestVertex = { point: { x: pt.x, y: pt.y }, dist: d };
+        }
+      }
+    }
     if (bestVertex) {
       return { point: bestVertex.point, kind: "vertex" };
     }
   }
 
-  let bestEdge: { readonly point: Point2D; readonly dist: number; readonly wallId: string } | null = null;
+  let bestEdge: {
+    readonly point: Point2D;
+    readonly dist: number;
+    readonly wallId?: string;
+    readonly planLineId?: string;
+  } | null = null;
 
   if (snapSettings.snapToEdge) {
     for (const w of walls) {
@@ -195,8 +211,23 @@ export function resolveSnap2d(input: {
         bestEdge = { point: { x: q.x, y: q.y }, dist: d, wallId: w.id };
       }
     }
+    for (const pl of planLines) {
+      const { point: q, t } = closestPointOnSegment(raw, pl.start, pl.end);
+      if (t <= ENDPOINT_EPS || t >= 1 - ENDPOINT_EPS) {
+        continue;
+      }
+      const d = screenDistancePx(raw, q, viewport);
+      if (d <= SNAP_EDGE_PX && (!bestEdge || d < bestEdge.dist)) {
+        bestEdge = { point: { x: q.x, y: q.y }, dist: d, planLineId: pl.id };
+      }
+    }
     if (bestEdge) {
-      return { point: bestEdge.point, kind: "edge", wallId: bestEdge.wallId };
+      return {
+        point: bestEdge.point,
+        kind: "edge",
+        wallId: bestEdge.wallId,
+        planLineId: bestEdge.planLineId,
+      };
     }
   }
 

@@ -45,6 +45,7 @@ export function createEmptyProject(): Project {
     activeLayerId: layerId,
     visibleLayerIds: [],
     walls: [],
+    planLines: [],
     wallCalculations: [],
     wallJoints: [],
     openings: [],

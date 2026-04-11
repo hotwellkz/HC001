@@ -12,6 +12,7 @@ import type { Profile } from "./profile";
 import type { ProjectSettings } from "./settings";
 import type { ViewState } from "./viewState";
 import type { Point2D } from "../geometry/types";
+import type { PlanLine } from "./planLine";
 import type { Wall } from "./wall";
 import type { WallCalculationResult } from "./wallCalculation";
 import type { WallJoint } from "./wallJoint";
@@ -25,6 +26,8 @@ export interface Project {
   /** Дополнительные слои, показываемые в 2D поверх контекста; активный слой не включается. */
   readonly visibleLayerIds: readonly string[];
   readonly walls: readonly Wall[];
+  /** Вспомогательные линии чертежа (2D), не влияют на 3D и расчёты. */
+  readonly planLines: readonly PlanLine[];
   /** Результаты производственного расчёта по стенам (SIP-раскладка, пиломатериалы). */
   readonly wallCalculations: readonly WallCalculationResult[];
   /** Узлы соединения стен (углы, примыкания); персистится в snapshot. */

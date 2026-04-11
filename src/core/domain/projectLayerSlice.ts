@@ -19,12 +19,14 @@ export function narrowProjectToActiveLayer(project: Project): Project {
 export function narrowProjectToLayerSet(project: Project, layerIds: ReadonlySet<string>): Project {
   const walls = project.walls.filter((w) => layerIds.has(w.layerId));
   const wallIds = new Set(walls.map((w) => w.id));
+  const planLines = project.planLines.filter((l) => layerIds.has(l.layerId));
   const openings = project.openings.filter((o) => o.wallId != null && wallIds.has(o.wallId));
   const openingFramingPieces = project.openingFramingPieces.filter((p) => wallIds.has(p.wallId));
   const rooms = project.rooms.filter((r) => layerIds.has(r.layerId));
   return {
     ...project,
     walls,
+    planLines,
     openings,
     openingFramingPieces,
     rooms,

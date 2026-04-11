@@ -35,5 +35,11 @@ export function computeMarqueeSelection(
     }
   }
 
+  for (const ln of project.planLines) {
+    if (rectsIntersectMm(segmentBoundsMm(ln.start, ln.end), rect)) {
+      ids.push(ln.id);
+    }
+  }
+
   return ids;
 }

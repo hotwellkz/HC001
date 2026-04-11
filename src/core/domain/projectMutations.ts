@@ -32,9 +32,12 @@ export function deleteEntitiesFromProject(project: Project, selectedIds: Readonl
     return !d.wallIds.some((id) => selectedIds.has(id));
   });
 
+  const planLinesKept = project.planLines.filter((l) => !selectedIds.has(l.id));
+
   return touchProjectMeta({
     ...project,
     walls: wallsKept,
+    planLines: planLinesKept,
     wallCalculations: wallCalculationsKept,
     wallJoints: wallJointsKept,
     openings: openingsKept,

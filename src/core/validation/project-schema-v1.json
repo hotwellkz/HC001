@@ -52,6 +52,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/wall" }
     },
+    "planLines": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/planLine" }
+    },
     "wallCalculations": {
       "type": "array",
       "items": { "$ref": "#/$defs/wallCalculationResult" }
@@ -129,6 +133,17 @@
         "isVisible": { "type": "boolean" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
+      }
+    },
+    "planLine": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "layerId", "start", "end"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "layerId": { "type": "string", "minLength": 1 },
+        "start": { "$ref": "#/$defs/point2d" },
+        "end": { "$ref": "#/$defs/point2d" }
       }
     },
     "wall": {

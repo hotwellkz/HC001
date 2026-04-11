@@ -23,6 +23,9 @@ export function resolveObjectEditorForSelection(
     return { kind: "hint", message: "Редактирование доступно только для одного объекта." };
   }
   const id = selectedEntityIds[0]!;
+  if (project.planLines.some((l) => l.id === id)) {
+    return { kind: "hint", message: "Линия чертежа: удаление и выделение; отдельного редактора нет." };
+  }
   const wall = project.walls.find((w) => w.id === id);
   if (wall) {
     return { kind: "wall", wallId: id };

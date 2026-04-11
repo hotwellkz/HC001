@@ -10,3 +10,5 @@ export * from "./bbox";
 export * from "./axisRect";
 export * from "./viewportTransform";
 export * from "./snap2d";
+export * from "./wallPlacementSnap2d";
+export * from "./shiftDirectionLock2d";

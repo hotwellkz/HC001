@@ -73,6 +73,15 @@ function IconRuler() {
   );
 }
 
+/** Чертёжная линия: отрезок. */
+function IconDraftLine() {
+  return (
+    <svg className="ed2d-icon ed2d-icon--stroke" viewBox="0 0 24 24" aria-hidden="true" fill="none">
+      <path stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="M5 19L19 5" />
+    </svg>
+  );
+}
+
 /** Карандаш / правка параметров выбранного объекта. */
 function IconEdit() {
   return (
@@ -181,6 +190,18 @@ export function Editor2DToolbar() {
       >
         <IconRuler />
         <Kbd codes={getResolvedShortcutCodes("toolRuler", customCodes)} />
+      </button>
+      <button
+        type="button"
+        className="ed2d-toolbtn"
+        title={`Линия — вспомогательный отрезок на плане${sk("toolLine")}`}
+        aria-label={`Линия${sk("toolLine")}`}
+        aria-pressed={activeTool === "line"}
+        data-active={activeTool === "line"}
+        onClick={() => setActiveTool("line")}
+      >
+        <IconDraftLine />
+        <Kbd codes={getResolvedShortcutCodes("toolLine", customCodes)} />
       </button>
       <button
         type="button"

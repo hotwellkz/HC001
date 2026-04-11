@@ -1,4 +1,4 @@
-import type { Opening } from "./opening";
+import type { DoorOpeningSwing, Opening } from "./opening";
 import {
   clampPlacedOpeningLeftEdgeMm,
   defaultPositionSpecFromLeftEdge,
@@ -30,6 +30,7 @@ export function placeDraftDoorOnWall(
   draftOpeningId: string,
   wallId: string,
   leftEdgeAlongMm: number,
+  opts?: { readonly doorSwing?: DoorOpeningSwing },
 ): { readonly project: Project; readonly opening: Opening } | { readonly error: string } {
   const wall = project.walls.find((w) => w.id === wallId);
   if (!wall) {
@@ -59,6 +60,7 @@ export function placeDraftDoorOnWall(
     sillHeightMm: 0,
     doorSequenceNumber: seq,
     markLabel: mark,
+    doorSwing: opts?.doorSwing ?? prev.doorSwing,
     updatedAt: nowIso(),
   };
   const openings = [...project.openings];
