@@ -46,6 +46,8 @@ export function createEmptyProject(): Project {
     visibleLayerIds: [],
     walls: [],
     planLines: [],
+    foundationStrips: [],
+    foundationPiles: [],
     wallCalculations: [],
     wallJoints: [],
     openings: [],
@@ -59,7 +61,7 @@ export function createEmptyProject(): Project {
     profiles: [],
     settings: normalizeProjectSettings({
       gridStepMm: 100,
-      showGrid: true,
+      show2dGrid: true,
     }),
     viewState: {
       activeTab: "2d",
@@ -86,6 +88,7 @@ export function createEmptyProject(): Project {
       show3dLayerGypsum: true,
       show3dLayerWindows: true,
       show3dLayerDoors: true,
+      show3dGrid: true,
     },
   };
 }

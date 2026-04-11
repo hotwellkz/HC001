@@ -75,6 +75,35 @@ function IconProjectOrigin() {
   );
 }
 
+function IconFoundationStrip() {
+  return (
+    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M4 18h16v2H4v-2zm2-3h12v2H6v-2zm2-3h8v2H8v-2zm2-3h4v2h-4V9z"
+        opacity="0.4"
+      />
+      <path
+        fill="currentColor"
+        d="M5 5h14a1 1 0 011 1v3H4V6a1 1 0 011-1zm1 2v1h12V7H6zm-1 5h14v2H5v-2z"
+      />
+    </svg>
+  );
+}
+
+function IconFoundationPile() {
+  return (
+    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M9 3h6v3H9V3zm-1 5h8v12a1 1 0 01-1 1H9a1 1 0 01-1-1V8z"
+        opacity="0.42"
+      />
+      <path fill="currentColor" d="M8 6h8v2H8V6zm1 8h6v1.5H9V14z" />
+    </svg>
+  );
+}
+
 function IconWallJoint() {
   return (
     <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -89,11 +118,15 @@ function IconWallJoint() {
 
 export function Editor2DPlanToolbar() {
   const open = useAppStore((s) => s.openAddWallModal);
+  const openFoundationStrip = useAppStore((s) => s.openAddFoundationStripModal);
+  const openFoundationPile = useAppStore((s) => s.openAddFoundationPileModal);
   const openWindow = useAppStore((s) => s.openAddWindowModal);
   const openJoint = useAppStore((s) => s.openWallJointParamsModal);
   const openDoor = useAppStore((s) => s.openAddDoorModal);
   const openCalc = useAppStore((s) => s.openWallCalculationModal);
   const wallToolActive = useAppStore((s) => s.wallPlacementSession != null);
+  const foundationStripToolActive = useAppStore((s) => s.foundationStripPlacementSession != null);
+  const foundationPileToolActive = useAppStore((s) => s.foundationPilePlacementSession != null);
   const anchorMode = useAppStore((s) => s.wallAnchorPlacementModeActive);
   const toggleAnchorMode = useAppStore((s) => s.toggleWallAnchorPlacementMode);
   const jointModalOpen = useAppStore((s) => s.wallJointParamsModalOpen);
@@ -113,6 +146,32 @@ export function Editor2DPlanToolbar() {
 
   return (
     <div className="e2dpt" role="toolbar" aria-label="Построение плана">
+      <button
+        type="button"
+        className="e2dpt-btn"
+        title={
+          foundationStripToolActive ? "Параметры ленты (добавить ещё)" : "Добавить ленту фундамента"
+        }
+        aria-label={foundationStripToolActive ? "Параметры ленты" : "Добавить ленту"}
+        aria-pressed={foundationStripToolActive}
+        data-active={foundationStripToolActive}
+        onClick={() => openFoundationStrip()}
+      >
+        <IconFoundationStrip />
+      </button>
+      <button
+        type="button"
+        className="e2dpt-btn"
+        title={
+          foundationPileToolActive ? "Параметры сваи (добавить ещё)" : "Добавить сваю"
+        }
+        aria-label={foundationPileToolActive ? "Параметры сваи" : "Добавить сваю"}
+        aria-pressed={foundationPileToolActive}
+        data-active={foundationPileToolActive}
+        onClick={() => openFoundationPile()}
+      >
+        <IconFoundationPile />
+      </button>
       <button
         type="button"
         className="e2dpt-btn"

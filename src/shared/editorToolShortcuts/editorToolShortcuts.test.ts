@@ -10,6 +10,8 @@ const baseApp = {
   layerParamsModalOpen: false,
   profilesModalOpen: false,
   addWallModalOpen: false,
+  addFoundationStripModalOpen: false,
+  addFoundationPileModalOpen: false,
   addWindowModalOpen: false,
   addDoorModalOpen: false,
   windowEditModal: null,

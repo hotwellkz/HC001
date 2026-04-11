@@ -5,6 +5,8 @@ import "./shell.css";
 import { useEditorToolShortcuts } from "@/features/editor2d/useEditorToolShortcuts";
 import { useOpeningPropertiesKeyboard } from "@/features/project/useOpeningPropertiesKeyboard";
 import { useProjectUndoRedoHotkeys } from "@/features/project/useProjectUndoRedoHotkeys";
+import { AddFoundationPileModal } from "@/features/ui/AddFoundationPileModal";
+import { AddFoundationStripModal } from "@/features/ui/AddFoundationStripModal";
 import { AddWallModal } from "@/features/ui/AddWallModal";
 import { WallJointParamsModal } from "@/features/ui/WallJointParamsModal";
 import { WallCalculationModal } from "@/features/ui/WallCalculationModal";
@@ -76,6 +78,8 @@ export function AppShell() {
       <LayerParamsHost />
       <ProfilesHost />
       <AddWallModal />
+      <AddFoundationStripModal />
+      <AddFoundationPileModal />
       <WallJointParamsModal />
       <WallCoordinateModal />
       <ProjectOriginCoordinateModal />

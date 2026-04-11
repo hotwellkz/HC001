@@ -67,7 +67,7 @@ export function Editor3dVisibilityPanel() {
       </button>
       {open ? (
         <div id={`${idBase}-panel`} className="ed3-vis-popover" role="region" aria-label="Видимость слоёв 3D">
-          <p className="ed3-vis-hint">Показать или скрыть части модели. Камера и сетка не сбрасываются.</p>
+          <p className="ed3-vis-hint">Показать или скрыть части модели. Настройки камеры и вида сохраняются.</p>
           <div className="ed3-vis-row">
             <label htmlFor={`${idBase}-osb`}>OSB</label>
             <input

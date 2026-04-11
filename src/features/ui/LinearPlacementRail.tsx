@@ -95,6 +95,26 @@ function IconSnapGrid() {
   );
 }
 
+/** Сетка на плане (видимость), отлично от привязки к сетке: линии + условный «глаз». */
+function IconGridVisibility() {
+  return (
+    <svg className="lpr-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinecap="round"
+        d="M4.5 7.5h15M4.5 12h15M4.5 16.5h15M7.5 4.5v15M12 4.5v15M16.5 4.5v15"
+        opacity="0.55"
+      />
+      <path
+        fill="currentColor"
+        d="M12 9.25c-2.35 0-4.45 1.28-5.6 3.25 1.15 1.97 3.25 3.25 5.6 3.25s4.45-1.28 5.6-3.25c-1.15-1.97-3.25-3.25-5.6-3.25zm0 1.5a1.75 1.75 0 110 3.5 1.75 1.75 0 010-3.5z"
+      />
+    </svg>
+  );
+}
+
 export function LinearPlacementRail() {
   const shapeMode = useAppStore((s) => s.currentProject.settings.editor2d.wallShapeMode);
   const setShapeMode = useAppStore((s) => s.setWallShapeMode);
@@ -106,6 +126,8 @@ export function LinearPlacementRail() {
   const setSnapV = useAppStore((s) => s.setSnapToVertex);
   const setSnapE = useAppStore((s) => s.setSnapToEdge);
   const setSnapG = useAppStore((s) => s.setSnapToGrid);
+  const gridVisible = useAppStore((s) => s.currentProject.settings.show2dGrid);
+  const setGridVisible = useAppStore((s) => s.setShow2dGrid);
   const show2dLayers = useAppStore((s) => s.currentProject.viewState.show2dProfileLayers);
   const setShow2dProfileLayers = useAppStore((s) => s.setShow2dProfileLayers);
 
@@ -145,6 +167,24 @@ export function LinearPlacementRail() {
         ))}
       </div>
       <div className="lpr-divider" role="separator" aria-hidden="true" />
+      <div className="lpr-group" aria-label="Сетка на плане">
+        <button
+          type="button"
+          className="lpr-btn"
+          title={
+            gridVisible
+              ? "Скрыть сетку (отображение на плане; привязка к сетке настраивается отдельно)"
+              : "Показать сетку на плане"
+          }
+          aria-label={gridVisible ? "Скрыть сетку" : "Показать сетку"}
+          aria-pressed={gridVisible}
+          data-active={gridVisible}
+          onClick={() => setGridVisible(!gridVisible)}
+        >
+          <IconGridVisibility />
+        </button>
+      </div>
+      <div className="lpr-divider" role="separator" aria-hidden="true" />
       <div className="lpr-group" aria-label="Привязка">
         <button
           type="button"
@@ -171,7 +211,7 @@ export function LinearPlacementRail() {
         <button
           type="button"
           className="lpr-btn"
-          title="Привязка к сетке"
+          title="Привязка к сетке (магнит; не зависит от отображения линий сетки)"
           aria-label="Привязка к сетке"
           aria-pressed={snapG}
           data-active={snapG}

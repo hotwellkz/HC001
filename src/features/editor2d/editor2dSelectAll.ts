@@ -8,6 +8,8 @@ export interface SelectAllEditorSnapshot {
   readonly activeTool: SelectAllActiveTool;
   readonly activeTab: string;
   readonly wallPlacementSession: unknown | null;
+  readonly foundationStripPlacementSession: unknown | null;
+  readonly foundationPilePlacementSession: unknown | null;
   readonly pendingWindowPlacement: unknown | null;
   readonly pendingDoorPlacement: unknown | null;
   readonly addWindowModalOpen: boolean;
@@ -30,6 +32,14 @@ export function entityIdsForSelectAll2d(project: Project, snap: SelectAllEditorS
 
   if (snap.wallPlacementSession) {
     return layerView.walls.map((w) => w.id);
+  }
+
+  if (snap.foundationStripPlacementSession) {
+    return layerView.foundationStrips.map((s) => s.id);
+  }
+
+  if (snap.foundationPilePlacementSession) {
+    return layerView.foundationPiles.map((p) => p.id);
   }
 
   const windowMode =
@@ -64,6 +74,12 @@ export function entityIdsForSelectAll2d(project: Project, snap: SelectAllEditorS
   }
   for (const l of layerView.planLines) {
     ids.push(l.id);
+  }
+  for (const fs of layerView.foundationStrips) {
+    ids.push(fs.id);
+  }
+  for (const p of layerView.foundationPiles) {
+    ids.push(p.id);
   }
   return ids;
 }

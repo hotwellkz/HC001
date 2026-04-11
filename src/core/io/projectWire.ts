@@ -43,6 +43,8 @@ export interface ProjectFileV1 {
   readonly walls: Project["walls"];
   /** В старых файлах может отсутствовать — []. */
   readonly planLines?: Project["planLines"];
+  readonly foundationStrips?: Project["foundationStrips"];
+  readonly foundationPiles?: Project["foundationPiles"];
   /** В старых файлах может отсутствовать — []. */
   readonly wallCalculations?: Project["wallCalculations"];
   /** В старых файлах может отсутствовать — []. */
@@ -104,6 +106,8 @@ export function projectFromWireV1(wire: ProjectFileV1): Project {
     visibleLayerIds: visibleRaw,
     walls: wire.walls,
     planLines: wire.planLines ?? [],
+    foundationStrips: wire.foundationStrips ?? [],
+    foundationPiles: wire.foundationPiles ?? [],
     wallCalculations: wire.wallCalculations ?? [],
     wallJoints: wire.wallJoints ?? [],
     openings: wire.openings,

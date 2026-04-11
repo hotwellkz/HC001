@@ -56,6 +56,20 @@
       "type": "array",
       "items": { "$ref": "#/$defs/planLine" }
     },
+    "foundationStrips": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/foundationStripSegment" },
+          { "$ref": "#/$defs/foundationStripOrthoRing" },
+          { "$ref": "#/$defs/foundationStripFootprintPoly" }
+        ]
+      }
+    },
+    "foundationPiles": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/foundationPile" }
+    },
     "wallCalculations": {
       "type": "array",
       "items": { "$ref": "#/$defs/wallCalculationResult" }
@@ -144,6 +158,134 @@
         "layerId": { "type": "string", "minLength": 1 },
         "start": { "$ref": "#/$defs/point2d" },
         "end": { "$ref": "#/$defs/point2d" }
+      }
+    },
+    "foundationStripSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "layerId",
+        "axisStart",
+        "axisEnd",
+        "outwardNormalX",
+        "outwardNormalY",
+        "depthMm",
+        "sideOutMm",
+        "sideInMm",
+        "createdAt"
+      ],
+      "properties": {
+        "kind": { "type": "string", "const": "segment" },
+        "id": { "type": "string", "minLength": 1 },
+        "layerId": { "type": "string", "minLength": 1 },
+        "axisStart": { "$ref": "#/$defs/point2d" },
+        "axisEnd": { "$ref": "#/$defs/point2d" },
+        "outwardNormalX": { "type": "number" },
+        "outwardNormalY": { "type": "number" },
+        "depthMm": { "type": "number" },
+        "sideOutMm": { "type": "number" },
+        "sideInMm": { "type": "number" },
+        "createdAt": { "type": "string", "minLength": 1 },
+        "placementGroupId": { "type": "string" }
+      }
+    },
+    "foundationStripFootprintPoly": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "layerId",
+        "depthMm",
+        "sideOutMm",
+        "sideInMm",
+        "createdAt",
+        "outerRingMm",
+        "holeRingsMm"
+      ],
+      "properties": {
+        "kind": { "type": "string", "const": "footprint_poly" },
+        "id": { "type": "string", "minLength": 1 },
+        "layerId": { "type": "string", "minLength": 1 },
+        "depthMm": { "type": "number" },
+        "sideOutMm": { "type": "number" },
+        "sideInMm": { "type": "number" },
+        "createdAt": { "type": "string", "minLength": 1 },
+        "outerRingMm": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "#/$defs/point2d" }
+        },
+        "holeRingsMm": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 3,
+            "items": { "$ref": "#/$defs/point2d" }
+          }
+        }
+      }
+    },
+    "foundationStripOrthoRing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "layerId",
+        "axisXminMm",
+        "axisXmaxMm",
+        "axisYminMm",
+        "axisYmaxMm",
+        "depthMm",
+        "sideOutMm",
+        "sideInMm",
+        "createdAt"
+      ],
+      "properties": {
+        "kind": { "type": "string", "const": "ortho_ring" },
+        "id": { "type": "string", "minLength": 1 },
+        "layerId": { "type": "string", "minLength": 1 },
+        "axisXminMm": { "type": "number" },
+        "axisXmaxMm": { "type": "number" },
+        "axisYminMm": { "type": "number" },
+        "axisYmaxMm": { "type": "number" },
+        "depthMm": { "type": "number" },
+        "sideOutMm": { "type": "number" },
+        "sideInMm": { "type": "number" },
+        "createdAt": { "type": "string", "minLength": 1 }
+      }
+    },
+    "foundationPile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "layerId",
+        "pileKind",
+        "centerX",
+        "centerY",
+        "sizeMm",
+        "capSizeMm",
+        "heightMm",
+        "levelMm",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "layerId": { "type": "string", "minLength": 1 },
+        "pileKind": { "type": "string", "enum": ["reinforcedConcrete", "screw"] },
+        "centerX": { "type": "number" },
+        "centerY": { "type": "number" },
+        "sizeMm": { "type": "number" },
+        "capSizeMm": { "type": "number" },
+        "heightMm": { "type": "number" },
+        "levelMm": { "type": "number" },
+        "createdAt": { "type": "string", "minLength": 1 },
+        "updatedAt": { "type": "string", "minLength": 1 }
       }
     },
     "wall": {
@@ -649,10 +791,11 @@
     "settings": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["gridStepMm", "showGrid", "editor2d"],
+      "required": ["gridStepMm", "editor2d"],
       "properties": {
         "gridStepMm": { "type": "number", "exclusiveMinimum": 0 },
-        "showGrid": { "type": "boolean" },
+        "show2dGrid": { "type": "boolean" },
+        "showGrid": { "type": "boolean", "description": "Устаревшее имя show2dGrid для обратной совместимости" },
         "editor2d": {
           "type": "object",
           "additionalProperties": false,
@@ -689,6 +832,7 @@
         "show3dLayerGypsum": { "type": "boolean" },
         "show3dLayerWindows": { "type": "boolean" },
         "show3dLayerDoors": { "type": "boolean" },
+        "show3dGrid": { "type": "boolean" },
         "activeTab": { "type": "string", "enum": ["2d", "3d", "spec", "wall"] },
         "viewport2d": {
           "type": "object",

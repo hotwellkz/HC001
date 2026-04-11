@@ -156,7 +156,7 @@ body {
 .ui-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: var(--z-ui-modal-backdrop, 200);
   background: var(--color-overlay);
   display: flex;
   align-items: center;

@@ -117,7 +117,7 @@ export function tryOrthogonalRectangleExteriorNormalsMm(
   return out;
 }
 
-function centroidOfWallMidpoints(walls: readonly Wall[]): { readonly x: number; readonly y: number } {
+export function centroidOfWallMidpoints(walls: readonly Wall[]): { readonly x: number; readonly y: number } {
   if (walls.length === 0) {
     return { x: 0, y: 0 };
   }

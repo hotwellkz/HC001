@@ -54,6 +54,16 @@ import { appendWallLumberLabels2d } from "./wallLumberLabels2dPixi";
 import { drawDoorPlacementPreview2d } from "./drawDoorPlacementPreview2d";
 import { drawWindowPlacementPreview2d } from "./drawWindowPlacementPreview2d";
 import { drawWallsAndOpenings2d } from "./walls2dPixi";
+import type { FoundationPileEntity } from "@/core/domain/foundationPile";
+import { drawFoundationPiles2d } from "./foundationPiles2dPixi";
+import { drawFoundationStrips2d } from "./foundationStrips2dPixi";
+import { pickClosestFoundationPileAtPoint } from "./foundationPilePick2d";
+import { pickClosestFoundationStripAlongPoint } from "./foundationStripPick2d";
+import { pickOutwardNormalForStripAxisMm } from "./foundationStripNormals2d";
+import {
+  foundationStripOrthoRingFootprintContoursMm,
+  foundationStripSegmentFootprintQuadMm,
+} from "@/core/domain/foundationStripGeometry";
 import { appendWindowOpeningLabels2d } from "./windowOpeningLabels2dPixi";
 import { appendDoorOpeningLabels2d } from "./doorOpeningLabels2dPixi";
 import { buildViewportTransform, screenToWorld, worldToScreen } from "./viewportTransforms";
@@ -95,6 +105,51 @@ function collectVisibleWallIds2d(project: Project): Set<string> {
     visibleWallIds.add(w.id);
   }
   return visibleWallIds;
+}
+
+function drawFoundationStripPreviewQuads(
+  g: Graphics,
+  quads: readonly (readonly { readonly x: number; readonly y: number }[])[],
+  t: ReturnType<typeof buildViewportTransform>,
+): void {
+  for (const quad of quads) {
+    if (quad.length < 3) {
+      continue;
+    }
+    const p0 = worldToScreen(quad[0]!.x, quad[0]!.y, t);
+    g.moveTo(p0.x, p0.y);
+    for (let i = 1; i < quad.length; i++) {
+      const pi = worldToScreen(quad[i]!.x, quad[i]!.y, t);
+      g.lineTo(pi.x, pi.y);
+    }
+    g.closePath();
+    g.fill({ color: 0x9a7b5c, alpha: 0.4 });
+    g.stroke({ width: 1.2, color: 0x5c4a38, alpha: 0.72 });
+  }
+}
+
+function drawFoundationStripPreviewRing(
+  g: Graphics,
+  outer: readonly { readonly x: number; readonly y: number }[],
+  inner: readonly { readonly x: number; readonly y: number }[],
+  t: ReturnType<typeof buildViewportTransform>,
+): void {
+  if (outer.length < 3 || inner.length < 3) {
+    return;
+  }
+  const o = outer.map((p) => worldToScreen(p.x, p.y, t));
+  const i = inner.map((p) => worldToScreen(p.x, p.y, t));
+  g.beginPath();
+  g.poly(o, true);
+  g.fill({ color: 0x9a7b5c, alpha: 0.4 });
+  g.poly(i, true);
+  g.cut();
+  g.beginPath();
+  g.poly(o, true);
+  g.stroke({ width: 1.2, color: 0x5c4a38, alpha: 0.72 });
+  g.beginPath();
+  g.poly(i, true);
+  g.stroke({ width: 1.2, color: 0x5c4a38, alpha: 0.72 });
 }
 
 function readCanvasColorsFromTheme(): { readonly bg: number; readonly grid: number } {
@@ -142,6 +197,15 @@ interface OpeningPointerSession {
   startLeftEdgeMm: number | null;
   suspendedForModal: boolean;
   pointerReleasedWhileModalOpen: boolean;
+}
+
+interface FoundationPilePointerSession {
+  readonly pointerId: number;
+  readonly sx: number;
+  readonly sy: number;
+  lastWorldMm: { x: number; y: number };
+  dragActive: boolean;
+  readonly pileIds: readonly string[];
 }
 
 type MoveDimSide = "left" | "right";
@@ -278,6 +342,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   const openingPointerRef = useRef<OpeningPointerSession | null>(null);
   /** Снимок до начала drag проёма — одна запись undo на перетаскивание. */
   const openingDragHistoryBaselineRef = useRef<ReturnType<typeof cloneProjectSnapshot> | null>(null);
+  const foundationPilePointerRef = useRef<FoundationPilePointerSession | null>(null);
+  const foundationPileDragHistoryBaselineRef = useRef<ReturnType<typeof cloneProjectSnapshot> | null>(null);
   const lastOpeningClickRef = useRef<{ readonly id: string; readonly t: number } | null>(null);
   const lastWallClickRef = useRef<{ readonly id: string; readonly t: number } | null>(null);
   const hostRef = useRef<HTMLDivElement>(null);
@@ -374,6 +440,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               layerParamsModalOpen: stA.layerParamsModalOpen,
               profilesModalOpen: stA.profilesModalOpen,
               addWallModalOpen: stA.addWallModalOpen,
+              addFoundationStripModalOpen: stA.addFoundationStripModalOpen,
+              addFoundationPileModalOpen: stA.addFoundationPileModalOpen,
               addWindowModalOpen: stA.addWindowModalOpen,
               addDoorModalOpen: stA.addDoorModalOpen,
               windowEditModal: stA.windowEditModal,
@@ -400,6 +468,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           activeTool: stA.activeTool,
           activeTab: stA.activeTab,
           wallPlacementSession: stA.wallPlacementSession,
+          foundationStripPlacementSession: stA.foundationStripPlacementSession,
+          foundationPilePlacementSession: stA.foundationPilePlacementSession,
           pendingWindowPlacement: stA.pendingWindowPlacement,
           pendingDoorPlacement: stA.pendingDoorPlacement,
           addWindowModalOpen: stA.addWindowModalOpen,
@@ -420,6 +490,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             layerParamsModalOpen: st0.layerParamsModalOpen,
             profilesModalOpen: st0.profilesModalOpen,
             addWallModalOpen: st0.addWallModalOpen,
+            addFoundationStripModalOpen: st0.addFoundationStripModalOpen,
+            addFoundationPileModalOpen: st0.addFoundationPileModalOpen,
             addWindowModalOpen: st0.addWindowModalOpen,
             addDoorModalOpen: st0.addDoorModalOpen,
             windowEditModal: st0.windowEditModal,
@@ -503,6 +575,20 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           return;
         }
         const stEsc = useAppStore.getState();
+        if (stEsc.foundationStripPlacementSession) {
+          e.preventDefault();
+          useAppStore.getState().foundationStripPlacementBackOrExit();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          return;
+        }
+        if (stEsc.foundationPilePlacementSession) {
+          e.preventDefault();
+          useAppStore.getState().cancelFoundationPilePlacement();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          return;
+        }
         if (stEsc.wallPlacementSession) {
           const ph = stEsc.wallPlacementSession.phase;
           if (
@@ -740,6 +826,10 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
     let disposed = false;
     const appRef: { current: Application | null } = { current: null };
     const gridG = new Graphics();
+    const foundationStripsG = new Graphics();
+    foundationStripsG.eventMode = "none";
+    const foundationPilesG = new Graphics();
+    foundationPilesG.eventMode = "none";
     const wallsG = new Graphics();
     const planLinesG = new Graphics();
     planLinesG.eventMode = "none";
@@ -802,8 +892,14 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       }
       const st = useAppStore.getState();
       const ws = st.wallPlacementSession;
+      const fsSess = st.foundationStripPlacementSession;
+      const fpSess = st.foundationPilePlacementSession;
       const firstPh =
         ws && (ws.phase === "waitingFirstWallPoint" || ws.phase === "waitingOriginAndFirst");
+      const foundationPickCrosshair =
+        (fsSess != null || fpSess != null) &&
+        !st.openingMoveModeActive &&
+        !st.projectOriginMoveToolActive;
       const wallPickCrosshair =
         ws != null &&
         !st.wallCoordinateModalOpen &&
@@ -823,7 +919,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         !st.lengthChangeCoordinateModalOpen &&
         !st.projectOriginMoveToolActive;
       const show =
-        (wallPickCrosshair || rulerShow || lineToolShow || lengthChangeShow) &&
+        (wallPickCrosshair || foundationPickCrosshair || rulerShow || lineToolShow || lengthChangeShow) &&
         !panning.active &&
         !marquee &&
         lastPointerAnchorCrosshairRef.current.inside;
@@ -919,6 +1015,48 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           centerRx = sc.x;
           centerRy = sc.y;
         }
+      } else if (fsSess) {
+        if (fsSess.phase === "waitingSecondPoint" && fsSess.previewEndMm) {
+          const sc = worldToScreen(fsSess.previewEndMm.x, fsSess.previewEndMm.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        } else {
+          const snap = resolveSnap2d({
+            rawWorldMm: { x: last.worldX, y: last.worldY },
+            viewport: t,
+            project: proj,
+            snapSettings: {
+              snapToVertex: e2.snapToVertex,
+              snapToEdge: e2.snapToEdge,
+              snapToGrid: e2.snapToGrid,
+            },
+            gridStepMm: proj.settings.gridStepMm,
+          });
+          const sc = worldToScreen(snap.point.x, snap.point.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        }
+      } else if (fpSess) {
+        if (fpSess.previewWorldMm) {
+          const sc = worldToScreen(fpSess.previewWorldMm.x, fpSess.previewWorldMm.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        } else {
+          const snap = resolveSnap2d({
+            rawWorldMm: { x: last.worldX, y: last.worldY },
+            viewport: t,
+            project: proj,
+            snapSettings: {
+              snapToVertex: e2.snapToVertex,
+              snapToEdge: e2.snapToEdge,
+              snapToGrid: e2.snapToGrid,
+            },
+            gridStepMm: proj.settings.gridStepMm,
+          });
+          const sc = worldToScreen(snap.point.x, snap.point.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        }
       } else if (wallPickCrosshair && ws) {
         const am = st.wallAnchorPlacementModeActive;
         const anchorPt = st.wallPlacementAnchorMm;
@@ -962,7 +1100,26 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const cssY = centerRy * scaleY;
 
       let snapActive = false;
-      if (wallPickCrosshair && ws) {
+      if (fsSess) {
+        if (fsSess.phase === "waitingSecondPoint") {
+          snapActive = Boolean(fsSess.lastSnapKind && fsSess.lastSnapKind !== "none");
+        } else {
+          const snFs = resolveSnap2d({
+            rawWorldMm: { x: last.worldX, y: last.worldY },
+            viewport: t,
+            project: proj,
+            snapSettings: {
+              snapToVertex: e2.snapToVertex,
+              snapToEdge: e2.snapToEdge,
+              snapToGrid: e2.snapToGrid,
+            },
+            gridStepMm: proj.settings.gridStepMm,
+          });
+          snapActive = snFs.kind !== "none";
+        }
+      } else if (fpSess) {
+        snapActive = Boolean(fpSess.lastSnapKind && fpSess.lastSnapKind !== "none");
+      } else if (wallPickCrosshair && ws) {
         if (ws.phase === "waitingSecondPoint") {
           snapActive = Boolean(ws.lastSnapKind && ws.lastSnapKind !== "none");
         } else if (firstPh && st.wallAnchorPlacementModeActive && st.wallPlacementAnchorMm && st.wallPlacementAnchorPreviewEndMm) {
@@ -1036,7 +1193,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const show2dLayers = currentProject.viewState.show2dProfileLayers !== false;
 
       gridG.clear();
-      if (currentProject.settings.showGrid) {
+      if (currentProject.settings.show2dGrid) {
         const lines = buildScreenGridLines(
           w,
           h,
@@ -1050,6 +1207,37 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           gridG.stroke({ width: 1, color: GRID_COLOR, alpha: 0.65 });
         }
       }
+
+      foundationStripsG.clear();
+      let firstFs = true;
+      for (const lid of contextIds) {
+        const ctxFs = narrowProjectToLayerSet(currentProject, new Set([lid]));
+        drawFoundationStrips2d(foundationStripsG, ctxFs.foundationStrips, t, selected, {
+          appearance: "context",
+          clear: firstFs,
+        });
+        firstFs = false;
+      }
+      const layerView = narrowProjectToActiveLayer(currentProject);
+      drawFoundationStrips2d(foundationStripsG, layerView.foundationStrips, t, selected, {
+        appearance: "active",
+        clear: firstFs,
+      });
+
+      foundationPilesG.clear();
+      let firstPileDraw = true;
+      for (const lid of contextIds) {
+        const ctxPiles = narrowProjectToLayerSet(currentProject, new Set([lid]));
+        drawFoundationPiles2d(foundationPilesG, ctxPiles.foundationPiles, t, selected, {
+          appearance: "context",
+          clear: firstPileDraw,
+        });
+        firstPileDraw = false;
+      }
+      drawFoundationPiles2d(foundationPilesG, layerView.foundationPiles, t, selected, {
+        appearance: "active",
+        clear: firstPileDraw,
+      });
 
       wallsG.clear();
       openingsG.clear();
@@ -1073,7 +1261,6 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         });
         firstDraw = false;
       }
-      const layerView = narrowProjectToActiveLayer(currentProject);
       drawWallsAndOpenings2d(wallsG, openingsG, layerView, t, selected, {
         appearance: "active",
         clear: firstDraw,
@@ -1383,6 +1570,59 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         }
       }
 
+      const fsSessPreview = useAppStore.getState().foundationStripPlacementSession;
+      if (
+        fsSessPreview?.phase === "waitingSecondPoint" &&
+        fsSessPreview.firstPointMm &&
+        fsSessPreview.previewEndMm
+      ) {
+        const f = fsSessPreview.firstPointMm;
+        const e = fsSessPreview.previewEndMm;
+        const d = fsSessPreview.draft;
+        if (d.buildMode === "linear") {
+          const ref = fsSessPreview.lastReferenceWallId ?? undefined;
+          const n = pickOutwardNormalForStripAxisMm(currentProject, f, e, ref);
+          const q = foundationStripSegmentFootprintQuadMm(f, e, n.nx, n.ny, d.side1Mm, d.side2Mm);
+          drawFoundationStripPreviewQuads(previewG, [q], t);
+        } else {
+          const xmin = Math.min(f.x, e.x);
+          const xmax = Math.max(f.x, e.x);
+          const ymin = Math.min(f.y, e.y);
+          const ymax = Math.max(f.y, e.y);
+          const { outer, inner } = foundationStripOrthoRingFootprintContoursMm(
+            xmin,
+            xmax,
+            ymin,
+            ymax,
+            d.side1Mm,
+            d.side2Mm,
+          );
+          drawFoundationStripPreviewRing(previewG, outer, inner, t);
+        }
+      }
+
+      const fpSessPreview = useAppStore.getState().foundationPilePlacementSession;
+      if (fpSessPreview?.previewWorldMm) {
+        const draft = fpSessPreview.draft;
+        const previewPile: FoundationPileEntity = {
+          id: "__preview__",
+          layerId: currentProject.activeLayerId,
+          pileKind: "reinforcedConcrete",
+          centerX: fpSessPreview.previewWorldMm.x,
+          centerY: fpSessPreview.previewWorldMm.y,
+          sizeMm: draft.sizeMm,
+          capSizeMm: draft.capSizeMm,
+          heightMm: draft.heightMm,
+          levelMm: draft.levelMm,
+          createdAt: "",
+          updatedAt: "",
+        };
+        drawFoundationPiles2d(previewG, [previewPile], t, new Set(), {
+          appearance: "active",
+          clear: false,
+        });
+      }
+
       const wmPaint = useAppStore.getState().wallMoveCopySession;
       if (wmPaint?.phase === "pickTarget" && wmPaint.anchorWorldMm && wmPaint.previewTargetMm) {
         const wM = currentProject.walls.find((w) => w.id === wmPaint.workingWallId);
@@ -1566,6 +1806,56 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         snapMarkerG.stroke({ width: 2, color: col, alpha: 0.95 });
         snapMarkerG.circle(sc.x, sc.y, 2);
         snapMarkerG.fill({ color: col, alpha: 0.95 });
+      }
+
+      const fsMark = stPaint.foundationStripPlacementSession;
+      if (
+        fsMark &&
+        fsMark.phase === "waitingFirstPoint" &&
+        fsMark.previewEndMm &&
+        fsMark.lastSnapKind &&
+        fsMark.lastSnapKind !== "none"
+      ) {
+        const skF = fsMark.lastSnapKind;
+        const pF = fsMark.previewEndMm;
+        const scF = worldToScreen(pF.x, pF.y, t);
+        const colF = skF === "vertex" ? 0x5cff8a : skF === "edge" ? 0x5ab4ff : 0xffc857;
+        snapMarkerG.circle(scF.x, scF.y, 7);
+        snapMarkerG.stroke({ width: 2, color: colF, alpha: 0.95 });
+        snapMarkerG.circle(scF.x, scF.y, 2);
+        snapMarkerG.fill({ color: colF, alpha: 0.95 });
+      } else if (
+        fsMark &&
+        fsMark.phase === "waitingSecondPoint" &&
+        fsMark.previewEndMm &&
+        fsMark.lastSnapKind &&
+        fsMark.lastSnapKind !== "none"
+      ) {
+        const skF2 = fsMark.lastSnapKind;
+        const pF2 = fsMark.previewEndMm;
+        const scF2 = worldToScreen(pF2.x, pF2.y, t);
+        const colF2 = skF2 === "vertex" ? 0x5cff8a : skF2 === "edge" ? 0x5ab4ff : 0xffc857;
+        snapMarkerG.circle(scF2.x, scF2.y, 7);
+        snapMarkerG.stroke({ width: 2, color: colF2, alpha: 0.95 });
+        snapMarkerG.circle(scF2.x, scF2.y, 2);
+        snapMarkerG.fill({ color: colF2, alpha: 0.95 });
+      }
+
+      const fpMark = stPaint.foundationPilePlacementSession;
+      if (
+        fpMark &&
+        fpMark.previewWorldMm &&
+        fpMark.lastSnapKind &&
+        fpMark.lastSnapKind !== "none"
+      ) {
+        const skP = fpMark.lastSnapKind;
+        const pP = fpMark.previewWorldMm;
+        const scP = worldToScreen(pP.x, pP.y, t);
+        const colP = skP === "vertex" ? 0x5cff8a : skP === "edge" ? 0x5ab4ff : 0xffc857;
+        snapMarkerG.circle(scP.x, scP.y, 7);
+        snapMarkerG.stroke({ width: 2, color: colP, alpha: 0.95 });
+        snapMarkerG.circle(scP.x, scP.y, 2);
+        snapMarkerG.fill({ color: colP, alpha: 0.95 });
       }
 
       if (
@@ -1808,6 +2098,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
 
       worldRoot.hitArea = app.screen;
       worldRoot.addChild(gridG);
+      worldRoot.addChild(foundationStripsG);
+      worldRoot.addChild(foundationPilesG);
       worldRoot.addChild(wallsG);
       worldRoot.addChild(planLinesG);
       worldRoot.addChild(wallCalcG);
@@ -1937,21 +2229,51 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                   store.setSelectedEntityIds([hitLine.planLineId]);
                 }
               } else {
-                const hitWall = pickClosestWallAlongPoint(wClick, layerView.walls, segTol);
-                if (hitWall) {
+                const hitPile = pickClosestFoundationPileAtPoint(wClick, layerView.foundationPiles, segTol);
+                if (hitPile) {
                   if (m.shiftKey) {
                     const s = new Set(store.selectedEntityIds);
-                    if (s.has(hitWall.wallId)) {
-                      s.delete(hitWall.wallId);
+                    if (s.has(hitPile.pileId)) {
+                      s.delete(hitPile.pileId);
                     } else {
-                      s.add(hitWall.wallId);
+                      s.add(hitPile.pileId);
                     }
                     store.setSelectedEntityIds([...s]);
                   } else {
-                    store.setSelectedEntityIds([hitWall.wallId]);
+                    store.setSelectedEntityIds([hitPile.pileId]);
                   }
                 } else {
-                  store.clearSelection();
+                  const hitFs = pickClosestFoundationStripAlongPoint(wClick, layerView.foundationStrips, segTol);
+                  if (hitFs) {
+                    if (m.shiftKey) {
+                      const s = new Set(store.selectedEntityIds);
+                      if (s.has(hitFs.stripId)) {
+                        s.delete(hitFs.stripId);
+                      } else {
+                        s.add(hitFs.stripId);
+                      }
+                      store.setSelectedEntityIds([...s]);
+                    } else {
+                      store.setSelectedEntityIds([hitFs.stripId]);
+                    }
+                  } else {
+                    const hitWall = pickClosestWallAlongPoint(wClick, layerView.walls, segTol);
+                    if (hitWall) {
+                      if (m.shiftKey) {
+                        const s = new Set(store.selectedEntityIds);
+                        if (s.has(hitWall.wallId)) {
+                          s.delete(hitWall.wallId);
+                        } else {
+                          s.add(hitWall.wallId);
+                        }
+                        store.setSelectedEntityIds([...s]);
+                      } else {
+                        store.setSelectedEntityIds([hitWall.wallId]);
+                      }
+                    } else {
+                      store.clearSelection();
+                    }
+                  }
                 }
               }
             }
@@ -2038,6 +2360,25 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                   });
                 }
               }
+            }
+          }
+        }
+
+        const fpSess = foundationPilePointerRef.current;
+        if (!coordBlock && fpSess && ev.pointerId === fpSess.pointerId) {
+          const distPxFp = Math.hypot(ev.global.x - fpSess.sx, ev.global.y - fpSess.sy);
+          if (!fpSess.dragActive && distPxFp >= OPENING_DRAG_THRESHOLD_PX) {
+            fpSess.dragActive = true;
+            if (foundationPileDragHistoryBaselineRef.current == null) {
+              foundationPileDragHistoryBaselineRef.current = cloneProjectSnapshot(useAppStore.getState().currentProject);
+            }
+          }
+          if (fpSess.dragActive) {
+            const dxMm = p.x - fpSess.lastWorldMm.x;
+            const dyMm = p.y - fpSess.lastWorldMm.y;
+            if (Number.isFinite(dxMm) && Number.isFinite(dyMm) && (Math.abs(dxMm) > 1e-9 || Math.abs(dyMm) > 1e-9)) {
+              useAppStore.getState().applyFoundationPilesWorldDeltaMm(fpSess.pileIds, dxMm, dyMm, { skipHistory: true });
+              fpSess.lastWorldMm = { x: p.x, y: p.y };
             }
           }
         }
@@ -2443,6 +2784,72 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               });
               setCoordHudRef.current(null);
             }
+          } else if (useAppStore.getState().foundationStripPlacementSession) {
+            const fsS = useAppStore.getState().foundationStripPlacementSession;
+            if (fsS) {
+              useAppStore.getState().foundationStripPlacementPreviewMove(p, t);
+              const fs2 = useAppStore.getState().foundationStripPlacementSession;
+              let snapFs = "";
+              if (fs2?.lastSnapKind && fs2.lastSnapKind !== "none") {
+                snapFs =
+                  fs2.lastSnapKind === "vertex"
+                    ? "\nПривязка: угол"
+                    : fs2.lastSnapKind === "edge"
+                      ? "\nПривязка: линия стены"
+                      : "\nПривязка: сетка";
+              }
+              const titleFs =
+                fs2?.draft.buildMode === "rectangle"
+                  ? "Лента фундамента · прямоугольник"
+                  : "Лента фундамента · линейно";
+              const phaseFs =
+                fs2?.phase === "waitingSecondPoint"
+                  ? "Вторая точка — ЛКМ · ПКМ / Esc — шаг назад"
+                  : "Первая точка — ЛКМ";
+              const hudFs = computePlacementHudScreenPosition({
+                canvasRect: rect,
+                cursorCanvasX: ev.global.x,
+                cursorCanvasY: ev.global.y,
+                wallCoordinateModalOpen: false,
+                showCoordHud: false,
+              });
+              setWallHintRef.current({
+                left: hudFs.hintLeft,
+                top: hudFs.hintTop,
+                text: `${titleFs}\n${phaseFs}${snapFs}\nПКМ / Esc — отмена или выход`,
+              });
+            }
+            setCoordHudRef.current(null);
+            paint();
+          } else if (useAppStore.getState().foundationPilePlacementSession) {
+            const fpS = useAppStore.getState().foundationPilePlacementSession;
+            if (fpS) {
+              useAppStore.getState().foundationPilePlacementPreviewMove(p, t);
+              const fp2 = useAppStore.getState().foundationPilePlacementSession;
+              let snapPile = "";
+              if (fp2?.lastSnapKind && fp2.lastSnapKind !== "none") {
+                snapPile =
+                  fp2.lastSnapKind === "vertex"
+                    ? "\nПривязка: угол"
+                    : fp2.lastSnapKind === "edge"
+                      ? "\nПривязка: линия"
+                      : "\nПривязка: сетка";
+              }
+              const hudPile = computePlacementHudScreenPosition({
+                canvasRect: rect,
+                cursorCanvasX: ev.global.x,
+                cursorCanvasY: ev.global.y,
+                wallCoordinateModalOpen: false,
+                showCoordHud: false,
+              });
+              setWallHintRef.current({
+                left: hudPile.hintLeft,
+                top: hudPile.hintTop,
+                text: `Установка сваи\nВыберите место · ЛКМ — поставить${snapPile}\nПКМ / Esc — выход`,
+              });
+            }
+            setCoordHudRef.current(null);
+            paint();
           } else if (wallMoveCopySession) {
             const stMc = useAppStore.getState();
             const wm = stMc.wallMoveCopySession;
@@ -2651,6 +3058,40 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           return;
         }
 
+        const foundationStripSession = useAppStore.getState().foundationStripPlacementSession;
+        if (foundationStripSession && ev.button === 2) {
+          ev.preventDefault();
+          useAppStore.getState().foundationStripPlacementBackOrExit();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          paint();
+          return;
+        }
+        if (foundationStripSession && ev.button === 0) {
+          useAppStore.getState().foundationStripPlacementPrimaryClick(worldMm, t);
+          paint();
+          if (!useAppStore.getState().foundationStripPlacementSession) {
+            setWallHintRef.current(null);
+            setCoordHudRef.current(null);
+          }
+          return;
+        }
+
+        const foundationPileSession = useAppStore.getState().foundationPilePlacementSession;
+        if (foundationPileSession && ev.button === 2) {
+          ev.preventDefault();
+          useAppStore.getState().cancelFoundationPilePlacement();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          paint();
+          return;
+        }
+        if (foundationPileSession && ev.button === 0) {
+          useAppStore.getState().foundationPilePlacementPrimaryClick(worldMm, t);
+          paint();
+          return;
+        }
+
         if (wallJointSession && ev.button === 2) {
           ev.preventDefault();
           useAppStore.getState().wallJointBackOrExit();
@@ -2799,6 +3240,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           (activeTool === "select" || activeTool === "ruler" || activeTool === "line") &&
           !wallJointSession &&
           !wallPlacementSession &&
+          !useAppStore.getState().foundationStripPlacementSession &&
+          !useAppStore.getState().foundationPilePlacementSession &&
           !useAppStore.getState().pendingWindowPlacement &&
           !useAppStore.getState().pendingDoorPlacement &&
           !useAppStore.getState().wallMoveCopySession
@@ -2842,6 +3285,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           activeTool === "select" &&
           !wallJointSession &&
           !wallPlacementSession &&
+          !useAppStore.getState().foundationStripPlacementSession &&
+          !useAppStore.getState().foundationPilePlacementSession &&
           !useAppStore.getState().pendingWindowPlacement &&
           !useAppStore.getState().pendingDoorPlacement &&
           !useAppStore.getState().wallMoveCopySession
@@ -2932,6 +3377,58 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             paint();
             return;
           }
+          const pileHit = pickClosestFoundationPileAtPoint(worldMm, layerView.foundationPiles, segTolSel);
+          if (pileHit) {
+            const storePl = useAppStore.getState();
+            if (ev.shiftKey) {
+              const s = new Set(storePl.selectedEntityIds);
+              if (s.has(pileHit.pileId)) {
+                s.delete(pileHit.pileId);
+              } else {
+                s.add(pileHit.pileId);
+              }
+              storePl.setSelectedEntityIds([...s]);
+            } else {
+              storePl.setSelectedEntityIds([pileHit.pileId]);
+            }
+            const stAfter = useAppStore.getState();
+            const pileIdSet = new Set(stAfter.currentProject.foundationPiles.map((p) => p.id));
+            const pileIds = stAfter.selectedEntityIds.filter((id) => pileIdSet.has(id));
+            foundationPilePointerRef.current = {
+              pointerId: ev.pointerId,
+              sx: ev.global.x,
+              sy: ev.global.y,
+              lastWorldMm: { x: worldMm.x, y: worldMm.y },
+              dragActive: false,
+              pileIds,
+            };
+            try {
+              canvas.setPointerCapture(ev.pointerId);
+            } catch {
+              /* ignore */
+            }
+            lastWallClickRef.current = null;
+            paint();
+            return;
+          }
+          const fsHit = pickClosestFoundationStripAlongPoint(worldMm, layerView.foundationStrips, segTolSel);
+          if (fsHit) {
+            const storeFs = useAppStore.getState();
+            if (ev.shiftKey) {
+              const s = new Set(storeFs.selectedEntityIds);
+              if (s.has(fsHit.stripId)) {
+                s.delete(fsHit.stripId);
+              } else {
+                s.add(fsHit.stripId);
+              }
+              storeFs.setSelectedEntityIds([...s]);
+            } else {
+              storeFs.setSelectedEntityIds([fsHit.stripId]);
+            }
+            lastWallClickRef.current = null;
+            paint();
+            return;
+          }
           const wallHit = pickClosestWallAlongPoint(worldMm, layerView.walls, segTolSel);
           if (wallHit) {
             const store = useAppStore.getState();
@@ -3004,6 +3501,23 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           }
           paint();
         }
+        const fpPtr = foundationPilePointerRef.current;
+        if (fpPtr && ev.pointerId === fpPtr.pointerId) {
+          foundationPilePointerRef.current = null;
+          try {
+            canvas.releasePointerCapture(ev.pointerId);
+          } catch {
+            /* ignore */
+          }
+          if (fpPtr.dragActive) {
+            const dragBaseFp = foundationPileDragHistoryBaselineRef.current;
+            foundationPileDragHistoryBaselineRef.current = null;
+            if (dragBaseFp) {
+              useAppStore.getState().recordUndoIfModelChangedSince(dragBaseFp);
+            }
+          }
+          paint();
+        }
         if (marquee) {
           finalizeMarquee();
           paint();
@@ -3045,6 +3559,23 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             paint();
           }
         }
+        const fpPtrLeave = foundationPilePointerRef.current;
+        if (fpPtrLeave) {
+          foundationPilePointerRef.current = null;
+          try {
+            canvas.releasePointerCapture(fpPtrLeave.pointerId);
+          } catch {
+            /* ignore */
+          }
+          if (fpPtrLeave.dragActive) {
+            const dragBaseFpLeave = foundationPileDragHistoryBaselineRef.current;
+            foundationPileDragHistoryBaselineRef.current = null;
+            if (dragBaseFpLeave) {
+              useAppStore.getState().recordUndoIfModelChangedSince(dragBaseFpLeave);
+            }
+          }
+          paint();
+        }
         endPan();
         cursorCbRef.current(null);
         jointHoverRef.current = null;
@@ -3060,6 +3591,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           !st.pendingWindowPlacement &&
           !st.pendingDoorPlacement &&
           !st.wallMoveCopySession &&
+          !st.foundationStripPlacementSession &&
+          !st.foundationPilePlacementSession &&
           st.activeTool !== "ruler" &&
           st.activeTool !== "line" &&
           st.activeTool !== "changeLength"
@@ -3072,6 +3605,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           st.pendingWindowPlacement ||
           st.pendingDoorPlacement ||
           st.wallMoveCopySession ||
+          st.foundationStripPlacementSession ||
+          st.foundationPilePlacementSession ||
           st.activeTool === "ruler" ||
           st.activeTool === "line" ||
           st.activeTool === "changeLength"

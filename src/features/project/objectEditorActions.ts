@@ -26,6 +26,12 @@ export function resolveObjectEditorForSelection(
   if (project.planLines.some((l) => l.id === id)) {
     return { kind: "hint", message: "Линия чертежа: удаление и выделение; отдельного редактора нет." };
   }
+  if (project.foundationStrips.some((s) => s.id === id)) {
+    return { kind: "hint", message: "Лента фундамента: удаление, выделение и перемещение на плане." };
+  }
+  if (project.foundationPiles.some((p) => p.id === id)) {
+    return { kind: "hint", message: "Свая: параметры задаются при установке; удаление и перетаскивание на плане." };
+  }
   const wall = project.walls.find((w) => w.id === id);
   if (wall) {
     return { kind: "wall", wallId: id };

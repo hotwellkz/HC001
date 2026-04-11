@@ -1,5 +1,7 @@
 import type { Dimension } from "./dimension";
 import type { Foundation } from "./foundation";
+import type { FoundationPileEntity } from "./foundationPile";
+import type { FoundationStripEntity } from "./foundationStrip";
 import type { Layer } from "./layer";
 import type { MaterialSet } from "./materialSet";
 import type { Opening } from "./opening";
@@ -28,6 +30,10 @@ export interface Project {
   readonly walls: readonly Wall[];
   /** Вспомогательные линии чертежа (2D), не влияют на 3D и расчёты. */
   readonly planLines: readonly PlanLine[];
+  /** Ленточный фундамент на плане (по слоям). */
+  readonly foundationStrips: readonly FoundationStripEntity[];
+  /** Сваи фундамента на плане (по слоям). */
+  readonly foundationPiles: readonly FoundationPileEntity[];
   /** Результаты производственного расчёта по стенам (SIP-раскладка, пиломатериалы). */
   readonly wallCalculations: readonly WallCalculationResult[];
   /** Узлы соединения стен (углы, примыкания); персистится в snapshot. */

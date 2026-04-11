@@ -131,6 +131,8 @@ export function deleteLayerAndEntities(project: Project, layerId: string): Proje
   const wallIds = new Set(project.walls.filter((w) => w.layerId === layerId).map((w) => w.id));
   const walls = project.walls.filter((w) => w.layerId !== layerId);
   const planLines = project.planLines.filter((l) => l.layerId !== layerId);
+  const foundationStrips = project.foundationStrips.filter((s) => s.layerId !== layerId);
+  const foundationPiles = project.foundationPiles.filter((p) => p.layerId !== layerId);
   const wallJoints = project.wallJoints.filter((j) => !wallIds.has(j.wallAId) && !wallIds.has(j.wallBId));
   const openings = project.openings.filter((o) => o.wallId == null || !wallIds.has(o.wallId));
   const openingFramingPieces = project.openingFramingPieces.filter((p) => !wallIds.has(p.wallId));
@@ -144,6 +146,8 @@ export function deleteLayerAndEntities(project: Project, layerId: string): Proje
     layers: reindexed,
     walls,
     planLines,
+    foundationStrips,
+    foundationPiles,
     wallCalculations: project.wallCalculations.filter((c) => !wallIds.has(c.wallId)),
     wallJoints,
     openings,

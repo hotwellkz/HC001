@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { Editor2DPlanToolbar } from "@/features/ui/Editor2DPlanToolbar";
 import { LayerToolbar } from "@/features/ui/LayerToolbar";
 import { ThemeMenu } from "@/features/ui/ThemeMenu";
 import { projectCommands } from "@/features/project/commands";
 import { APP_NAME } from "@/shared/constants";
+import { computeAnchoredPopoverPosition } from "@/shared/ui/computeAnchoredPopoverPosition";
 import { useAppStore } from "@/store/useAppStore";
 import { useEditorShortcutsStore } from "@/store/useEditorShortcutsStore";
 
@@ -84,6 +86,127 @@ function IconRedo() {
   );
 }
 
+function TopBarOverflowMenu({
+  open,
+  onOpenChange,
+  actions,
+}: {
+  readonly open: boolean;
+  readonly onOpenChange: (next: boolean) => void;
+  readonly actions: OverflowAction[];
+}) {
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
+
+  const reposition = useCallback(() => {
+    const btn = triggerRef.current;
+    const menu = menuRef.current;
+    if (!btn || !menu) {
+      return;
+    }
+    const anchor = btn.getBoundingClientRect();
+    const w = menu.offsetWidth;
+    const h = menu.offsetHeight;
+    setPos(computeAnchoredPopoverPosition(anchor, w, h, window.innerWidth, window.innerHeight));
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      return;
+    }
+    reposition();
+  }, [open, reposition, actions.length]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const menu = menuRef.current;
+    const ro = menu ? new ResizeObserver(() => reposition()) : null;
+    if (menu && ro) {
+      ro.observe(menu);
+    }
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [open, reposition]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onDoc = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (triggerRef.current?.contains(t) || menuRef.current?.contains(t)) {
+        return;
+      }
+      onOpenChange(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onOpenChange(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open, onOpenChange]);
+
+  return (
+    <>
+      <div className="tb-overflow-wrap">
+        <button
+          ref={triggerRef}
+          type="button"
+          className="tb-overflow-trigger"
+          title="Ещё"
+          aria-label="Ещё"
+          aria-haspopup="menu"
+          aria-expanded={open}
+          onClick={() => onOpenChange(!open)}
+        >
+          <IconMore />
+        </button>
+      </div>
+      {open
+        ? createPortal(
+            <div
+              ref={menuRef}
+              className="tb-overflow-popover tb-overflow-popover--portal"
+              style={{ left: pos.left, top: pos.top }}
+              role="menu"
+              aria-label="Дополнительные действия"
+            >
+              {actions.map((action) => (
+                <button
+                  key={action.id}
+                  type="button"
+                  role="menuitem"
+                  className="tb-overflow-item"
+                  onClick={() => {
+                    action.onClick();
+                    onOpenChange(false);
+                  }}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
+
 export function TopBar() {
   const name = useAppStore((s) => s.currentProject.meta.name);
   const dirty = useAppStore((s) => s.dirty);
@@ -98,7 +221,6 @@ export function TopBar() {
     typeof window === "undefined" ? "wide" : getTopBarMode(window.innerWidth),
   );
   const [overflowOpen, setOverflowOpen] = useState(false);
-  const overflowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let frame = 0;
@@ -117,28 +239,6 @@ export function TopBar() {
       window.removeEventListener("resize", onResize);
     };
   }, []);
-
-  useEffect(() => {
-    if (!overflowOpen) {
-      return;
-    }
-    const onDoc = (e: MouseEvent) => {
-      if (overflowRef.current && !overflowRef.current.contains(e.target as Node)) {
-        setOverflowOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOverflowOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [overflowOpen]);
 
   const overflowActions: OverflowAction[] = [];
   if (mode !== "wide") {
@@ -246,37 +346,7 @@ export function TopBar() {
           </button>
         ) : null}
         {showOverflow ? (
-          <div className="tb-overflow-wrap" ref={overflowRef}>
-            <button
-              type="button"
-              className="tb-overflow-trigger"
-              title="Ещё"
-              aria-label="Ещё"
-              aria-haspopup="menu"
-              aria-expanded={overflowOpen}
-              onClick={() => setOverflowOpen((v) => !v)}
-            >
-              <IconMore />
-            </button>
-            {overflowOpen ? (
-              <div className="tb-overflow-popover" role="menu" aria-label="Дополнительные действия">
-                {overflowActions.map((action) => (
-                  <button
-                    key={action.id}
-                    type="button"
-                    role="menuitem"
-                    className="tb-overflow-item"
-                    onClick={() => {
-                      action.onClick();
-                      setOverflowOpen(false);
-                    }}
-                  >
-                    {action.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          <TopBarOverflowMenu open={overflowOpen} onOpenChange={setOverflowOpen} actions={overflowActions} />
         ) : null}
       </div>
     </header>

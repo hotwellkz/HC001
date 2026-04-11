@@ -89,6 +89,8 @@ export interface ViewState {
   readonly show3dLayerWindows: boolean;
   /** Заготовка: двери в 3D. */
   readonly show3dLayerDoors: boolean;
+  /** Видимость фоновой сетки пола в 3D (не влияет на 2D-план). */
+  readonly show3dGrid: boolean;
 }
 
 /** Нормализация viewState из файла (старые проекты без поля). */
@@ -106,6 +108,7 @@ export function normalizeViewState(
     readonly show3dLayerGypsum?: boolean;
     readonly show3dLayerWindows?: boolean;
     readonly show3dLayerDoors?: boolean;
+    readonly show3dGrid?: boolean;
   },
 ): ViewState {
   const tab = VALID_TABS.includes(input.activeTab as EditorTab) ? input.activeTab : "2d";
@@ -123,5 +126,6 @@ export function normalizeViewState(
     show3dLayerGypsum: input.show3dLayerGypsum !== false,
     show3dLayerWindows: input.show3dLayerWindows !== false,
     show3dLayerDoors: input.show3dLayerDoors !== false,
+    show3dGrid: input.show3dGrid !== false,
   };
 }

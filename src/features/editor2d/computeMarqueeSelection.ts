@@ -1,4 +1,8 @@
 import type { Project } from "@/core/domain/project";
+import {
+  foundationStripOrthoRingOuterBoundsMm,
+  foundationStripSegmentFootprintQuadMm,
+} from "@/core/domain/foundationStripGeometry";
 import { openingCenterOnWallMm } from "@/core/domain/openingPlacement";
 import {
   normalizeRectMmFromCorners,
@@ -38,6 +42,64 @@ export function computeMarqueeSelection(
   for (const ln of project.planLines) {
     if (rectsIntersectMm(segmentBoundsMm(ln.start, ln.end), rect)) {
       ids.push(ln.id);
+    }
+  }
+
+  for (const pile of project.foundationPiles) {
+    const h = Math.max(pile.capSizeMm, pile.sizeMm) / 2;
+    const bb = {
+      minX: pile.centerX - h,
+      maxX: pile.centerX + h,
+      minY: pile.centerY - h,
+      maxY: pile.centerY + h,
+    };
+    if (rectsIntersectMm(bb, rect)) {
+      ids.push(pile.id);
+    }
+  }
+
+  for (const fs of project.foundationStrips) {
+    const bb =
+      fs.kind === "ortho_ring"
+        ? foundationStripOrthoRingOuterBoundsMm(fs)
+        : fs.kind === "footprint_poly"
+          ? (() => {
+              const loop = fs.outerRingMm;
+              let minX = loop[0]!.x;
+              let maxX = loop[0]!.x;
+              let minY = loop[0]!.y;
+              let maxY = loop[0]!.y;
+              for (const p of loop) {
+                minX = Math.min(minX, p.x);
+                maxX = Math.max(maxX, p.x);
+                minY = Math.min(minY, p.y);
+                maxY = Math.max(maxY, p.y);
+              }
+              return { minX, maxX, minY, maxY };
+            })()
+          : (() => {
+              const quad = foundationStripSegmentFootprintQuadMm(
+                fs.axisStart,
+                fs.axisEnd,
+                fs.outwardNormalX,
+                fs.outwardNormalY,
+                fs.sideOutMm,
+                fs.sideInMm,
+              );
+              let minX = quad[0]!.x;
+              let maxX = quad[0]!.x;
+              let minY = quad[0]!.y;
+              let maxY = quad[0]!.y;
+              for (const p of quad) {
+                minX = Math.min(minX, p.x);
+                maxX = Math.max(maxX, p.x);
+                minY = Math.min(minY, p.y);
+                maxY = Math.max(maxY, p.y);
+              }
+              return { minX, maxX, minY, maxY };
+            })();
+    if (rectsIntersectMm(bb, rect)) {
+      ids.push(fs.id);
     }
   }
 

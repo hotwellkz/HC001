@@ -104,6 +104,21 @@ import type { WallEndSide, WallJointKind } from "@/core/domain/wallJoint";
 import type { WallJointSession } from "@/core/domain/wallJointSession";
 import { pickNearestWallEnd, pickWallSegmentInterior } from "@/core/domain/wallJointPick";
 import { narrowProjectToActiveLayer } from "@/core/domain/projectLayerSlice";
+import type { FoundationPileEntity, FoundationPileKind } from "@/core/domain/foundationPile";
+import { translateFoundationPilesInProject } from "@/core/domain/foundationPileOps";
+import type { FoundationStripSegmentEntity } from "@/core/domain/foundationStrip";
+import {
+  buildOrthoRectangleFoundationStripRingEntity,
+  mergeCollinearFoundationStripSegments,
+} from "@/core/domain/foundationStripGeometry";
+import {
+  findFoundationStripIdContainingPlanPointMm,
+  mergeTouchingFoundationStripBands,
+} from "@/core/domain/foundationStripMerge";
+import {
+  pickOutwardNormalForStripAxisMm,
+  referenceWallIdFromSnapForFoundationStrip,
+} from "@/features/editor2d/foundationStripNormals2d";
 import { buildWallCalculationForWall, SipWallLayoutError } from "@/core/domain/sipWallLayout";
 import type { WallShapeMode } from "@/core/domain/wallShapeMode";
 import { type EditorTab, viewport3dWithPlanOrbitTargetMm } from "@/core/domain/viewState";
@@ -129,6 +144,38 @@ import {
 } from "@/store/projectHistory";
 
 export type ActiveTool = "select" | "pan" | "ruler" | "changeLength" | "line";
+
+export type FoundationStripBuildMode = "linear" | "rectangle";
+
+export interface FoundationStripPlacementDraft {
+  readonly depthMm: number;
+  readonly side1Mm: number;
+  readonly side2Mm: number;
+  readonly buildMode: FoundationStripBuildMode;
+}
+
+export interface FoundationStripPlacementSession {
+  readonly draft: FoundationStripPlacementDraft;
+  readonly phase: "waitingFirstPoint" | "waitingSecondPoint";
+  readonly firstPointMm: Point2D | null;
+  readonly previewEndMm: Point2D | null;
+  readonly lastSnapKind: SnapKind | null;
+  readonly lastReferenceWallId: string | null;
+}
+
+export interface FoundationPilePlacementDraft {
+  readonly pileKind: FoundationPileKind;
+  readonly sizeMm: number;
+  readonly capSizeMm: number;
+  readonly heightMm: number;
+  readonly levelMm: number;
+}
+
+export interface FoundationPilePlacementSession {
+  readonly draft: FoundationPilePlacementDraft;
+  readonly previewWorldMm: Point2D | null;
+  readonly lastSnapKind: SnapKind | null;
+}
 
 /** Окно создано из модалки, ожидает привязку к стене (этап 2). */
 export interface PendingWindowPlacement {
@@ -190,6 +237,12 @@ interface AppState {
   readonly wallJointSession: WallJointSession | null;
   /** Режим постановки стены на 2D (после модалки «Добавить стену»). */
   readonly wallPlacementSession: WallPlacementSession | null;
+  readonly addFoundationStripModalOpen: boolean;
+  readonly foundationStripPlacementSession: FoundationStripPlacementSession | null;
+  readonly foundationStripPlacementHistoryBaseline: Project | null;
+  readonly addFoundationPileModalOpen: boolean;
+  readonly foundationPilePlacementSession: FoundationPilePlacementSession | null;
+  readonly foundationPilePlacementHistoryBaseline: Project | null;
   readonly wallCoordinateModalOpen: boolean;
   /** Модалка смещения начала стены от опорной точки (Пробел после выбора опоры). */
   readonly wallAnchorCoordinateModalOpen: boolean;
@@ -266,6 +319,7 @@ interface AppActions {
         | "show3dLayerGypsum"
         | "show3dLayerWindows"
         | "show3dLayerDoors"
+        | "show3dGrid"
       >
     >,
   ) => void;
@@ -300,6 +354,36 @@ interface AppActions {
   duplicateProfileById: (profileId: string) => void;
   openAddWallModal: () => void;
   closeAddWallModal: () => void;
+  openAddFoundationStripModal: () => void;
+  closeAddFoundationStripModal: () => void;
+  applyAddFoundationStripModal: (input: {
+    readonly depthMm: number;
+    readonly side1Mm: number;
+    readonly side2Mm: number;
+    readonly buildMode: FoundationStripBuildMode;
+  }) => void;
+  cancelFoundationStripPlacement: () => void;
+  foundationStripPlacementBackOrExit: () => void;
+  foundationStripPlacementPreviewMove: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+  ) => void;
+  foundationStripPlacementPrimaryClick: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+  ) => void;
+  openAddFoundationPileModal: () => void;
+  closeAddFoundationPileModal: () => void;
+  applyAddFoundationPileModal: (input: FoundationPilePlacementDraft) => void;
+  cancelFoundationPilePlacement: () => void;
+  foundationPilePlacementPreviewMove: (worldMm: Point2D, viewport: ViewportTransform) => void;
+  foundationPilePlacementPrimaryClick: (worldMm: Point2D, viewport: ViewportTransform) => void;
+  applyFoundationPilesWorldDeltaMm: (
+    pileIds: readonly string[],
+    dxMm: number,
+    dyMm: number,
+    opts?: { readonly skipHistory?: boolean },
+  ) => void;
   openAddWindowModal: () => void;
   closeAddWindowModal: () => void;
   openAddDoorModal: () => void;
@@ -393,6 +477,8 @@ interface AppActions {
   setSnapToVertex: (value: boolean) => void;
   setSnapToEdge: (value: boolean) => void;
   setSnapToGrid: (value: boolean) => void;
+  /** Только отображение сетки на 2D-плане; не связано с привязкой к сетке и с 3D-сеткой. */
+  setShow2dGrid: (value: boolean) => void;
   openWallCoordinateModal: () => void;
   closeWallCoordinateModal: () => void;
   applyWallCoordinateModal: (input: { readonly dxMm: number; readonly dyMm: number }) => void;
@@ -558,6 +644,12 @@ function historyJumpClearTransientUi(s: AppStore, restored: Project): Partial<Ap
     addWindowModalOpen: false,
     addDoorModalOpen: false,
     wallJointParamsModalOpen: false,
+    addFoundationStripModalOpen: false,
+    foundationStripPlacementSession: null,
+    foundationStripPlacementHistoryBaseline: null,
+    addFoundationPileModalOpen: false,
+    foundationPilePlacementSession: null,
+    foundationPilePlacementHistoryBaseline: null,
     activeTool: "select",
     wallDetailWallId: wd,
   };
@@ -670,6 +762,12 @@ export const useAppStore = create<AppStore>((set, get) => {
     wallJointParamsModalOpen: false,
     wallJointSession: null,
     wallPlacementSession: null,
+    addFoundationStripModalOpen: false,
+    foundationStripPlacementSession: null,
+    foundationStripPlacementHistoryBaseline: null,
+    addFoundationPileModalOpen: false,
+    foundationPilePlacementSession: null,
+    foundationPilePlacementHistoryBaseline: null,
     wallCoordinateModalOpen: false,
     wallAnchorCoordinateModalOpen: false,
     wallAnchorPlacementModeActive: false,
@@ -774,6 +872,13 @@ export const useAppStore = create<AppStore>((set, get) => {
           projectOriginMoveToolActive: false,
           projectOriginCoordinateModalOpen: false,
           openingAlongMoveNumericModalOpen: false,
+          wallPlacementHistoryBaseline: null,
+          addFoundationStripModalOpen: false,
+          foundationStripPlacementSession: null,
+          foundationStripPlacementHistoryBaseline: null,
+          addFoundationPileModalOpen: false,
+          foundationPilePlacementSession: null,
+          foundationPilePlacementHistoryBaseline: null,
         };
         const mergeHist = (base: Partial<AppStore>): Partial<AppStore> =>
           projectMutated ? { ...base, ...buildProjectMutationState(s, proj, { dirty: true }) } : base;
@@ -1170,6 +1275,10 @@ export const useAppStore = create<AppStore>((set, get) => {
           addWallModalOpen: true,
           addWindowModalOpen: false,
           addDoorModalOpen: false,
+          addFoundationStripModalOpen: false,
+          foundationStripPlacementSession: null,
+          foundationStripPlacementHistoryBaseline: null,
+          wallPlacementSession: null,
           wallJointSession: null,
           wallJointParamsModalOpen: false,
           pendingWindowPlacement: null,
@@ -1182,6 +1291,436 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     closeAddWallModal: () => set({ addWallModalOpen: false }),
 
+    openAddFoundationStripModal: () =>
+      set((s) => {
+        const { project, mutated } = projectWithoutPendingOpeningDrafts(
+          s.currentProject,
+          s.pendingWindowPlacement,
+          s.pendingDoorPlacement,
+        );
+        const patch: Partial<AppStore> = {
+          addFoundationStripModalOpen: true,
+          addWallModalOpen: false,
+          addWindowModalOpen: false,
+          addDoorModalOpen: false,
+          wallPlacementSession: null,
+          wallPlacementHistoryBaseline: null,
+          wallJointSession: null,
+          wallJointParamsModalOpen: false,
+          wallCoordinateModalOpen: false,
+          wallAnchorCoordinateModalOpen: false,
+          wallAnchorPlacementModeActive: false,
+          wallPlacementAnchorMm: null,
+          wallPlacementAnchorPreviewEndMm: null,
+          wallPlacementAnchorLastSnapKind: null,
+          wallPlacementAnchorAngleSnapLockedDeg: null,
+          pendingWindowPlacement: null,
+          pendingDoorPlacement: null,
+          pendingOpeningPlacementHistoryBaseline: null,
+          foundationStripPlacementSession: null,
+          foundationStripPlacementHistoryBaseline: null,
+          addFoundationPileModalOpen: false,
+          foundationPilePlacementSession: null,
+          foundationPilePlacementHistoryBaseline: null,
+          lastError: null,
+        };
+        return mutated ? { ...buildProjectMutationState(s, project, { ...patch, dirty: true }) } : patch;
+      }),
+
+    closeAddFoundationStripModal: () => set({ addFoundationStripModalOpen: false }),
+
+    openAddFoundationPileModal: () =>
+      set((s) => {
+        const { project, mutated } = projectWithoutPendingOpeningDrafts(
+          s.currentProject,
+          s.pendingWindowPlacement,
+          s.pendingDoorPlacement,
+        );
+        const patch: Partial<AppStore> = {
+          addFoundationPileModalOpen: true,
+          addWallModalOpen: false,
+          addWindowModalOpen: false,
+          addDoorModalOpen: false,
+          wallPlacementSession: null,
+          wallPlacementHistoryBaseline: null,
+          wallJointSession: null,
+          wallJointParamsModalOpen: false,
+          wallCoordinateModalOpen: false,
+          wallAnchorCoordinateModalOpen: false,
+          wallAnchorPlacementModeActive: false,
+          wallPlacementAnchorMm: null,
+          wallPlacementAnchorPreviewEndMm: null,
+          wallPlacementAnchorLastSnapKind: null,
+          wallPlacementAnchorAngleSnapLockedDeg: null,
+          pendingWindowPlacement: null,
+          pendingDoorPlacement: null,
+          pendingOpeningPlacementHistoryBaseline: null,
+          addFoundationStripModalOpen: false,
+          foundationStripPlacementSession: null,
+          foundationStripPlacementHistoryBaseline: null,
+          lastError: null,
+        };
+        return mutated ? { ...buildProjectMutationState(s, project, { ...patch, dirty: true }) } : patch;
+      }),
+
+    closeAddFoundationPileModal: () => set({ addFoundationPileModalOpen: false }),
+
+    applyAddFoundationPileModal: (input) => {
+      if (input.pileKind === "screw") {
+        set({ lastError: "Винтовая свая пока не реализована. Выберите железобетонную." });
+        return;
+      }
+      const sz = Number(input.sizeMm);
+      const cap = Number(input.capSizeMm);
+      const h = Number(input.heightMm);
+      const lvl = Number(input.levelMm);
+      if (!(Number.isFinite(sz) && sz > 0)) {
+        set({ lastError: "Размер сваи должен быть числом больше 0 (мм)." });
+        return;
+      }
+      if (!(Number.isFinite(cap) && cap > 0)) {
+        set({ lastError: "Площадка должна быть числом больше 0 (мм)." });
+        return;
+      }
+      if (!(Number.isFinite(h) && h > 0)) {
+        set({ lastError: "Высота сваи должна быть числом больше 0 (мм)." });
+        return;
+      }
+      if (!Number.isFinite(lvl)) {
+        set({ lastError: "Уровень должен быть числом (мм)." });
+        return;
+      }
+      const p = get().currentProject;
+      const baseline = cloneProjectSnapshot(p);
+      set({
+        addFoundationPileModalOpen: false,
+        foundationPilePlacementHistoryBaseline: baseline,
+        foundationPilePlacementSession: {
+          draft: {
+            pileKind: "reinforcedConcrete",
+            sizeMm: sz,
+            capSizeMm: cap,
+            heightMm: h,
+            levelMm: lvl,
+          },
+          previewWorldMm: null,
+          lastSnapKind: null,
+        },
+        addFoundationStripModalOpen: false,
+        foundationStripPlacementSession: null,
+        foundationStripPlacementHistoryBaseline: null,
+        wallPlacementSession: null,
+        wallPlacementHistoryBaseline: null,
+        selectedEntityIds: [],
+        lastError: null,
+      });
+    },
+
+    cancelFoundationPilePlacement: () =>
+      set({
+        foundationPilePlacementSession: null,
+        foundationPilePlacementHistoryBaseline: null,
+        addFoundationPileModalOpen: false,
+        lastError: null,
+      }),
+
+    foundationPilePlacementPreviewMove: (worldMm, viewport) => {
+      const s = get().foundationPilePlacementSession;
+      if (!s || isSceneCoordinateModalBlocking(get())) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      set({
+        foundationPilePlacementSession: {
+          ...s,
+          previewWorldMm: snap.point,
+          lastSnapKind: snap.kind,
+        },
+      });
+    },
+
+    foundationPilePlacementPrimaryClick: (worldMm, viewport) => {
+      const s = get().foundationPilePlacementSession;
+      if (!s || s.draft.pileKind !== "reinforcedConcrete") {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      const pt = snap.point;
+      const p0 = get().currentProject;
+      const t = new Date().toISOString();
+      const pile: FoundationPileEntity = {
+        id: newEntityId(),
+        layerId: p0.activeLayerId,
+        pileKind: "reinforcedConcrete",
+        centerX: pt.x,
+        centerY: pt.y,
+        sizeMm: s.draft.sizeMm,
+        capSizeMm: s.draft.capSizeMm,
+        heightMm: s.draft.heightMm,
+        levelMm: s.draft.levelMm,
+        createdAt: t,
+        updatedAt: t,
+      };
+      const nextProject = touchProjectMeta({ ...p0, foundationPiles: [...p0.foundationPiles, pile] });
+      set((st) =>
+        buildProjectMutationState(
+          st,
+          nextProject,
+          {
+            foundationPilePlacementSession: {
+              ...s,
+              previewWorldMm: snap.point,
+              lastSnapKind: snap.kind,
+            },
+            selectedEntityIds: [pile.id],
+            dirty: true,
+            lastError: null,
+          },
+          { historyBefore: st.currentProject },
+        ),
+      );
+    },
+
+    applyFoundationPilesWorldDeltaMm: (pileIds, dxMm, dyMm, opts) => {
+      if (pileIds.length === 0) {
+        return;
+      }
+      const p0 = get().currentProject;
+      const next = translateFoundationPilesInProject(p0, new Set(pileIds), dxMm, dyMm);
+      const merged = touchProjectMeta(next);
+      if (opts?.skipHistory) {
+        set({ currentProject: merged, dirty: true });
+      } else {
+        set((s) => buildProjectMutationState(s, merged, { dirty: true }));
+      }
+    },
+
+    applyAddFoundationStripModal: (input) => {
+      const d = Number(input.depthMm);
+      const s1 = Number(input.side1Mm);
+      const s2 = Number(input.side2Mm);
+      if (!(Number.isFinite(d) && d > 0)) {
+        set({ lastError: "Глубина должна быть числом больше 0 (мм)." });
+        return;
+      }
+      if (!(Number.isFinite(s1) && s1 >= 0) || !(Number.isFinite(s2) && s2 >= 0)) {
+        set({ lastError: "Стороны 1 и 2 должны быть неотрицательными числами (мм)." });
+        return;
+      }
+      if (s1 + s2 < 1) {
+        set({ lastError: "Сумма боковых отступов должна быть больше 0." });
+        return;
+      }
+      const p = get().currentProject;
+      const baseline = cloneProjectSnapshot(p);
+      set({
+        addFoundationStripModalOpen: false,
+        foundationStripPlacementHistoryBaseline: baseline,
+        foundationStripPlacementSession: {
+          draft: {
+            depthMm: d,
+            side1Mm: s1,
+            side2Mm: s2,
+            buildMode: input.buildMode,
+          },
+          phase: "waitingFirstPoint",
+          firstPointMm: null,
+          previewEndMm: null,
+          lastSnapKind: null,
+          lastReferenceWallId: null,
+        },
+        addFoundationPileModalOpen: false,
+        foundationPilePlacementSession: null,
+        foundationPilePlacementHistoryBaseline: null,
+        wallPlacementSession: null,
+        wallPlacementHistoryBaseline: null,
+        selectedEntityIds: [],
+        lastError: null,
+      });
+    },
+
+    cancelFoundationStripPlacement: () =>
+      set({
+        foundationStripPlacementSession: null,
+        foundationStripPlacementHistoryBaseline: null,
+        addFoundationStripModalOpen: false,
+        lastError: null,
+      }),
+
+    foundationStripPlacementBackOrExit: () => {
+      const session = get().foundationStripPlacementSession;
+      if (!session) {
+        return;
+      }
+      if (session.phase === "waitingSecondPoint") {
+        set({
+          foundationStripPlacementSession: {
+            ...session,
+            phase: "waitingFirstPoint",
+            firstPointMm: null,
+            previewEndMm: null,
+            lastSnapKind: null,
+            lastReferenceWallId: null,
+          },
+        });
+        return;
+      }
+      set({
+        foundationStripPlacementSession: null,
+        foundationStripPlacementHistoryBaseline: null,
+        lastError: null,
+      });
+    },
+
+    foundationStripPlacementPreviewMove: (worldMm, viewport) => {
+      const s = get().foundationStripPlacementSession;
+      if (!s || isSceneCoordinateModalBlocking(get())) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      const ref = referenceWallIdFromSnapForFoundationStrip(get().currentProject, snap);
+      set({
+        foundationStripPlacementSession: {
+          ...s,
+          previewEndMm: snap.point,
+          lastSnapKind: snap.kind,
+          lastReferenceWallId: ref ?? s.lastReferenceWallId,
+        },
+      });
+    },
+
+    foundationStripPlacementPrimaryClick: (worldMm, viewport) => {
+      const s = get().foundationStripPlacementSession;
+      if (!s) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      const p0 = get().currentProject;
+      const pt = snap.point;
+      const refWall =
+        referenceWallIdFromSnapForFoundationStrip(p0, snap) ?? s.lastReferenceWallId ?? undefined;
+
+      if (s.phase === "waitingFirstPoint") {
+        set({
+          foundationStripPlacementSession: {
+            ...s,
+            phase: "waitingSecondPoint",
+            firstPointMm: pt,
+            previewEndMm: pt,
+            lastSnapKind: snap.kind,
+            lastReferenceWallId: refWall ?? null,
+          },
+          lastError: null,
+        });
+        return;
+      }
+
+      const first = s.firstPointMm;
+      if (!first) {
+        return;
+      }
+
+      const minLen = 10;
+
+      if (s.draft.buildMode === "linear") {
+        if (Math.hypot(pt.x - first.x, pt.y - first.y) < minLen) {
+          set({ lastError: "Сегмент ленты слишком короткий." });
+          return;
+        }
+        const n = pickOutwardNormalForStripAxisMm(p0, first, pt, refWall);
+        const seg: FoundationStripSegmentEntity = {
+          kind: "segment",
+          id: newEntityId(),
+          layerId: p0.activeLayerId,
+          axisStart: first,
+          axisEnd: pt,
+          outwardNormalX: n.nx,
+          outwardNormalY: n.ny,
+          depthMm: s.draft.depthMm,
+          sideOutMm: s.draft.side1Mm,
+          sideInMm: s.draft.side2Mm,
+          createdAt: new Date().toISOString(),
+        };
+        const mergedCol = mergeCollinearFoundationStripSegments([...p0.foundationStrips, seg]);
+        const merged = mergeTouchingFoundationStripBands(mergedCol, { newId: newEntityId });
+        const nextProject = touchProjectMeta({ ...p0, foundationStrips: merged });
+        const mid = { x: (first.x + pt.x) / 2, y: (first.y + pt.y) / 2 };
+        const selectedStripId =
+          findFoundationStripIdContainingPlanPointMm(merged, mid) ?? merged[merged.length - 1]?.id ?? seg.id;
+        set((st) =>
+          buildProjectMutationState(
+            st,
+            nextProject,
+            {
+              foundationStripPlacementSession: {
+                ...s,
+                phase: "waitingFirstPoint",
+                firstPointMm: null,
+                previewEndMm: null,
+                lastSnapKind: null,
+                lastReferenceWallId: null,
+              },
+              foundationStripPlacementHistoryBaseline: null,
+              selectedEntityIds: [selectedStripId],
+              dirty: true,
+              lastError: null,
+            },
+            st.foundationStripPlacementHistoryBaseline != null
+              ? { historyBefore: st.foundationStripPlacementHistoryBaseline }
+              : {},
+          ),
+        );
+        return;
+      }
+
+      const xmin = Math.min(first.x, pt.x);
+      const xmax = Math.max(first.x, pt.x);
+      const ymin = Math.min(first.y, pt.y);
+      const ymax = Math.max(first.y, pt.y);
+      if (xmax - xmin < minLen || ymax - ymin < minLen) {
+        set({ lastError: "Прямоугольник слишком мал." });
+        return;
+      }
+      const t = new Date().toISOString();
+      const ring = buildOrthoRectangleFoundationStripRingEntity({
+        layerId: p0.activeLayerId,
+        xmin,
+        xmax,
+        ymin,
+        ymax,
+        depthMm: s.draft.depthMm,
+        sideOutMm: s.draft.side1Mm,
+        sideInMm: s.draft.side2Mm,
+        createdAt: t,
+        newId: () => newEntityId(),
+      });
+      const mergedRect = mergeTouchingFoundationStripBands([...p0.foundationStrips, ring], {
+        newId: newEntityId,
+      });
+      const nextProject = touchProjectMeta({ ...p0, foundationStrips: mergedRect });
+      const midRect = { x: (xmin + xmax) / 2, y: (ymin + ymax) / 2 };
+      const selectedStripIdRect =
+        findFoundationStripIdContainingPlanPointMm(mergedRect, midRect) ??
+        mergedRect[mergedRect.length - 1]?.id ??
+        ring.id;
+      set((st) =>
+        buildProjectMutationState(
+          st,
+          nextProject,
+          {
+            foundationStripPlacementSession: null,
+            foundationStripPlacementHistoryBaseline: null,
+            selectedEntityIds: [selectedStripIdRect],
+            dirty: true,
+            lastError: null,
+          },
+          st.foundationStripPlacementHistoryBaseline != null
+            ? { historyBefore: st.foundationStripPlacementHistoryBaseline }
+            : {},
+        ),
+      );
+    },
+
     openAddWindowModal: () =>
       set((s) => {
         const { project, mutated } = projectWithoutPendingOpeningDrafts(
@@ -1193,6 +1732,12 @@ export const useAppStore = create<AppStore>((set, get) => {
           addWindowModalOpen: true,
           addDoorModalOpen: false,
           addWallModalOpen: false,
+          addFoundationStripModalOpen: false,
+          foundationStripPlacementSession: null,
+          foundationStripPlacementHistoryBaseline: null,
+          addFoundationPileModalOpen: false,
+          foundationPilePlacementSession: null,
+          foundationPilePlacementHistoryBaseline: null,
           wallPlacementSession: null,
           wallJointSession: null,
           wallJointParamsModalOpen: false,
@@ -1221,6 +1766,13 @@ export const useAppStore = create<AppStore>((set, get) => {
         const patch: Partial<AppStore> = {
           addDoorModalOpen: true,
           addWindowModalOpen: false,
+          addWallModalOpen: false,
+          addFoundationStripModalOpen: false,
+          foundationStripPlacementSession: null,
+          foundationStripPlacementHistoryBaseline: null,
+          addFoundationPileModalOpen: false,
+          foundationPilePlacementSession: null,
+          foundationPilePlacementHistoryBaseline: null,
           wallPlacementSession: null,
           wallJointSession: null,
           wallJointParamsModalOpen: false,
@@ -3421,6 +3973,18 @@ export const useAppStore = create<AppStore>((set, get) => {
         ),
       ),
 
+    setShow2dGrid: (value) =>
+      set((s) =>
+        buildProjectMutationState(
+          s,
+          touchProjectMeta({
+            ...s.currentProject,
+            settings: { ...s.currentProject.settings, show2dGrid: value },
+          }),
+          { dirty: true },
+        ),
+      ),
+
     setWallShapeMode: (mode) =>
       set((s) =>
         buildProjectMutationState(
@@ -3503,6 +4067,12 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementAnchorPreviewEndMm: null,
           wallPlacementAnchorLastSnapKind: null,
           wallPlacementAnchorAngleSnapLockedDeg: null,
+          addFoundationStripModalOpen: false,
+          foundationStripPlacementSession: null,
+          foundationStripPlacementHistoryBaseline: null,
+          addFoundationPileModalOpen: false,
+          foundationPilePlacementSession: null,
+          foundationPilePlacementHistoryBaseline: null,
         });
       })();
     },
@@ -3559,6 +4129,12 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementAnchorPreviewEndMm: null,
           wallPlacementAnchorLastSnapKind: null,
           wallPlacementAnchorAngleSnapLockedDeg: null,
+          addFoundationStripModalOpen: false,
+          foundationStripPlacementSession: null,
+          foundationStripPlacementHistoryBaseline: null,
+          addFoundationPileModalOpen: false,
+          foundationPilePlacementSession: null,
+          foundationPilePlacementHistoryBaseline: null,
         });
       })();
     },
@@ -3610,6 +4186,12 @@ export const useAppStore = create<AppStore>((set, get) => {
         wallPlacementAnchorPreviewEndMm: null,
         wallPlacementAnchorLastSnapKind: null,
         wallPlacementAnchorAngleSnapLockedDeg: null,
+        addFoundationStripModalOpen: false,
+        foundationStripPlacementSession: null,
+        foundationStripPlacementHistoryBaseline: null,
+        addFoundationPileModalOpen: false,
+        foundationPilePlacementSession: null,
+        foundationPilePlacementHistoryBaseline: null,
       });
       try {
         await syncProjectToFirestore(loaded);
@@ -3694,6 +4276,12 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementAnchorPreviewEndMm: null,
           wallPlacementAnchorLastSnapKind: null,
           wallPlacementAnchorAngleSnapLockedDeg: null,
+          addFoundationStripModalOpen: false,
+          foundationStripPlacementSession: null,
+          foundationStripPlacementHistoryBaseline: null,
+          addFoundationPileModalOpen: false,
+          foundationPilePlacementSession: null,
+          foundationPilePlacementHistoryBaseline: null,
         });
         void (async () => {
           try {

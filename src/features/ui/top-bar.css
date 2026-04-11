@@ -162,16 +162,21 @@
 }
 
 .tb-overflow-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
   min-width: 180px;
   padding: var(--space-xs);
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border-subtle);
   background: var(--color-surface-raised);
   box-shadow: var(--shadow-panel);
-  z-index: 300;
+}
+
+/* Портал в document.body: не режется overflow шапки (.shell-top { overflow: hidden }) */
+.tb-overflow-popover--portal {
+  position: fixed;
+  z-index: var(--z-ui-popover, 160);
+  max-height: min(70vh, calc(100vh - 16px));
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 .tb-overflow-item {

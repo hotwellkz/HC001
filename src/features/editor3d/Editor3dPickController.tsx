@@ -19,6 +19,8 @@ function editorHotkeySnapshot() {
     layerParamsModalOpen: s.layerParamsModalOpen,
     profilesModalOpen: s.profilesModalOpen,
     addWallModalOpen: s.addWallModalOpen,
+    addFoundationStripModalOpen: s.addFoundationStripModalOpen,
+    addFoundationPileModalOpen: s.addFoundationPileModalOpen,
     addWindowModalOpen: s.addWindowModalOpen,
     addDoorModalOpen: s.addDoorModalOpen,
     windowEditModal: s.windowEditModal,
@@ -40,6 +42,16 @@ function applyPickToStore(
 ): void {
   const store = useAppStore.getState();
   if (payload.kind === "opening") {
+    setCalcFocus(null);
+    store.setSelectedEntityIds([payload.entityId]);
+    return;
+  }
+  if (payload.kind === "foundationPile") {
+    setCalcFocus(null);
+    store.setSelectedEntityIds([payload.entityId]);
+    return;
+  }
+  if (payload.kind === "foundationStrip") {
     setCalcFocus(null);
     store.setSelectedEntityIds([payload.entityId]);
     return;

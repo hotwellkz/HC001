@@ -2,7 +2,7 @@ import type { Camera, Intersection, Object3D, Vector3 } from "three";
 import { Raycaster, Vector2 } from "three";
 
 /** Тип интерактивного объекта 3D (расширяемо: перегородки, профили). */
-export type Editor3dPickKind = "opening" | "wall" | "calc";
+export type Editor3dPickKind = "opening" | "foundationPile" | "foundationStrip" | "wall" | "calc";
 
 /**
  * Метаданные для raycast / picking.
@@ -16,6 +16,8 @@ export interface Editor3dPickPayload {
 
 const PICK_PRIORITY: Record<Editor3dPickKind, number> = {
   opening: 3,
+  foundationPile: 2,
+  foundationStrip: 2,
   wall: 2,
   calc: 1,
 };

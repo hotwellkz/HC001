@@ -109,6 +109,8 @@ export function createDemoProject(): Project {
       },
     ],
     planLines: [],
+    foundationStrips: [],
+    foundationPiles: [],
     openingFramingPieces: [],
     openings: [
       {
@@ -147,7 +149,7 @@ export function createDemoProject(): Project {
     profiles: demoProfiles,
     settings: normalizeProjectSettings({
       gridStepMm: 500,
-      showGrid: true,
+      show2dGrid: true,
     }),
     viewState: {
       activeTab: "2d",
@@ -174,6 +176,7 @@ export function createDemoProject(): Project {
       show3dLayerGypsum: true,
       show3dLayerWindows: true,
       show3dLayerDoors: true,
+      show3dGrid: true,
     },
   };
 

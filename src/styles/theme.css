@@ -96,6 +96,14 @@
   --modal-max-w: 920px;
   --content-gap: 12px;
 
+  /**
+   * Слои UI: порядок от нижнего к верхнему.
+   * Модалки (.ui-modal-backdrop и аналоги) используют 200+; портальные меню — ниже модалок.
+   */
+  --z-ui-editor-hud: 50;
+  --z-ui-popover: 160;
+  --z-ui-modal-backdrop: 200;
+
   /* Typography */
   --font-sans: Inter, Geist, ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;

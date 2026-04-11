@@ -18,6 +18,8 @@ import { Editor3dVisibilityPanel } from "./Editor3dVisibilityPanel";
 import type { Editor3dPickPayload } from "./editor3dPick";
 import { initialCameraPositionFromViewport3d } from "./viewport3dThreeSync";
 import { ProjectCalculationMeshes } from "./ProjectCalculationMeshes";
+import { ProjectFoundationPiles } from "./ProjectFoundationPiles";
+import { ProjectFoundationStrips } from "./ProjectFoundationStrips";
 import { ProjectOpeningMeshes } from "./ProjectOpeningMeshes";
 import { ProjectSipSeamLines } from "./ProjectSipSeamLines";
 import { ProjectWalls } from "./ProjectWalls";
@@ -60,6 +62,8 @@ function editorOverlaySnapshot() {
     layerParamsModalOpen: s.layerParamsModalOpen,
     profilesModalOpen: s.profilesModalOpen,
     addWallModalOpen: s.addWallModalOpen,
+    addFoundationStripModalOpen: s.addFoundationStripModalOpen,
+    addFoundationPileModalOpen: s.addFoundationPileModalOpen,
     addWindowModalOpen: s.addWindowModalOpen,
     addDoorModalOpen: s.addDoorModalOpen,
     windowEditModal: s.windowEditModal,
@@ -78,16 +82,24 @@ function editorOverlaySnapshot() {
 function SceneFromProject({
   selectedWallEntityId,
   selectedOpeningEntityId,
+  selectedPileEntityId,
+  selectedStripEntityId,
   calcFocus,
   hoverWallEntityId,
   hoverOpeningEntityId,
+  hoverPileEntityId,
+  hoverStripEntityId,
   hoverCalcReactKey,
 }: {
   readonly selectedWallEntityId: string | null;
   readonly selectedOpeningEntityId: string | null;
+  readonly selectedPileEntityId: string | null;
+  readonly selectedStripEntityId: string | null;
   readonly calcFocus: CalcFocus | null;
   readonly hoverWallEntityId: string | null;
   readonly hoverOpeningEntityId: string | null;
+  readonly hoverPileEntityId: string | null;
+  readonly hoverStripEntityId: string | null;
   readonly hoverCalcReactKey: string | null;
 }) {
   const project = useAppStore((s) => s.currentProject);
@@ -96,11 +108,21 @@ function SceneFromProject({
   const showSipSeamLines = showCalc && (vs.show3dLayerEps !== false || vs.show3dLayerOsb !== false);
   return (
     <>
+      <ProjectFoundationStrips
+        project={project}
+        selectedStripEntityId={selectedStripEntityId}
+        hoverStripEntityId={hoverStripEntityId}
+      />
       <ProjectWalls
         project={project}
         selectedWallEntityId={selectedWallEntityId}
         calcFocus={calcFocus}
         hoverWallEntityId={hoverWallEntityId}
+      />
+      <ProjectFoundationPiles
+        project={project}
+        selectedPileEntityId={selectedPileEntityId}
+        hoverPileEntityId={hoverPileEntityId}
       />
       <ProjectCalculationMeshes
         project={project}
@@ -127,6 +149,8 @@ function Editor3dCanvasScene({
   onHoverPickChange,
   hoverWallEntityId,
   hoverOpeningEntityId,
+  hoverPileEntityId,
+  hoverStripEntityId,
   hoverCalcReactKey,
   flyModeActive,
   orbitPivotModeActive,
@@ -141,6 +165,8 @@ function Editor3dCanvasScene({
   readonly onHoverPickChange: (p: Editor3dPickPayload | null) => void;
   readonly hoverWallEntityId: string | null;
   readonly hoverOpeningEntityId: string | null;
+  readonly hoverPileEntityId: string | null;
+  readonly hoverStripEntityId: string | null;
   readonly hoverCalcReactKey: string | null;
   readonly flyModeActive: boolean;
   readonly orbitPivotModeActive: boolean;
@@ -166,6 +192,24 @@ function Editor3dCanvasScene({
     return project.openings.some((o) => o.id === id) ? id : null;
   }, [project.openings, selectedEntityIds]);
 
+  const selectedPileEntityId = useMemo(() => {
+    if (selectedEntityIds.length !== 1) {
+      return null;
+    }
+    const id = selectedEntityIds[0]!;
+    return project.foundationPiles.some((p) => p.id === id) ? id : null;
+  }, [project.foundationPiles, selectedEntityIds]);
+
+  const selectedStripEntityId = useMemo(() => {
+    if (selectedEntityIds.length !== 1) {
+      return null;
+    }
+    const id = selectedEntityIds[0]!;
+    return project.foundationStrips.some((s) => s.id === id) ? id : null;
+  }, [project.foundationStrips, selectedEntityIds]);
+
+  const show3dGrid = project.viewState.show3dGrid !== false;
+
   return (
     <>
       <color attach="background" args={[theme3d.bg]} />
@@ -185,15 +229,17 @@ function Editor3dCanvasScene({
       />
       <directionalLight position={[-10, 8, -6]} intensity={0.22} />
       <group position={[originXM, 0, originZM]} userData={{ editor3dExcludeFromOrbitPivot: true }}>
-        <Grid
-          infiniteGrid
-          fadeDistance={120}
-          sectionSize={1}
-          cellSize={0.2}
-          sectionColor={theme3d.section}
-          cellColor={theme3d.cell}
-          position={[0, 0, 0]}
-        />
+        {show3dGrid ? (
+          <Grid
+            infiniteGrid
+            fadeDistance={120}
+            sectionSize={1}
+            cellSize={0.2}
+            sectionColor={theme3d.section}
+            cellColor={theme3d.cell}
+            position={[0, 0, 0]}
+          />
+        ) : null}
         <axesHelper args={[2.5]} />
       </group>
       <Editor3dPickController
@@ -205,9 +251,13 @@ function Editor3dCanvasScene({
       <SceneFromProject
         selectedWallEntityId={selectedWallEntityId}
         selectedOpeningEntityId={selectedOpeningEntityId}
+        selectedPileEntityId={selectedPileEntityId}
+        selectedStripEntityId={selectedStripEntityId}
         calcFocus={calcFocus}
         hoverWallEntityId={hoverWallEntityId}
         hoverOpeningEntityId={hoverOpeningEntityId}
+        hoverPileEntityId={hoverPileEntityId}
+        hoverStripEntityId={hoverStripEntityId}
         hoverCalcReactKey={hoverCalcReactKey}
       />
       <Editor3dPivotMarker point={pivotMarkerWorld} />
@@ -227,6 +277,8 @@ export function Editor3DWorkspace() {
   const setShow3dProfileLayers = useAppStore((s) => s.setShow3dProfileLayers);
   const showCalc = useAppStore((s) => s.currentProject.viewState.show3dCalculation);
   const setShow3dCalculation = useAppStore((s) => s.setShow3dCalculation);
+  const show3dGrid = useAppStore((s) => s.currentProject.viewState.show3dGrid !== false);
+  const set3dLayerVisibility = useAppStore((s) => s.set3dLayerVisibility);
   const theme3d = useEditor3dThemeColors();
   const project = useAppStore((s) => s.currentProject);
   const selectedEntityIds = useAppStore((s) => s.selectedEntityIds);
@@ -251,6 +303,8 @@ export function Editor3DWorkspace() {
 
   const hoverWallEntityId = hoverPick?.kind === "wall" ? hoverPick.entityId : null;
   const hoverOpeningEntityId = hoverPick?.kind === "opening" ? hoverPick.entityId : null;
+  const hoverPileEntityId = hoverPick?.kind === "foundationPile" ? hoverPick.entityId : null;
+  const hoverStripEntityId = hoverPick?.kind === "foundationStrip" ? hoverPick.entityId : null;
   const hoverCalcReactKey = hoverPick?.kind === "calc" ? hoverPick.reactKey : null;
 
   useEffect(() => {
@@ -361,6 +415,47 @@ export function Editor3DWorkspace() {
       };
     }
 
+    const strip = project.foundationStrips.find((s) => s.id === id);
+    if (strip) {
+      const kindRu =
+        strip.kind === "ortho_ring"
+          ? "Замкнутое кольцо"
+          : strip.kind === "footprint_poly"
+            ? "Объединённый контур"
+            : "Сегмент";
+      return {
+        title: "Лента фундамента",
+        rows: [
+          ["ID", strip.id],
+          ["Форма", kindRu],
+          ["Глубина", `${strip.depthMm} мм`],
+          ["Сторона наружу", `${strip.sideOutMm} мм`],
+          ["Сторона внутрь", `${strip.sideInMm} мм`],
+        ] as const,
+      };
+    }
+
+    const pile = project.foundationPiles.find((p) => p.id === id);
+    if (pile) {
+      const typeRu =
+        pile.pileKind === "screw"
+          ? "Винтовая"
+          : pile.pileKind === "reinforcedConcrete"
+            ? "Железобетонная"
+            : pile.pileKind;
+      return {
+        title: "Свая",
+        rows: [
+          ["ID", pile.id],
+          ["Тип", typeRu],
+          ["Размер", `${Math.round(pile.sizeMm)} мм`],
+          ["Площадка", `${Math.round(pile.capSizeMm)} мм`],
+          ["Высота", `${Math.round(pile.heightMm)} мм`],
+          ["Уровень", `${Math.round(pile.levelMm)} мм`],
+        ] as const,
+      };
+    }
+
     return null;
   }, [calcFocus, project, selectedEntityIds]);
 
@@ -370,6 +465,12 @@ export function Editor3DWorkspace() {
     }
     if (hoverPick.kind === "wall") {
       return "Стена";
+    }
+    if (hoverPick.kind === "foundationPile") {
+      return "Свая";
+    }
+    if (hoverPick.kind === "foundationStrip") {
+      return "Лента фундамента";
     }
     if (hoverPick.kind === "calc") {
       return "Элемент расчёта";
@@ -431,11 +532,37 @@ export function Editor3DWorkspace() {
         <input type="checkbox" checked={showCalc !== false} onChange={(e) => setShow3dCalculation(e.target.checked)} />
         Расчёт в 3D (SIP и доски)
       </label>
+      <label
+        style={{
+          position: "absolute",
+          zIndex: 1,
+          top: 86,
+          left: 10,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "6px 10px",
+          borderRadius: 6,
+          border: "1px solid var(--color-border-subtle)",
+          background: theme3d.overlayBg,
+          color: theme3d.overlayText,
+          fontSize: 13,
+          cursor: "pointer",
+          userSelect: "none",
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={show3dGrid}
+          onChange={(e) => set3dLayerVisibility({ show3dGrid: e.target.checked })}
+        />
+        Сетка в 3D
+      </label>
       <div
         style={{
           position: "absolute",
           zIndex: 2,
-          top: 86,
+          top: 124,
           left: 10,
           display: "flex",
           flexDirection: "row",
@@ -531,6 +658,8 @@ export function Editor3DWorkspace() {
           onHoverPickChange={onHoverPickChange}
           hoverWallEntityId={hoverWallEntityId}
           hoverOpeningEntityId={hoverOpeningEntityId}
+          hoverPileEntityId={hoverPileEntityId}
+          hoverStripEntityId={hoverStripEntityId}
           hoverCalcReactKey={hoverCalcReactKey}
           flyModeActive={flyModeActive}
           orbitPivotModeActive={orbitPivotModeActive}
