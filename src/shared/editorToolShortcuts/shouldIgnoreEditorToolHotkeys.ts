@@ -10,13 +10,17 @@ export interface EditorToolHotkeyAppSnapshot {
   readonly addWallModalOpen: boolean;
   readonly addFoundationStripModalOpen: boolean;
   readonly addFoundationPileModalOpen: boolean;
+  readonly addSlabModalOpen: boolean;
   readonly addWindowModalOpen: boolean;
   readonly addDoorModalOpen: boolean;
   readonly windowEditModal: unknown;
   readonly doorEditModal: unknown;
+  /** Редактирование параметров плиты (двойной клик). */
+  readonly slabEditModal: unknown | null;
   readonly wallJointParamsModalOpen: boolean;
   readonly wallCalculationModalOpen: boolean;
   readonly wallCoordinateModalOpen: boolean;
+  readonly slabCoordinateModalOpen: boolean;
   readonly wallAnchorCoordinateModalOpen: boolean;
   readonly wallMoveCopyCoordinateModalOpen: boolean;
   readonly lengthChangeCoordinateModalOpen: boolean;
@@ -24,6 +28,10 @@ export interface EditorToolHotkeyAppSnapshot {
   readonly openingAlongMoveNumericModalOpen: boolean;
   /** Модалка «Авто-сваи» для ленты фундамента. */
   readonly foundationStripAutoPilesModal: unknown;
+  /** Параметры универсального копирования по двум точкам. */
+  readonly entityCopyParamsModal: unknown | null;
+  /** Параметры текстуры 3D. */
+  readonly textureApply3dParamsModal: unknown | null;
 }
 
 export interface EditorToolHotkeyIgnoreOptions {
@@ -41,13 +49,16 @@ export function hasBlockingEditorOverlayModal(app: EditorToolHotkeyAppSnapshot):
     app.addWallModalOpen ||
     app.addFoundationStripModalOpen ||
     app.addFoundationPileModalOpen ||
+    app.addSlabModalOpen ||
     app.addWindowModalOpen ||
     app.addDoorModalOpen ||
     app.windowEditModal != null ||
     app.doorEditModal != null ||
+    app.slabEditModal != null ||
     app.wallJointParamsModalOpen ||
     app.wallCalculationModalOpen ||
     app.foundationStripAutoPilesModal != null ||
+    app.textureApply3dParamsModal != null ||
     isSceneCoordinateModalBlocking(app)
   );
 }

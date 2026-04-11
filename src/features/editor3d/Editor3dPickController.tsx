@@ -21,19 +21,24 @@ function editorHotkeySnapshot() {
     addWallModalOpen: s.addWallModalOpen,
     addFoundationStripModalOpen: s.addFoundationStripModalOpen,
     addFoundationPileModalOpen: s.addFoundationPileModalOpen,
+    addSlabModalOpen: s.addSlabModalOpen,
     addWindowModalOpen: s.addWindowModalOpen,
     addDoorModalOpen: s.addDoorModalOpen,
     windowEditModal: s.windowEditModal,
     doorEditModal: s.doorEditModal,
+    slabEditModal: s.slabEditModal,
     wallJointParamsModalOpen: s.wallJointParamsModalOpen,
     wallCalculationModalOpen: s.wallCalculationModalOpen,
     wallCoordinateModalOpen: s.wallCoordinateModalOpen,
+    slabCoordinateModalOpen: s.slabCoordinateModalOpen,
     wallAnchorCoordinateModalOpen: s.wallAnchorCoordinateModalOpen,
     wallMoveCopyCoordinateModalOpen: s.wallMoveCopyCoordinateModalOpen,
     lengthChangeCoordinateModalOpen: s.lengthChangeCoordinateModalOpen,
     projectOriginCoordinateModalOpen: s.projectOriginCoordinateModalOpen,
     openingAlongMoveNumericModalOpen: s.openingAlongMoveNumericModalOpen,
     foundationStripAutoPilesModal: s.foundationStripAutoPilesModal,
+    entityCopyParamsModal: s.entityCopyParamsModal,
+    textureApply3dParamsModal: s.textureApply3dParamsModal,
   };
 }
 
@@ -53,6 +58,11 @@ function applyPickToStore(
     return;
   }
   if (payload.kind === "foundationStrip") {
+    setCalcFocus(null);
+    store.setSelectedEntityIds([payload.entityId]);
+    return;
+  }
+  if (payload.kind === "slab") {
     setCalcFocus(null);
     store.setSelectedEntityIds([payload.entityId]);
     return;

@@ -13,6 +13,7 @@ import { Editor3dFlyControls } from "./Editor3dFlyControls";
 import { Editor3dOrbitControls } from "./Editor3dOrbitControls";
 import { Editor3dOrbitPivotCoordinator } from "./Editor3dOrbitPivotCoordinator";
 import { Editor3dPickController } from "./Editor3dPickController";
+import { Editor3dTexturePickController } from "./Editor3dTexturePickController";
 import { Editor3dPivotMarker } from "./Editor3dPivotMarker";
 import { Editor3dVisibilityPanel } from "./Editor3dVisibilityPanel";
 import type { Editor3dPickPayload } from "./editor3dPick";
@@ -22,6 +23,7 @@ import { ProjectFoundationPiles } from "./ProjectFoundationPiles";
 import { ProjectFoundationStrips } from "./ProjectFoundationStrips";
 import { ProjectOpeningMeshes } from "./ProjectOpeningMeshes";
 import { ProjectSipSeamLines } from "./ProjectSipSeamLines";
+import { ProjectSlabs } from "./ProjectSlabs";
 import { ProjectWalls } from "./ProjectWalls";
 import { useEditor3dThemeColors } from "./useEditor3dThemeColors";
 
@@ -64,19 +66,24 @@ function editorOverlaySnapshot() {
     addWallModalOpen: s.addWallModalOpen,
     addFoundationStripModalOpen: s.addFoundationStripModalOpen,
     addFoundationPileModalOpen: s.addFoundationPileModalOpen,
+    addSlabModalOpen: s.addSlabModalOpen,
     addWindowModalOpen: s.addWindowModalOpen,
     addDoorModalOpen: s.addDoorModalOpen,
     windowEditModal: s.windowEditModal,
     doorEditModal: s.doorEditModal,
+    slabEditModal: s.slabEditModal,
     wallJointParamsModalOpen: s.wallJointParamsModalOpen,
     wallCalculationModalOpen: s.wallCalculationModalOpen,
     wallCoordinateModalOpen: s.wallCoordinateModalOpen,
+    slabCoordinateModalOpen: s.slabCoordinateModalOpen,
     wallAnchorCoordinateModalOpen: s.wallAnchorCoordinateModalOpen,
     wallMoveCopyCoordinateModalOpen: s.wallMoveCopyCoordinateModalOpen,
     lengthChangeCoordinateModalOpen: s.lengthChangeCoordinateModalOpen,
     projectOriginCoordinateModalOpen: s.projectOriginCoordinateModalOpen,
     openingAlongMoveNumericModalOpen: s.openingAlongMoveNumericModalOpen,
     foundationStripAutoPilesModal: s.foundationStripAutoPilesModal,
+    entityCopyParamsModal: s.entityCopyParamsModal,
+    textureApply3dParamsModal: s.textureApply3dParamsModal,
   };
 }
 
@@ -85,23 +92,31 @@ function SceneFromProject({
   selectedOpeningEntityId,
   selectedPileEntityId,
   selectedStripEntityId,
+  selectedSlabEntityId,
   calcFocus,
   hoverWallEntityId,
   hoverOpeningEntityId,
   hoverPileEntityId,
   hoverStripEntityId,
+  hoverSlabEntityId,
   hoverCalcReactKey,
+  texturePickHover,
+  texturePickLocked,
 }: {
   readonly selectedWallEntityId: string | null;
   readonly selectedOpeningEntityId: string | null;
   readonly selectedPileEntityId: string | null;
   readonly selectedStripEntityId: string | null;
+  readonly selectedSlabEntityId: string | null;
   readonly calcFocus: CalcFocus | null;
   readonly hoverWallEntityId: string | null;
   readonly hoverOpeningEntityId: string | null;
   readonly hoverPileEntityId: string | null;
   readonly hoverStripEntityId: string | null;
+  readonly hoverSlabEntityId: string | null;
   readonly hoverCalcReactKey: string | null;
+  readonly texturePickHover: Editor3dPickPayload | null;
+  readonly texturePickLocked: Editor3dPickPayload | null;
 }) {
   const project = useAppStore((s) => s.currentProject);
   const showCalc = project.viewState.show3dCalculation !== false;
@@ -113,29 +128,46 @@ function SceneFromProject({
         project={project}
         selectedStripEntityId={selectedStripEntityId}
         hoverStripEntityId={hoverStripEntityId}
+        texturePickHover={texturePickHover}
+        texturePickLocked={texturePickLocked}
       />
       <ProjectWalls
         project={project}
         selectedWallEntityId={selectedWallEntityId}
         calcFocus={calcFocus}
         hoverWallEntityId={hoverWallEntityId}
+        texturePickHover={texturePickHover}
+        texturePickLocked={texturePickLocked}
       />
       <ProjectFoundationPiles
         project={project}
         selectedPileEntityId={selectedPileEntityId}
         hoverPileEntityId={hoverPileEntityId}
+        texturePickHover={texturePickHover}
+        texturePickLocked={texturePickLocked}
+      />
+      <ProjectSlabs
+        project={project}
+        selectedSlabEntityId={selectedSlabEntityId}
+        hoverSlabEntityId={hoverSlabEntityId}
+        texturePickHover={texturePickHover}
+        texturePickLocked={texturePickLocked}
       />
       <ProjectCalculationMeshes
         project={project}
         visible={showCalc}
         calcFocus={calcFocus}
         hoverCalcReactKey={hoverCalcReactKey}
+        texturePickHover={texturePickHover}
+        texturePickLocked={texturePickLocked}
       />
       <ProjectSipSeamLines project={project} visible={showSipSeamLines} />
       <ProjectOpeningMeshes
         project={project}
         selectedOpeningEntityId={selectedOpeningEntityId}
         hoverOpeningEntityId={hoverOpeningEntityId}
+        texturePickHover={texturePickHover}
+        texturePickLocked={texturePickLocked}
       />
     </>
   );
@@ -152,11 +184,17 @@ function Editor3dCanvasScene({
   hoverOpeningEntityId,
   hoverPileEntityId,
   hoverStripEntityId,
+  hoverSlabEntityId,
   hoverCalcReactKey,
   flyModeActive,
   orbitPivotModeActive,
   pivotMarkerWorld,
   setPivotMarkerWorld,
+  textureApply3dToolActive,
+  textureParamsModalOpen,
+  onTextureHoverPick,
+  texturePickHover,
+  texturePickLocked,
 }: {
   readonly theme3d: ReturnType<typeof useEditor3dThemeColors>;
   readonly originXM: number;
@@ -168,11 +206,17 @@ function Editor3dCanvasScene({
   readonly hoverOpeningEntityId: string | null;
   readonly hoverPileEntityId: string | null;
   readonly hoverStripEntityId: string | null;
+  readonly hoverSlabEntityId: string | null;
   readonly hoverCalcReactKey: string | null;
   readonly flyModeActive: boolean;
   readonly orbitPivotModeActive: boolean;
   readonly pivotMarkerWorld: readonly [number, number, number] | null;
   readonly setPivotMarkerWorld: (p: readonly [number, number, number] | null) => void;
+  readonly textureApply3dToolActive: boolean;
+  readonly textureParamsModalOpen: boolean;
+  readonly onTextureHoverPick: (p: Editor3dPickPayload | null) => void;
+  readonly texturePickHover: Editor3dPickPayload | null;
+  readonly texturePickLocked: Editor3dPickPayload | null;
 }) {
   const project = useAppStore((s) => s.currentProject);
   const selectedEntityIds = useAppStore((s) => s.selectedEntityIds);
@@ -208,6 +252,14 @@ function Editor3dCanvasScene({
     const id = selectedEntityIds[0]!;
     return project.foundationStrips.some((s) => s.id === id) ? id : null;
   }, [project.foundationStrips, selectedEntityIds]);
+
+  const selectedSlabEntityId = useMemo(() => {
+    if (selectedEntityIds.length !== 1) {
+      return null;
+    }
+    const id = selectedEntityIds[0]!;
+    return project.slabs.some((s) => s.id === id) ? id : null;
+  }, [project.slabs, selectedEntityIds]);
 
   const show3dGrid = project.viewState.show3dGrid !== false;
 
@@ -246,20 +298,27 @@ function Editor3dCanvasScene({
       <Editor3dPickController
         setCalcFocus={setCalcFocus}
         onHoverPickChange={onHoverPickChange}
-        pickingSuspended={flyModeActive}
+        pickingSuspended={flyModeActive || textureApply3dToolActive}
         deferClickSelection={orbitPivotModeActive && !flyModeActive}
       />
+      {textureApply3dToolActive && !flyModeActive ? (
+        <Editor3dTexturePickController modalOpen={textureParamsModalOpen} onHoverTexturablePick={onTextureHoverPick} />
+      ) : null}
       <SceneFromProject
         selectedWallEntityId={selectedWallEntityId}
         selectedOpeningEntityId={selectedOpeningEntityId}
         selectedPileEntityId={selectedPileEntityId}
         selectedStripEntityId={selectedStripEntityId}
+        selectedSlabEntityId={selectedSlabEntityId}
         calcFocus={calcFocus}
         hoverWallEntityId={hoverWallEntityId}
         hoverOpeningEntityId={hoverOpeningEntityId}
         hoverPileEntityId={hoverPileEntityId}
         hoverStripEntityId={hoverStripEntityId}
+        hoverSlabEntityId={hoverSlabEntityId}
         hoverCalcReactKey={hoverCalcReactKey}
+        texturePickHover={texturePickHover}
+        texturePickLocked={texturePickLocked}
       />
       <Editor3dPivotMarker point={pivotMarkerWorld} />
       <Editor3dFlyControls enabled={flyModeActive} />
@@ -285,11 +344,14 @@ export function Editor3DWorkspace() {
   const selectedEntityIds = useAppStore((s) => s.selectedEntityIds);
   const activeTab = useAppStore((s) => s.activeTab);
   const clearSelection = useAppStore((s) => s.clearSelection);
+  const textureApply3dToolActive = useAppStore((s) => s.textureApply3dToolActive);
+  const textureApply3dParamsModal = useAppStore((s) => s.textureApply3dParamsModal);
 
   const originXM = (project.projectOrigin?.x ?? 0) * 0.001;
   const originZM = -(project.projectOrigin?.y ?? 0) * 0.001;
   const [calcFocus, setCalcFocus] = useState<CalcFocus | null>(null);
   const [hoverPick, setHoverPick] = useState<Editor3dPickPayload | null>(null);
+  const [textureToolHoverPick, setTextureToolHoverPick] = useState<Editor3dPickPayload | null>(null);
   const [flyModeActive, setFlyModeActive] = useState(false);
   const [orbitPivotModeActive, setOrbitPivotModeActive] = useState(false);
   const [pivotMarkerWorld, setPivotMarkerWorld] = useState<readonly [number, number, number] | null>(null);
@@ -302,10 +364,20 @@ export function Editor3DWorkspace() {
     setHoverPick(p);
   }, []);
 
+  const onTextureHoverPick = useCallback((p: Editor3dPickPayload | null) => {
+    setTextureToolHoverPick(p);
+  }, []);
+
+  const textureParamsModalOpen = textureApply3dParamsModal != null;
+  const texturePickLocked = textureApply3dParamsModal?.pick ?? null;
+  const texturePickHover =
+    textureApply3dToolActive && !textureApply3dParamsModal ? textureToolHoverPick : null;
+
   const hoverWallEntityId = hoverPick?.kind === "wall" ? hoverPick.entityId : null;
   const hoverOpeningEntityId = hoverPick?.kind === "opening" ? hoverPick.entityId : null;
   const hoverPileEntityId = hoverPick?.kind === "foundationPile" ? hoverPick.entityId : null;
   const hoverStripEntityId = hoverPick?.kind === "foundationStrip" ? hoverPick.entityId : null;
+  const hoverSlabEntityId = hoverPick?.kind === "slab" ? hoverPick.entityId : null;
   const hoverCalcReactKey = hoverPick?.kind === "calc" ? hoverPick.reactKey : null;
 
   useEffect(() => {
@@ -321,11 +393,18 @@ export function Editor3DWorkspace() {
     if (activeTab !== "3d") {
       setCalcFocus(null);
       setHoverPick(null);
+      setTextureToolHoverPick(null);
       setFlyModeActive(false);
       setOrbitPivotModeActive(false);
       setPivotMarkerWorld(null);
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!textureApply3dToolActive) {
+      setTextureToolHoverPick(null);
+    }
+  }, [textureApply3dToolActive]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
@@ -336,6 +415,18 @@ export function Editor3DWorkspace() {
         return;
       }
       if (isEditableKeyboardTarget(e.target)) {
+        return;
+      }
+      const st = useAppStore.getState();
+      if (st.textureApply3dParamsModal != null) {
+        e.preventDefault();
+        st.closeTextureApply3dParamsModal();
+        return;
+      }
+      if (st.textureApply3dToolActive) {
+        e.preventDefault();
+        st.cancelTextureApply3dTool();
+        setTextureToolHoverPick(null);
         return;
       }
       if (hasBlockingEditorOverlayModal(editorOverlaySnapshot())) {
@@ -457,6 +548,19 @@ export function Editor3DWorkspace() {
       };
     }
 
+    const slab = project.slabs.find((s) => s.id === id);
+    if (slab) {
+      return {
+        title: "Плита",
+        rows: [
+          ["ID", slab.id],
+          ["Вершин", String(slab.pointsMm.length)],
+          ["Уровень (верх)", `${Math.round(slab.levelMm)} мм`],
+          ["Глубина", `${Math.round(slab.depthMm)} мм`],
+        ] as const,
+      };
+    }
+
     return null;
   }, [calcFocus, project, selectedEntityIds]);
 
@@ -473,6 +577,9 @@ export function Editor3DWorkspace() {
     if (hoverPick.kind === "foundationStrip") {
       return "Лента фундамента";
     }
+    if (hoverPick.kind === "slab") {
+      return "Плита";
+    }
     if (hoverPick.kind === "calc") {
       return "Элемент расчёта";
     }
@@ -487,7 +594,16 @@ export function Editor3DWorkspace() {
   }, [hoverPick, project.openings]);
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%", minHeight: 0 }}>
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        minHeight: 0,
+        cursor:
+          textureApply3dToolActive && !flyModeActive && !textureParamsModalOpen ? "crosshair" : undefined,
+      }}
+    >
       <Editor3dVisibilityPanel />
       <label
         style={{
@@ -661,11 +777,17 @@ export function Editor3DWorkspace() {
           hoverOpeningEntityId={hoverOpeningEntityId}
           hoverPileEntityId={hoverPileEntityId}
           hoverStripEntityId={hoverStripEntityId}
+          hoverSlabEntityId={hoverSlabEntityId}
           hoverCalcReactKey={hoverCalcReactKey}
           flyModeActive={flyModeActive}
           orbitPivotModeActive={orbitPivotModeActive}
           pivotMarkerWorld={pivotMarkerWorld}
           setPivotMarkerWorld={setPivotMarkerWorld}
+          textureApply3dToolActive={textureApply3dToolActive}
+          textureParamsModalOpen={textureParamsModalOpen}
+          onTextureHoverPick={onTextureHoverPick}
+          texturePickHover={texturePickHover}
+          texturePickLocked={texturePickLocked}
         />
       </Canvas>
       {flyModeActive ? (
@@ -713,6 +835,31 @@ export function Editor3DWorkspace() {
           }}
         >
           Зажмите ЛКМ по объекту, чтобы вращаться вокруг точки попадания
+        </div>
+      ) : textureApply3dToolActive && !flyModeActive ? (
+        <div
+          style={{
+            position: "absolute",
+            zIndex: 4,
+            left: "50%",
+            bottom: 52,
+            transform: "translateX(-50%)",
+            maxWidth: "min(520px, calc(100% - 24px))",
+            padding: "6px 12px",
+            borderRadius: 6,
+            border: "1px solid var(--color-border-subtle)",
+            background: theme3d.overlayBg,
+            color: theme3d.overlayText,
+            fontSize: 11,
+            lineHeight: 1.45,
+            textAlign: "center",
+            pointerEvents: "none",
+            opacity: 0.92,
+          }}
+        >
+          {textureParamsModalOpen
+            ? "Настройте текстуру и нажмите «Применить»."
+            : "Выберите объект для наложения текстуры. ПКМ или Esc — выход из инструмента."}
         </div>
       ) : null}
       {hoverTooltip ? (

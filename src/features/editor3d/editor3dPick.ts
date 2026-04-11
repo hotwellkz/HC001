@@ -1,23 +1,15 @@
 import type { Camera, Intersection, Object3D, Vector3 } from "three";
 import { Raycaster, Vector2 } from "three";
 
-/** Тип интерактивного объекта 3D (расширяемо: перегородки, профили). */
-export type Editor3dPickKind = "opening" | "foundationPile" | "foundationStrip" | "wall" | "calc";
+import type { Editor3dPickKind, Editor3dPickPayload } from "@/core/domain/editor3dPickPayload";
 
-/**
- * Метаданные для raycast / picking.
- * entityId: id сущности в проекте (openingId или wallId).
- */
-export interface Editor3dPickPayload {
-  readonly kind: Editor3dPickKind;
-  readonly entityId: string;
-  readonly reactKey: string;
-}
+export type { Editor3dPickKind, Editor3dPickPayload } from "@/core/domain/editor3dPickPayload";
 
 const PICK_PRIORITY: Record<Editor3dPickKind, number> = {
   opening: 3,
   foundationPile: 2,
   foundationStrip: 2,
+  slab: 2,
   wall: 2,
   calc: 1,
 };

@@ -2,12 +2,17 @@ import type { LinearProfilePlacementMode } from "../geometry/linearPlacementGeom
 
 import type { WallShapeMode } from "./wallShapeMode";
 
+/** Режим построения плиты на плане. */
+export type SlabBuildMode = "rectangle" | "polyline";
+
 /** Настройки 2D-редактора, сохраняемые в проекте. */
 export interface Editor2dSettings {
   /** Привязка линейных элементов (стена и др.) к траектории построения. */
   readonly linearPlacementMode: LinearProfilePlacementMode;
   /** Линия (одна стена) или прямоугольник (четыре стены). */
   readonly wallShapeMode: WallShapeMode;
+  /** Плита: прямоугольник по двум точкам или полилиния. */
+  readonly slabBuildMode: SlabBuildMode;
   /** Независимые режимы магнитной привязки (пороги в px на экране). */
   readonly snapToVertex: boolean;
   readonly snapToEdge: boolean;
@@ -37,6 +42,7 @@ export function normalizeProjectSettings(s: ProjectSettingsWire): ProjectSetting
   const linearPlacementMode: LinearProfilePlacementMode =
     mode === "leftEdge" || mode === "rightEdge" || mode === "center" ? mode : "center";
   const wallShapeMode: WallShapeMode = s.editor2d?.wallShapeMode === "rectangle" ? "rectangle" : "line";
+  const slabBuildMode: SlabBuildMode = s.editor2d?.slabBuildMode === "polyline" ? "polyline" : "rectangle";
   const snapToVertex = s.editor2d?.snapToVertex !== false;
   const snapToEdge = s.editor2d?.snapToEdge !== false;
   const snapToGrid = s.editor2d?.snapToGrid !== false;
@@ -49,6 +55,7 @@ export function normalizeProjectSettings(s: ProjectSettingsWire): ProjectSetting
     editor2d: {
       linearPlacementMode,
       wallShapeMode,
+      slabBuildMode,
       snapToVertex,
       snapToEdge,
       snapToGrid,

@@ -64,7 +64,9 @@ export function filterSelectionToExistingProjectIds(
   const dims = new Set(project.dimensions.map((d) => d.id));
   const strips = new Set(project.foundationStrips.map((s) => s.id));
   const piles = new Set(project.foundationPiles.map((p) => p.id));
+  const slabs = new Set(project.slabs.map((s) => s.id));
   return ids.filter(
-    (id) => wall.has(id) || op.has(id) || lines.has(id) || dims.has(id) || strips.has(id) || piles.has(id),
+    (id) =>
+      wall.has(id) || op.has(id) || lines.has(id) || dims.has(id) || strips.has(id) || piles.has(id) || slabs.has(id),
   );
 }

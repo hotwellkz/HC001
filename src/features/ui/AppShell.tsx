@@ -7,6 +7,7 @@ import { useOpeningPropertiesKeyboard } from "@/features/project/useOpeningPrope
 import { useProjectUndoRedoHotkeys } from "@/features/project/useProjectUndoRedoHotkeys";
 import { AddFoundationPileModal } from "@/features/ui/AddFoundationPileModal";
 import { FoundationStripAutoPilesModal } from "@/features/ui/FoundationStripAutoPilesModal";
+import { AddSlabModal } from "@/features/ui/AddSlabModal";
 import { AddFoundationStripModal } from "@/features/ui/AddFoundationStripModal";
 import { AddWallModal } from "@/features/ui/AddWallModal";
 import { WallJointParamsModal } from "@/features/ui/WallJointParamsModal";
@@ -16,6 +17,9 @@ import { DoorParamsModal } from "@/features/ui/window-modal/DoorParamsModal";
 import { WallAnchorCoordinateModal } from "@/features/ui/WallAnchorCoordinateModal";
 import { ProjectOriginCoordinateModal } from "@/features/ui/ProjectOriginCoordinateModal";
 import { WallCoordinateModal } from "@/features/ui/WallCoordinateModal";
+import { EntityCopyParamsModal } from "@/features/ui/EntityCopyParamsModal";
+import { TextureApply3dParamsModal } from "@/features/ui/TextureApply3dParamsModal";
+import { SlabEditModal } from "@/features/ui/SlabEditModal";
 import { LayerManagerModal } from "@/features/ui/LayerManagerModal";
 import { LayerParamsModal } from "@/features/ui/LayerParamsModal";
 import { ProfilesModal } from "@/features/ui/ProfilesModal";
@@ -80,10 +84,14 @@ export function AppShell() {
       <ProfilesHost />
       <AddWallModal />
       <AddFoundationStripModal />
+      <AddSlabModal />
+      <SlabEditModal />
       <AddFoundationPileModal />
       <FoundationStripAutoPilesModal />
       <WallJointParamsModal />
       <WallCoordinateModal />
+      <EntityCopyParamsModal />
+      <TextureApply3dParamsModal />
       <ProjectOriginCoordinateModal />
       <WallAnchorCoordinateModal />
       <WallCalculationModal />

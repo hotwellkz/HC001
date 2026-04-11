@@ -4,6 +4,7 @@ import type { Layer } from "../domain/layer";
 import type { Project } from "../domain/project";
 import type { ProjectMeta } from "../domain/projectMeta";
 import { normalizeProjectSettings, type ProjectSettingsWire } from "../domain/settings";
+import { EMPTY_SURFACE_TEXTURE_STATE } from "../domain/surfaceTextureState";
 import { normalizeViewState } from "../domain/viewState";
 import type { Room } from "../domain/room";
 import type { Wall } from "../domain/wall";
@@ -73,6 +74,7 @@ export function migrateWireV0ToProject(data: Record<string, unknown>): Project {
     planLines: [],
     foundationStrips: [],
     foundationPiles: [],
+    slabs: [],
     wallCalculations: [],
     wallJoints: [],
     openings: data["openings"] as Project["openings"],
@@ -86,5 +88,6 @@ export function migrateWireV0ToProject(data: Record<string, unknown>): Project {
     settings: normalizeProjectSettings(data["settings"] as ProjectSettingsWire),
     viewState: normalizeViewState(data["viewState"] as Parameters<typeof normalizeViewState>[0]),
     profiles: [],
+    surfaceTextureState: EMPTY_SURFACE_TEXTURE_STATE,
   });
 }

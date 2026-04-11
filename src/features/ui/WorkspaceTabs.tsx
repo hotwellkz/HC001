@@ -2,6 +2,7 @@ import { ActiveLayerBadge } from "@/features/ui/ActiveLayerBadge";
 import { Editor2DToolbar } from "@/features/editor2d/Editor2DToolbar";
 import { Editor2DWorkspace } from "@/features/editor2d/Editor2DWorkspace";
 import { LinearPlacementRail } from "@/features/ui/LinearPlacementRail";
+import { SlabPlacementRail } from "@/features/ui/SlabPlacementRail";
 import { Editor3DWorkspace } from "@/features/editor3d/Editor3DWorkspace";
 import { SpecificationWorkspace } from "@/features/ui/SpecificationWorkspace";
 import { WallDetailWorkspace } from "@/features/ui/WallDetailWorkspace";
@@ -78,7 +79,10 @@ export function WorkspaceTabs({ onWorldCursorMm }: WorkspaceTabsProps) {
                 <ActiveLayerBadge />
                 <Editor2DWorkspace onWorldCursorMm={onWorldCursorMm} />
               </div>
-              <LinearPlacementRail />
+              <div style={{ display: "flex", flexDirection: "row", flexShrink: 0, minHeight: 0 }}>
+                <SlabPlacementRail />
+                <LinearPlacementRail />
+              </div>
             </div>
           </>
         ) : tab === "3d" ? (

@@ -10,6 +10,8 @@ import type { ProjectMeta } from "./projectMeta";
 import type { Room } from "./room";
 import type { Roof } from "./roof";
 import type { Sheet } from "./sheet";
+import type { SlabEntity } from "./slab";
+import type { SurfaceTextureState } from "./surfaceTextureState";
 import type { Profile } from "./profile";
 import type { ProjectSettings } from "./settings";
 import type { ViewState } from "./viewState";
@@ -34,6 +36,8 @@ export interface Project {
   readonly foundationStrips: readonly FoundationStripEntity[];
   /** Сваи фундамента на плане (по слоям). */
   readonly foundationPiles: readonly FoundationPileEntity[];
+  /** Плиты (контур в плане, уровень и толщина по Z). */
+  readonly slabs: readonly SlabEntity[];
   /** Результаты производственного расчёта по стенам (SIP-раскладка, пиломатериалы). */
   readonly wallCalculations: readonly WallCalculationResult[];
   /** Узлы соединения стен (углы, примыкания); персистится в snapshot. */
@@ -51,4 +55,6 @@ export interface Project {
   readonly viewState: ViewState;
   /** Библиотека профилей сечений (часть проекта, сохраняется в snapshot). */
   readonly profiles: readonly Profile[];
+  /** Переопределения текстур 3D: объект → слой → проект → цвет по умолчанию. */
+  readonly surfaceTextureState: SurfaceTextureState;
 }

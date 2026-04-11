@@ -1,5 +1,6 @@
 import { createEmptyMeta, touchProjectMeta } from "./projectFactory";
 import { normalizeProjectSettings } from "./settings";
+import { EMPTY_SURFACE_TEXTURE_STATE } from "./surfaceTextureState";
 import type { Layer } from "./layer";
 import type { Project } from "./project";
 import type { Profile } from "./profile";
@@ -111,6 +112,7 @@ export function createDemoProject(): Project {
     planLines: [],
     foundationStrips: [],
     foundationPiles: [],
+    slabs: [],
     openingFramingPieces: [],
     openings: [
       {
@@ -147,6 +149,7 @@ export function createDemoProject(): Project {
     sheets: [],
     dimensions: [],
     profiles: demoProfiles,
+    surfaceTextureState: EMPTY_SURFACE_TEXTURE_STATE,
     settings: normalizeProjectSettings({
       gridStepMm: 500,
       show2dGrid: true,

@@ -104,6 +104,17 @@ function IconFoundationPile() {
   );
 }
 
+/** Плита в плане: горизонтальная плита сверху + тонкая кромка. */
+function IconSlab() {
+  return (
+    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M4 9h16v8H4V9zm0-2h16v2H4V7z" opacity="0.38" />
+      <path fill="currentColor" d="M4 9h16v1.5H4V9z" />
+      <path fill="none" stroke="currentColor" strokeWidth="1.25" d="M4 17h16" opacity="0.55" />
+    </svg>
+  );
+}
+
 function IconWallJoint() {
   return (
     <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -120,6 +131,7 @@ export function Editor2DPlanToolbar() {
   const open = useAppStore((s) => s.openAddWallModal);
   const openFoundationStrip = useAppStore((s) => s.openAddFoundationStripModal);
   const openFoundationPile = useAppStore((s) => s.openAddFoundationPileModal);
+  const openSlab = useAppStore((s) => s.openAddSlabModal);
   const openWindow = useAppStore((s) => s.openAddWindowModal);
   const openJoint = useAppStore((s) => s.openWallJointParamsModal);
   const openDoor = useAppStore((s) => s.openAddDoorModal);
@@ -127,6 +139,7 @@ export function Editor2DPlanToolbar() {
   const wallToolActive = useAppStore((s) => s.wallPlacementSession != null);
   const foundationStripToolActive = useAppStore((s) => s.foundationStripPlacementSession != null);
   const foundationPileToolActive = useAppStore((s) => s.foundationPilePlacementSession != null);
+  const slabToolActive = useAppStore((s) => s.slabPlacementSession != null);
   const anchorMode = useAppStore((s) => s.wallAnchorPlacementModeActive);
   const toggleAnchorMode = useAppStore((s) => s.toggleWallAnchorPlacementMode);
   const jointModalOpen = useAppStore((s) => s.wallJointParamsModalOpen);
@@ -171,6 +184,17 @@ export function Editor2DPlanToolbar() {
         onClick={() => openFoundationPile()}
       >
         <IconFoundationPile />
+      </button>
+      <button
+        type="button"
+        className="e2dpt-btn"
+        title={slabToolActive ? "Параметры плиты (добавить ещё)" : "Добавить плиту"}
+        aria-label={slabToolActive ? "Параметры плиты" : "Добавить плиту"}
+        aria-pressed={slabToolActive}
+        data-active={slabToolActive}
+        onClick={() => openSlab()}
+      >
+        <IconSlab />
       </button>
       <button
         type="button"

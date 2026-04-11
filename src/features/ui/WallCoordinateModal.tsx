@@ -8,13 +8,16 @@ export function WallCoordinateModal() {
   const wallCoordOpen = useAppStore((s) => s.wallCoordinateModalOpen);
   const moveCopyCoordOpen = useAppStore((s) => s.wallMoveCopyCoordinateModalOpen);
   const lengthChangeCoordOpen = useAppStore((s) => s.lengthChangeCoordinateModalOpen);
-  const open = wallCoordOpen || moveCopyCoordOpen || lengthChangeCoordOpen;
+  const slabCoordOpen = useAppStore((s) => s.slabCoordinateModalOpen);
+  const open = wallCoordOpen || moveCopyCoordOpen || lengthChangeCoordOpen || slabCoordOpen;
   const closeWallCoord = useAppStore((s) => s.closeWallCoordinateModal);
   const closeMoveCopyCoord = useAppStore((s) => s.closeWallMoveCopyCoordinateModal);
   const closeLengthChangeCoord = useAppStore((s) => s.closeLengthChangeCoordinateModal);
+  const closeSlabCoord = useAppStore((s) => s.closeSlabCoordinateModal);
   const applyWallCoord = useAppStore((s) => s.applyWallCoordinateModal);
   const applyMoveCopyCoord = useAppStore((s) => s.applyWallMoveCopyCoordinateModal);
   const applyLengthChangeCoord = useAppStore((s) => s.applyLengthChangeCoordinateModal);
+  const applySlabCoord = useAppStore((s) => s.applySlabCoordinateModal);
   const lastError = useAppStore((s) => s.lastError);
 
   const titleId = useId();
@@ -50,6 +53,34 @@ export function WallCoordinateModal() {
       }
       return;
     }
+    if (st.slabCoordinateModalOpen && st.slabPlacementSession) {
+      const sp = st.slabPlacementSession;
+      let ax = 0;
+      let ay = 0;
+      let px = 0;
+      let py = 0;
+      let ok = false;
+      if (sp.phase === "waitingSecondPoint" && sp.firstPointMm && sp.previewEndMm) {
+        ax = sp.firstPointMm.x;
+        ay = sp.firstPointMm.y;
+        px = sp.previewEndMm.x;
+        py = sp.previewEndMm.y;
+        ok = true;
+      } else if (sp.phase === "polylineDrawing" && sp.polylineVerticesMm.length > 0 && sp.previewEndMm) {
+        const lv = sp.polylineVerticesMm[sp.polylineVerticesMm.length - 1]!;
+        ax = lv.x;
+        ay = lv.y;
+        px = sp.previewEndMm.x;
+        py = sp.previewEndMm.y;
+        ok = true;
+      }
+      if (ok) {
+        setXStr(String(Math.round(px - ax)));
+        setYStr(String(Math.round(py - ay)));
+        setLocalError(null);
+      }
+      return;
+    }
     const ws = st.wallPlacementSession;
     if (ws?.firstPointMm && ws.previewEndMm) {
       const dx = ws.previewEndMm.x - ws.firstPointMm.x;
@@ -72,6 +103,8 @@ export function WallCoordinateModal() {
           closeLengthChangeCoord();
         } else if (st.wallMoveCopyCoordinateModalOpen) {
           closeMoveCopyCoord();
+        } else if (st.slabCoordinateModalOpen) {
+          closeSlabCoord();
         } else {
           closeWallCoord();
         }
@@ -79,7 +112,7 @@ export function WallCoordinateModal() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, closeWallCoord, closeMoveCopyCoord, closeLengthChangeCoord]);
+  }, [open, closeWallCoord, closeMoveCopyCoord, closeLengthChangeCoord, closeSlabCoord]);
 
   if (!open) {
     return null;
@@ -109,6 +142,8 @@ export function WallCoordinateModal() {
     }
     if (moveCopyCoordOpen) {
       applyMoveCopyCoord({ dxMm: dx, dyMm: dy });
+    } else if (slabCoordOpen) {
+      applySlabCoord({ dxMm: dx, dyMm: dy });
     } else {
       applyWallCoord({ dxMm: dx, dyMm: dy });
     }
@@ -121,6 +156,8 @@ export function WallCoordinateModal() {
       closeLengthChangeCoord();
     } else if (moveCopyCoordOpen) {
       closeMoveCopyCoord();
+    } else if (slabCoordOpen) {
+      closeSlabCoord();
     } else {
       closeWallCoord();
     }
@@ -156,7 +193,9 @@ export function WallCoordinateModal() {
         <p className="wcm-hint">
           {lengthChangeCoordOpen
             ? "Δ длины вдоль оси стены (мм). Положительное значение — удлинение, отрицательное — укорочение."
-            : "Смещение второй точки относительно первой (мм). Знак учитывается."}
+            : slabCoordOpen
+              ? "Смещение текущей точки относительно опорной (мм): прямоугольник — от первого угла; полилиния — от последней зафиксированной вершины."
+              : "Смещение второй точки относительно первой (мм). Знак учитывается."}
         </p>
         <div className="wcm-fields">
           {lengthChangeCoordOpen ? (

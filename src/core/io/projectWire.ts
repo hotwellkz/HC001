@@ -9,6 +9,7 @@ import { normalizeProjectSettings, type ProjectSettingsWire } from "../domain/se
 import { normalizeViewState, projectWithViewport3dTargetAlignedToOriginIfDefault } from "../domain/viewState";
 
 import { normalizeWallCalculationsInProject } from "../domain/wallCalculationNormalize";
+import { normalizeSurfaceTextureState } from "../domain/surfaceTextureOps";
 import { migrateWireV0ToProject } from "./migrateWireV0";
 
 /** Старые проекты без markPrefix у профилей «стена». */
@@ -45,6 +46,7 @@ export interface ProjectFileV1 {
   readonly planLines?: Project["planLines"];
   readonly foundationStrips?: Project["foundationStrips"];
   readonly foundationPiles?: Project["foundationPiles"];
+  readonly slabs?: Project["slabs"];
   /** В старых файлах может отсутствовать — []. */
   readonly wallCalculations?: Project["wallCalculations"];
   /** В старых файлах может отсутствовать — []. */
@@ -61,6 +63,7 @@ export interface ProjectFileV1 {
   readonly settings: Project["settings"];
   readonly viewState: Project["viewState"];
   readonly profiles?: Project["profiles"];
+  readonly surfaceTextureState?: Project["surfaceTextureState"];
 }
 
 export function projectToWire(project: Project): ProjectFileV1 {
@@ -108,6 +111,7 @@ export function projectFromWireV1(wire: ProjectFileV1): Project {
     planLines: wire.planLines ?? [],
     foundationStrips: wire.foundationStrips ?? [],
     foundationPiles: wire.foundationPiles ?? [],
+    slabs: wire.slabs ?? [],
     wallCalculations: wire.wallCalculations ?? [],
     wallJoints: wire.wallJoints ?? [],
     openings: wire.openings,
@@ -121,6 +125,7 @@ export function projectFromWireV1(wire: ProjectFileV1): Project {
     settings: normalizeProjectSettings(wire.settings as ProjectSettingsWire),
     viewState: normalizeViewState(wire.viewState),
     profiles: normalizeProfilesImported(wire.profiles ?? []),
+    surfaceTextureState: normalizeSurfaceTextureState(wire.surfaceTextureState),
   };
   const withVis = {
     ...base,

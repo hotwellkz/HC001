@@ -70,6 +70,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/foundationPile" }
     },
+    "slabs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/slabEntity" }
+    },
     "wallCalculations": {
       "type": "array",
       "items": { "$ref": "#/$defs/wallCalculationResult" }
@@ -106,7 +110,8 @@
     "profiles": {
       "type": "array",
       "items": { "$ref": "#/$defs/profile" }
-    }
+    },
+    "surfaceTextureState": { "$ref": "#/$defs/surfaceTextureState" }
   },
   "$defs": {
     "point2d": {
@@ -147,6 +152,33 @@
         "isVisible": { "type": "boolean" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
+      }
+    },
+    "surfaceTextureBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["textureId", "scalePercent"],
+      "properties": {
+        "textureId": { "type": "string", "minLength": 1 },
+        "scalePercent": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "surfaceTextureState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "byLayerId", "byMeshKey"],
+      "properties": {
+        "project": {
+          "anyOf": [{ "$ref": "#/$defs/surfaceTextureBinding" }, { "type": "null" }]
+        },
+        "byLayerId": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/surfaceTextureBinding" }
+        },
+        "byMeshKey": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/surfaceTextureBinding" }
+        }
       }
     },
     "planLine": {
@@ -800,6 +832,24 @@
         "heightMm": { "type": "number", "minimum": 0 }
       }
     },
+    "slabEntity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "layerId", "pointsMm", "levelMm", "depthMm", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "layerId": { "type": "string", "minLength": 1 },
+        "pointsMm": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "#/$defs/point2d" }
+        },
+        "levelMm": { "type": "number" },
+        "depthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "createdAt": { "type": "string", "minLength": 1 },
+        "updatedAt": { "type": "string", "minLength": 1 }
+      }
+    },
     "dimension": {
       "type": "object",
       "additionalProperties": false,
@@ -834,7 +884,7 @@
         "editor2d": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["linearPlacementMode", "wallShapeMode"],
+          "required": ["linearPlacementMode", "wallShapeMode", "slabBuildMode"],
           "properties": {
             "linearPlacementMode": {
               "type": "string",
@@ -843,6 +893,10 @@
             "wallShapeMode": {
               "type": "string",
               "enum": ["line", "rectangle"]
+            },
+            "slabBuildMode": {
+              "type": "string",
+              "enum": ["rectangle", "polyline"]
             },
             "snapToVertex": { "type": "boolean" },
             "snapToEdge": { "type": "boolean" },

@@ -12,6 +12,8 @@ describe("isSceneCoordinateModalBlocking", () => {
         lengthChangeCoordinateModalOpen: false,
         projectOriginCoordinateModalOpen: false,
         openingAlongMoveNumericModalOpen: false,
+        slabCoordinateModalOpen: false,
+        entityCopyParamsModal: null,
       }),
     ).toBe(false);
   });
@@ -25,6 +27,8 @@ describe("isSceneCoordinateModalBlocking", () => {
         lengthChangeCoordinateModalOpen: false,
         projectOriginCoordinateModalOpen: false,
         openingAlongMoveNumericModalOpen: false,
+        slabCoordinateModalOpen: false,
+        entityCopyParamsModal: null,
       }),
     ).toBe(true);
   });
@@ -38,6 +42,23 @@ describe("isSceneCoordinateModalBlocking", () => {
         lengthChangeCoordinateModalOpen: false,
         projectOriginCoordinateModalOpen: false,
         openingAlongMoveNumericModalOpen: true,
+        slabCoordinateModalOpen: false,
+        entityCopyParamsModal: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("true если открыта модалка параметров копирования", () => {
+    expect(
+      isSceneCoordinateModalBlocking({
+        wallCoordinateModalOpen: false,
+        wallAnchorCoordinateModalOpen: false,
+        wallMoveCopyCoordinateModalOpen: false,
+        lengthChangeCoordinateModalOpen: false,
+        projectOriginCoordinateModalOpen: false,
+        openingAlongMoveNumericModalOpen: false,
+        slabCoordinateModalOpen: false,
+        entityCopyParamsModal: {},
       }),
     ).toBe(true);
   });

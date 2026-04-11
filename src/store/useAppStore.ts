@@ -81,7 +81,23 @@ import {
   unitDirectionOrNull,
 } from "@/core/geometry/shiftDirectionLock2d";
 import { computeProfileThickness, MIN_WALL_SEGMENT_LENGTH_MM, setProjectOrigin } from "@/core/domain/wallOps";
-import { duplicateWallWithDependents } from "@/core/domain/wallDuplicate";
+import type {
+  EntityCopyParamsModalState,
+  EntityCopySession,
+  EntityCopyStrategyId,
+  EntityCopyTarget,
+} from "@/core/domain/entityCopySession";
+import { applyEntityCopyWithAnchorTargets } from "@/core/domain/entityCopyApply";
+import { computeEntityCopyAnchorWorldTargets } from "@/core/domain/entityCopyStrategies";
+import {
+  buildEntityCopySnapMarkers,
+  collectEntityCopySnapPointsForFullScene,
+  collectEntityCopySnapPointsForSourceTarget,
+  computeEntityCopyPickTargetRefWorldMm,
+  layerIdsForEntityCopy,
+  resolveEntityCopySnap,
+} from "@/core/domain/entityCopySnapSystem";
+import { distanceAlongWallAxisFromStartUnclampedMm } from "@/core/domain/wallCalculationGeometry";
 import { translateWallInProject } from "@/core/domain/wallTranslate";
 import type { WallMoveCopySession } from "@/core/domain/wallMoveCopySession";
 import { initialLine2dSession, type Line2dSession } from "@/core/domain/line2dSession";
@@ -104,9 +120,17 @@ import type { WallEndSide, WallJointKind } from "@/core/domain/wallJoint";
 import type { WallJointSession } from "@/core/domain/wallJointSession";
 import { pickNearestWallEnd, pickWallSegmentInterior } from "@/core/domain/wallJointPick";
 import { narrowProjectToActiveLayer } from "@/core/domain/projectLayerSlice";
+import type { SlabBuildMode } from "@/core/domain/settings";
+import {
+  addSlabToProject,
+  createSlabFromPolygon,
+  translateSlabsInProjectByIds,
+  updateSlabInProject,
+} from "@/core/domain/slabOps";
+import { rectangleCornersFromDiagonalMm } from "@/core/domain/slabPolygon";
 import type { FoundationPileEntity, FoundationPileKind } from "@/core/domain/foundationPile";
 import type { FoundationPileMoveCopySession } from "@/core/domain/foundationPileMoveCopySession";
-import { duplicateFoundationPileInProject, translateFoundationPilesInProject } from "@/core/domain/foundationPileOps";
+import { translateFoundationPilesInProject } from "@/core/domain/foundationPileOps";
 import type { FoundationStripAutoPileSettings, FoundationStripSegmentEntity } from "@/core/domain/foundationStrip";
 import {
   applyAutoPilePersistToStripGroup,
@@ -139,6 +163,15 @@ import { tryGetFirestoreDb } from "@/firebase/app";
 import { deserializeProject } from "@/core/io/serialization";
 import { pickAndLoadProject, saveProjectWithFallback } from "@/core/io/projectFile";
 import { validateProjectSchema } from "@/core/validation/validateProjectSchema";
+import type { Editor3dPickPayload } from "@/core/domain/editor3dPickPayload";
+import {
+  applySurfaceTextureToProject,
+  meshKeyFromEditorPick,
+  type SurfaceTextureApplyMode,
+} from "@/core/domain/surfaceTextureOps";
+import { pickLayerIdForSurfaceTexture } from "@/core/domain/surfaceTexturePick";
+import type { TextureApply3dParamsModalState } from "@/core/domain/textureApply3dModal";
+import { getTextureCatalogEntry } from "@/core/textures/textureCatalog";
 import type { LinearProfilePlacementMode } from "@/core/geometry/linearPlacementGeometry";
 import { isSceneCoordinateModalBlocking } from "@/shared/sceneCoordinateModalLock";
 import {
@@ -171,6 +204,23 @@ export interface FoundationStripPlacementSession {
   readonly previewEndMm: Point2D | null;
   readonly lastSnapKind: SnapKind | null;
   readonly lastReferenceWallId: string | null;
+}
+
+export type SlabPlacementPhase = "waitingFirstPoint" | "waitingSecondPoint" | "polylineDrawing";
+
+export interface SlabPlacementDraftPersisted {
+  readonly depthMm: number;
+  readonly levelMm: number;
+}
+
+export interface SlabPlacementSession {
+  readonly draft: SlabPlacementDraftPersisted;
+  readonly buildMode: SlabBuildMode;
+  readonly phase: SlabPlacementPhase;
+  readonly firstPointMm: Point2D | null;
+  readonly polylineVerticesMm: readonly Point2D[];
+  readonly previewEndMm: Point2D | null;
+  readonly lastSnapKind: SnapKind | null;
 }
 
 export interface FoundationPilePlacementDraft {
@@ -255,6 +305,13 @@ interface AppState {
   readonly foundationPilePlacementHistoryBaseline: Project | null;
   /** Двойной клик по ленте: параметры авто-свай для связной группы лент. */
   readonly foundationStripAutoPilesModal: { readonly seedStripId: string } | null;
+  /** Липкие параметры «Добавить плиту» между сеансами. */
+  readonly lastSlabPlacementParams: { readonly depthMm: number; readonly levelMm: number };
+  readonly addSlabModalOpen: boolean;
+  readonly slabPlacementSession: SlabPlacementSession | null;
+  readonly slabPlacementHistoryBaseline: Project | null;
+  readonly slabCoordinateModalOpen: boolean;
+  readonly slabEditModal: { readonly slabId: string } | null;
   readonly wallCoordinateModalOpen: boolean;
   /** Модалка смещения начала стены от опорной точки (Пробел после выбора опоры). */
   readonly wallAnchorCoordinateModalOpen: boolean;
@@ -269,6 +326,13 @@ interface AppState {
   readonly wallContextMenu: { readonly wallId: string; readonly clientX: number; readonly clientY: number } | null;
   /** Контекстное меню сваи на 2D (экранные координаты, position: fixed). */
   readonly foundationPileContextMenu: { readonly pileId: string; readonly clientX: number; readonly clientY: number } | null;
+  /** Линия / лента / проём: только действия вроде «Копировать». */
+  readonly editor2dSecondaryContextMenu:
+    | { readonly scope: "planLine"; readonly id: string; readonly clientX: number; readonly clientY: number }
+    | { readonly scope: "foundationStrip"; readonly id: string; readonly clientX: number; readonly clientY: number }
+    | { readonly scope: "slab"; readonly id: string; readonly clientX: number; readonly clientY: number }
+    | { readonly scope: "opening"; readonly id: string; readonly clientX: number; readonly clientY: number }
+    | null;
   /** Перенос или копия стены двумя точками (как постановка стены). */
   readonly wallMoveCopySession: WallMoveCopySession | null;
   /** Перенос или копия сваи: базовая точка → цель с привязкой. */
@@ -287,6 +351,10 @@ interface AppState {
   readonly wallMoveCopyHistoryBaseline: Project | null;
   /** Снимок до переноса/копии сваи. */
   readonly foundationPileMoveCopyHistoryBaseline: Project | null;
+  /** Универсальное копирование по двум точкам (House Creator): привязка → конец отрезка → параметры. */
+  readonly entityCopySession: EntityCopySession | null;
+  readonly entityCopyParamsModal: EntityCopyParamsModalState | null;
+  readonly entityCopyHistoryBaseline: Project | null;
   /** Снимок до изменения длины по торцу. */
   readonly lengthChangeHistoryBaseline: Project | null;
   readonly persistenceReady: boolean;
@@ -311,6 +379,9 @@ interface AppState {
   readonly projectOriginCoordinateModalOpen: boolean;
   /** Пробел во время перетаскивания проёма: точный ввод смещения вдоль стены (мм). */
   readonly openingAlongMoveNumericModalOpen: boolean;
+  /** 3D: назначение текстур по raycast. */
+  readonly textureApply3dToolActive: boolean;
+  readonly textureApply3dParamsModal: TextureApply3dParamsModalState | null;
 }
 
 interface AppActions {
@@ -372,6 +443,31 @@ interface AppActions {
   duplicateProfileById: (profileId: string) => void;
   openAddWallModal: () => void;
   closeAddWallModal: () => void;
+  openAddSlabModal: () => void;
+  closeAddSlabModal: () => void;
+  applyAddSlabModal: (input: { readonly depthMm: number; readonly levelMm: number }) => void;
+  cancelSlabPlacement: () => void;
+  slabPlacementBackOrExit: () => void;
+  slabPlacementPreviewMove: (worldMm: Point2D, viewport: ViewportTransform) => void;
+  slabPlacementPrimaryClick: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+    opts?: { readonly clickDetail?: number },
+  ) => void;
+  slabPlacementTryFinishPolylineByEnter: () => void;
+  openSlabCoordinateModal: () => void;
+  closeSlabCoordinateModal: () => void;
+  applySlabCoordinateModal: (input: { readonly dxMm: number; readonly dyMm: number }) => void;
+  applySlabsWorldDeltaMm: (
+    slabIds: readonly string[],
+    dxMm: number,
+    dyMm: number,
+    opts?: { readonly skipHistory?: boolean },
+  ) => void;
+  openSlabEditModal: (slabId: string) => void;
+  closeSlabEditModal: () => void;
+  applySlabEditModal: (input: { readonly depthMm: number; readonly levelMm: number }) => void;
+  setSlabBuildMode: (mode: SlabBuildMode) => void;
   openAddFoundationStripModal: () => void;
   closeAddFoundationStripModal: () => void;
   applyAddFoundationStripModal: (input: {
@@ -517,6 +613,14 @@ interface AppActions {
     readonly clientY: number;
   }) => void;
   closeFoundationPileContextMenu: () => void;
+  openEditor2dSecondaryContextMenu: (
+    input:
+      | { readonly scope: "planLine"; readonly id: string; readonly clientX: number; readonly clientY: number }
+      | { readonly scope: "foundationStrip"; readonly id: string; readonly clientX: number; readonly clientY: number }
+      | { readonly scope: "slab"; readonly id: string; readonly clientX: number; readonly clientY: number }
+      | { readonly scope: "opening"; readonly id: string; readonly clientX: number; readonly clientY: number },
+  ) => void;
+  closeEditor2dSecondaryContextMenu: () => void;
   deleteFoundationPileFromContextMenu: (pileId: string) => void;
   startFoundationPileMoveFromContextMenu: (pileId: string) => void;
   startFoundationPileCopyFromContextMenu: (pileId: string) => void;
@@ -538,6 +642,33 @@ interface AppActions {
   openWallMoveCopyCoordinateModal: () => void;
   closeWallMoveCopyCoordinateModal: () => void;
   applyWallMoveCopyCoordinateModal: (input: { readonly dxMm: number; readonly dyMm: number }) => void;
+  startEntityCopyMode: (target: EntityCopyTarget) => void;
+  cancelEntityCopyFlow: () => void;
+  entityCopyPreviewMove: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+    opts?: { readonly altKey?: boolean },
+  ) => void;
+  entityCopyPrimaryClick: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+    opts?: { readonly altKey?: boolean },
+  ) => void;
+  closeEntityCopyParamsModal: () => void;
+  applyEntityCopyParamsModal: (input: {
+    readonly strategy: EntityCopyStrategyId;
+    readonly count: number;
+  }) => void;
+  toggleTextureApply3dTool: () => void;
+  cancelTextureApply3dTool: () => void;
+  openTextureApply3dParamsModal: (pick: Editor3dPickPayload) => void;
+  closeTextureApply3dParamsModal: () => void;
+  applyTextureApply3dParamsModal: (input: {
+    readonly mode: SurfaceTextureApplyMode;
+    readonly reset: boolean;
+    readonly textureId: string;
+    readonly scalePercent: number;
+  }) => void;
   ruler2dPreviewMove: (
     worldMm: Point2D,
     viewport: ViewportTransform,
@@ -665,8 +796,12 @@ function historyJumpClearTransientUi(s: AppStore, restored: Project): Partial<Ap
     wallPlacementAnchorAngleSnapLockedDeg: null,
     wallContextMenu: null,
     foundationPileContextMenu: null,
+    editor2dSecondaryContextMenu: null,
     foundationPileMoveCopySession: null,
     foundationPileMoveCopyHistoryBaseline: null,
+    entityCopySession: null,
+    entityCopyParamsModal: null,
+    entityCopyHistoryBaseline: null,
     openingMoveModeActive: false,
     ruler2dSession: null,
     line2dSession: null,
@@ -690,8 +825,15 @@ function historyJumpClearTransientUi(s: AppStore, restored: Project): Partial<Ap
     foundationPilePlacementSession: null,
     foundationPilePlacementHistoryBaseline: null,
     foundationStripAutoPilesModal: null,
+    addSlabModalOpen: false,
+    slabPlacementSession: null,
+    slabPlacementHistoryBaseline: null,
+    slabCoordinateModalOpen: false,
+    slabEditModal: null,
     activeTool: "select",
     wallDetailWallId: wd,
+    textureApply3dToolActive: false,
+    textureApply3dParamsModal: null,
   };
 }
 
@@ -878,6 +1020,44 @@ function runFoundationStripAutoPilesImpl(
   );
 }
 
+function slabCloseToleranceMm(viewport: ViewportTransform): number {
+  const z = viewport.zoomPixelsPerMm;
+  return Math.max(20, 35 / Math.max(z, 1e-6));
+}
+
+function newSlabPlacementSession(project: Project, draft: SlabPlacementDraftPersisted): SlabPlacementSession {
+  return {
+    draft,
+    buildMode: project.settings.editor2d.slabBuildMode,
+    phase: "waitingFirstPoint",
+    firstPointMm: null,
+    polylineVerticesMm: [],
+    previewEndMm: null,
+    lastSnapKind: null,
+  };
+}
+
+function tryCommitSlabOutline(
+  project: Project,
+  session: SlabPlacementSession,
+  pointsMm: readonly Point2D[],
+):
+  | { readonly ok: true; readonly nextProject: Project; readonly slabId: string; readonly nextSession: SlabPlacementSession }
+  | { readonly ok: false; readonly error: string } {
+  const created = createSlabFromPolygon({
+    layerId: project.activeLayerId,
+    pointsMm,
+    levelMm: session.draft.levelMm,
+    depthMm: session.draft.depthMm,
+  });
+  if ("error" in created) {
+    return { ok: false, error: created.error };
+  }
+  const nextProject = addSlabToProject(project, created.slab);
+  const nextSession = newSlabPlacementSession(nextProject, session.draft);
+  return { ok: true, nextProject, slabId: created.slab.id, nextSession };
+}
+
 export const useAppStore = create<AppStore>((set, get) => {
   const empty = createEmptyProject();
   return {
@@ -910,6 +1090,12 @@ export const useAppStore = create<AppStore>((set, get) => {
     foundationPilePlacementSession: null,
     foundationPilePlacementHistoryBaseline: null,
     foundationStripAutoPilesModal: null,
+    lastSlabPlacementParams: { depthMm: 1000, levelMm: 0 },
+    addSlabModalOpen: false,
+    slabPlacementSession: null,
+    slabPlacementHistoryBaseline: null,
+    slabCoordinateModalOpen: false,
+    slabEditModal: null,
     wallCoordinateModalOpen: false,
     wallAnchorCoordinateModalOpen: false,
     wallAnchorPlacementModeActive: false,
@@ -919,6 +1105,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     wallPlacementAnchorAngleSnapLockedDeg: null,
     wallContextMenu: null,
     foundationPileContextMenu: null,
+    editor2dSecondaryContextMenu: null,
     wallMoveCopySession: null,
     foundationPileMoveCopySession: null,
     wallMoveCopyCoordinateModalOpen: false,
@@ -930,6 +1117,9 @@ export const useAppStore = create<AppStore>((set, get) => {
     pendingOpeningPlacementHistoryBaseline: null,
     wallMoveCopyHistoryBaseline: null,
     foundationPileMoveCopyHistoryBaseline: null,
+    entityCopySession: null,
+    entityCopyParamsModal: null,
+    entityCopyHistoryBaseline: null,
     lengthChangeHistoryBaseline: null,
     persistenceReady: false,
     persistenceStatus: "loading",
@@ -944,6 +1134,8 @@ export const useAppStore = create<AppStore>((set, get) => {
     projectOriginMoveToolActive: false,
     projectOriginCoordinateModalOpen: false,
     openingAlongMoveNumericModalOpen: false,
+    textureApply3dToolActive: false,
+    textureApply3dParamsModal: null,
 
     setViewportCanvas2dPx: (width, height) =>
       set({
@@ -1000,6 +1192,10 @@ export const useAppStore = create<AppStore>((set, get) => {
         const wallContextMenu = tool === "select" ? s.wallContextMenu : null;
         const foundationPileMoveCopySession = tool === "select" ? s.foundationPileMoveCopySession : null;
         const foundationPileContextMenu = tool === "select" ? s.foundationPileContextMenu : null;
+        const editor2dSecondaryContextMenu = tool === "select" ? s.editor2dSecondaryContextMenu : null;
+        const entityCopySession = tool === "select" ? s.entityCopySession : null;
+        const entityCopyParamsModal = tool === "select" ? s.entityCopyParamsModal : null;
+        const entityCopyHistoryBaseline = tool === "select" ? s.entityCopyHistoryBaseline : null;
         const commonClear = {
           currentProject: proj,
           dirty,
@@ -1010,6 +1206,10 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallContextMenu,
           foundationPileMoveCopySession,
           foundationPileContextMenu,
+          editor2dSecondaryContextMenu,
+          entityCopySession,
+          entityCopyParamsModal,
+          entityCopyHistoryBaseline,
           wallJointSession: null,
           wallJointParamsModalOpen: false,
           wallPlacementSession: null,
@@ -1036,6 +1236,11 @@ export const useAppStore = create<AppStore>((set, get) => {
           addFoundationPileModalOpen: false,
           foundationPilePlacementSession: null,
           foundationPilePlacementHistoryBaseline: null,
+          addSlabModalOpen: false,
+          slabPlacementSession: null,
+          slabPlacementHistoryBaseline: null,
+          slabCoordinateModalOpen: false,
+          slabEditModal: null,
         };
         const mergeHist = (base: Partial<AppStore>): Partial<AppStore> =>
           projectMutated ? { ...base, ...buildProjectMutationState(s, proj, { dirty: true }) } : base;
@@ -1170,9 +1375,13 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementAnchorAngleSnapLockedDeg: tab === "2d" ? s.wallPlacementAnchorAngleSnapLockedDeg : null,
           wallContextMenu: tab === "2d" ? s.wallContextMenu : null,
           foundationPileContextMenu: tab === "2d" ? s.foundationPileContextMenu : null,
+          editor2dSecondaryContextMenu: tab === "2d" ? s.editor2dSecondaryContextMenu : null,
           wallMoveCopySession: tab === "2d" ? s.wallMoveCopySession : null,
           foundationPileMoveCopySession: tab === "2d" ? s.foundationPileMoveCopySession : null,
           wallMoveCopyCoordinateModalOpen: tab === "2d" ? s.wallMoveCopyCoordinateModalOpen : false,
+          entityCopySession: tab === "2d" ? s.entityCopySession : null,
+          entityCopyParamsModal: tab === "2d" ? s.entityCopyParamsModal : null,
+          entityCopyHistoryBaseline: tab === "2d" ? s.entityCopyHistoryBaseline : null,
           ruler2dSession: tab === "2d" ? s.ruler2dSession : null,
           line2dSession: tab === "2d" ? s.line2dSession : null,
           lengthChange2dSession: tab === "2d" ? s.lengthChange2dSession : null,
@@ -1185,6 +1394,8 @@ export const useAppStore = create<AppStore>((set, get) => {
             tab === "wall"
               ? s.wallDetailWallId ?? s.currentProject.walls.find((w) => s.selectedEntityIds.includes(w.id))?.id ?? null
               : s.wallDetailWallId,
+          textureApply3dToolActive: tab === "3d" ? s.textureApply3dToolActive : false,
+          textureApply3dParamsModal: tab === "3d" ? s.textureApply3dParamsModal : null,
           ...baselinePatch,
         };
         if (modelTouched) {
@@ -1456,6 +1667,11 @@ export const useAppStore = create<AppStore>((set, get) => {
           pendingDoorPlacement: null,
           pendingOpeningPlacementHistoryBaseline: null,
           foundationStripAutoPilesModal: null,
+          addSlabModalOpen: false,
+          slabPlacementSession: null,
+          slabPlacementHistoryBaseline: null,
+          slabCoordinateModalOpen: false,
+          slabEditModal: null,
           lastError: null,
         };
         return mutated ? { ...buildProjectMutationState(s, project, { ...patch, dirty: true }) } : patch;
@@ -1495,6 +1711,11 @@ export const useAppStore = create<AppStore>((set, get) => {
           foundationPilePlacementSession: null,
           foundationPilePlacementHistoryBaseline: null,
           foundationStripAutoPilesModal: null,
+          addSlabModalOpen: false,
+          slabPlacementSession: null,
+          slabPlacementHistoryBaseline: null,
+          slabCoordinateModalOpen: false,
+          slabEditModal: null,
           lastError: null,
         };
         return mutated ? { ...buildProjectMutationState(s, project, { ...patch, dirty: true }) } : patch;
@@ -1535,6 +1756,11 @@ export const useAppStore = create<AppStore>((set, get) => {
           foundationPileMoveCopySession: null,
           foundationPileMoveCopyHistoryBaseline: null,
           foundationStripAutoPilesModal: null,
+          addSlabModalOpen: false,
+          slabPlacementSession: null,
+          slabPlacementHistoryBaseline: null,
+          slabCoordinateModalOpen: false,
+          slabEditModal: null,
           lastError: null,
         };
         return mutated ? { ...buildProjectMutationState(s, project, { ...patch, dirty: true }) } : patch;
@@ -1673,6 +1899,20 @@ export const useAppStore = create<AppStore>((set, get) => {
       }
     },
 
+    applySlabsWorldDeltaMm: (slabIds, dxMm, dyMm, opts) => {
+      if (slabIds.length === 0) {
+        return;
+      }
+      const p0 = get().currentProject;
+      const next = translateSlabsInProjectByIds(p0, new Set(slabIds), dxMm, dyMm);
+      const merged = touchProjectMeta(next);
+      if (opts?.skipHistory) {
+        set({ currentProject: merged, dirty: true });
+      } else {
+        set((s) => buildProjectMutationState(s, merged, { dirty: true }));
+      }
+    },
+
     applyAddFoundationStripModal: (input) => {
       const d = Number(input.depthMm);
       const s1 = Number(input.side1Mm);
@@ -1713,6 +1953,11 @@ export const useAppStore = create<AppStore>((set, get) => {
         foundationStripAutoPilesModal: null,
         wallPlacementSession: null,
         wallPlacementHistoryBaseline: null,
+        addSlabModalOpen: false,
+        slabPlacementSession: null,
+        slabPlacementHistoryBaseline: null,
+        slabCoordinateModalOpen: false,
+        slabEditModal: null,
         selectedEntityIds: [],
         lastError: null,
       });
@@ -1900,6 +2145,366 @@ export const useAppStore = create<AppStore>((set, get) => {
       );
     },
 
+    openAddSlabModal: () => set({ addSlabModalOpen: true, lastError: null }),
+
+    closeAddSlabModal: () => set({ addSlabModalOpen: false }),
+
+    applyAddSlabModal: (input) => {
+      const depthMm = Number(input.depthMm);
+      const levelMm = Number(input.levelMm);
+      if (!Number.isFinite(depthMm) || depthMm <= 0) {
+        set({ lastError: "Глубина должна быть числом больше 0 (мм)." });
+        return;
+      }
+      if (!Number.isFinite(levelMm)) {
+        set({ lastError: "Уровень должен быть числом (мм)." });
+        return;
+      }
+      const p = get().currentProject;
+      const baseline = cloneProjectSnapshot(p);
+      const draft: SlabPlacementDraftPersisted = { depthMm, levelMm };
+      set({
+        addSlabModalOpen: false,
+        lastSlabPlacementParams: draft,
+        slabPlacementHistoryBaseline: baseline,
+        slabPlacementSession: newSlabPlacementSession(p, draft),
+        slabCoordinateModalOpen: false,
+        slabEditModal: null,
+        addWallModalOpen: false,
+        wallPlacementSession: null,
+        wallPlacementHistoryBaseline: null,
+        addFoundationStripModalOpen: false,
+        foundationStripPlacementSession: null,
+        foundationStripPlacementHistoryBaseline: null,
+        addFoundationPileModalOpen: false,
+        foundationPilePlacementSession: null,
+        foundationPilePlacementHistoryBaseline: null,
+        foundationStripAutoPilesModal: null,
+        wallJointSession: null,
+        wallJointParamsModalOpen: false,
+        selectedEntityIds: [],
+        lastError: null,
+      });
+    },
+
+    cancelSlabPlacement: () =>
+      set({
+        slabPlacementSession: null,
+        slabPlacementHistoryBaseline: null,
+        addSlabModalOpen: false,
+        slabCoordinateModalOpen: false,
+        lastError: null,
+      }),
+
+    slabPlacementBackOrExit: () => {
+      const session = get().slabPlacementSession;
+      if (!session) {
+        return;
+      }
+      if (session.phase === "waitingSecondPoint") {
+        set({
+          slabPlacementSession: {
+            ...session,
+            phase: "waitingFirstPoint",
+            firstPointMm: null,
+            previewEndMm: null,
+            lastSnapKind: null,
+          },
+        });
+        return;
+      }
+      if (session.phase === "polylineDrawing") {
+        const v = [...session.polylineVerticesMm];
+        if (v.length > 1) {
+          const last = v[v.length - 2]!;
+          v.pop();
+          set({
+            slabPlacementSession: {
+              ...session,
+              polylineVerticesMm: v,
+              previewEndMm: last,
+              firstPointMm: v[0] ?? null,
+            },
+          });
+          return;
+        }
+        if (v.length === 1) {
+          set({
+            slabPlacementSession: {
+              ...session,
+              phase: "waitingFirstPoint",
+              firstPointMm: null,
+              polylineVerticesMm: [],
+              previewEndMm: null,
+              lastSnapKind: null,
+            },
+          });
+          return;
+        }
+      }
+      set({
+        slabPlacementSession: null,
+        slabPlacementHistoryBaseline: null,
+        slabCoordinateModalOpen: false,
+        lastError: null,
+      });
+    },
+
+    slabPlacementPreviewMove: (worldMm, viewport) => {
+      const s = get().slabPlacementSession;
+      if (!s || isSceneCoordinateModalBlocking(get())) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      set({
+        slabPlacementSession: {
+          ...s,
+          previewEndMm: snap.point,
+          lastSnapKind: snap.kind,
+        },
+      });
+    },
+
+    slabPlacementTryFinishPolylineByEnter: () => {
+      const s = get().slabPlacementSession;
+      if (!s || s.buildMode !== "polyline" || s.phase !== "polylineDrawing" || !s.previewEndMm) {
+        return;
+      }
+      if (s.polylineVerticesMm.length < 2) {
+        set({
+          lastError:
+            "Для завершения по Enter или двойному клику задайте минимум две вершины; текущая точка станет последней вершиной контура.",
+        });
+        return;
+      }
+      const ring = [...s.polylineVerticesMm, s.previewEndMm];
+      const p0 = get().currentProject;
+      const r = tryCommitSlabOutline(p0, s, ring);
+      if (!r.ok) {
+        set({ lastError: r.error });
+        return;
+      }
+      set((st) =>
+        buildProjectMutationState(
+          st,
+          r.nextProject,
+          {
+            slabPlacementSession: r.nextSession,
+            slabPlacementHistoryBaseline: null,
+            selectedEntityIds: [r.slabId],
+            slabCoordinateModalOpen: false,
+            dirty: true,
+            lastError: null,
+          },
+          st.slabPlacementHistoryBaseline != null ? { historyBefore: st.slabPlacementHistoryBaseline } : {},
+        ),
+      );
+    },
+
+    slabPlacementPrimaryClick: (worldMm, viewport, opts) => {
+      if (get().slabCoordinateModalOpen) {
+        return;
+      }
+      const s = get().slabPlacementSession;
+      if (!s) {
+        return;
+      }
+      const detail = opts?.clickDetail ?? 1;
+      if (detail >= 2 && s.buildMode === "polyline" && s.phase === "polylineDrawing") {
+        get().slabPlacementTryFinishPolylineByEnter();
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      const pt = snap.point;
+      const minLen = 10;
+      const closeTol = slabCloseToleranceMm(viewport);
+
+      if (s.phase === "waitingFirstPoint") {
+        if (s.buildMode === "rectangle") {
+          set({
+            slabPlacementSession: {
+              ...s,
+              phase: "waitingSecondPoint",
+              firstPointMm: pt,
+              previewEndMm: pt,
+              lastSnapKind: snap.kind,
+            },
+          });
+        } else {
+          set({
+            slabPlacementSession: {
+              ...s,
+              phase: "polylineDrawing",
+              firstPointMm: pt,
+              polylineVerticesMm: [pt],
+              previewEndMm: pt,
+              lastSnapKind: snap.kind,
+            },
+          });
+        }
+        return;
+      }
+
+      if (s.phase === "waitingSecondPoint" && s.firstPointMm) {
+        const corners = rectangleCornersFromDiagonalMm(s.firstPointMm, pt);
+        const xs = corners.map((c) => c.x);
+        const ys = corners.map((c) => c.y);
+        const w = Math.max(...xs) - Math.min(...xs);
+        const h = Math.max(...ys) - Math.min(...ys);
+        if (w < minLen || h < minLen) {
+          set({ lastError: "Прямоугольник слишком мал." });
+          return;
+        }
+        const p0 = get().currentProject;
+        const r = tryCommitSlabOutline(p0, s, corners);
+        if (!r.ok) {
+          set({ lastError: r.error });
+          return;
+        }
+        set((st) =>
+          buildProjectMutationState(
+            st,
+            r.nextProject,
+            {
+              slabPlacementSession: r.nextSession,
+              slabPlacementHistoryBaseline: null,
+              selectedEntityIds: [r.slabId],
+              dirty: true,
+              lastError: null,
+            },
+            st.slabPlacementHistoryBaseline != null ? { historyBefore: st.slabPlacementHistoryBaseline } : {},
+          ),
+        );
+        return;
+      }
+
+      if (s.phase === "polylineDrawing" && s.firstPointMm) {
+        const first = s.firstPointMm;
+        if (s.polylineVerticesMm.length >= 3) {
+          const dClose = Math.hypot(pt.x - first.x, pt.y - first.y);
+          if (dClose < closeTol) {
+            const p0 = get().currentProject;
+            const r = tryCommitSlabOutline(p0, s, s.polylineVerticesMm);
+            if (!r.ok) {
+              set({ lastError: r.error });
+              return;
+            }
+            set((st) =>
+              buildProjectMutationState(
+                st,
+                r.nextProject,
+                {
+                  slabPlacementSession: r.nextSession,
+                  slabPlacementHistoryBaseline: null,
+                  selectedEntityIds: [r.slabId],
+                  dirty: true,
+                  lastError: null,
+                },
+                st.slabPlacementHistoryBaseline != null ? { historyBefore: st.slabPlacementHistoryBaseline } : {},
+              ),
+            );
+            return;
+          }
+        }
+        const last = s.polylineVerticesMm[s.polylineVerticesMm.length - 1]!;
+        if (Math.hypot(pt.x - last.x, pt.y - last.y) < minLen) {
+          set({ lastError: "Точка слишком близко к предыдущей." });
+          return;
+        }
+        set({
+          slabPlacementSession: {
+            ...s,
+            polylineVerticesMm: [...s.polylineVerticesMm, pt],
+            previewEndMm: pt,
+            lastSnapKind: snap.kind,
+          },
+        });
+      }
+    },
+
+    openSlabCoordinateModal: () => {
+      const s = get().slabPlacementSession;
+      if (!s) {
+        return;
+      }
+      if (s.phase === "waitingSecondPoint" && s.firstPointMm) {
+        set({ slabCoordinateModalOpen: true, lastError: null });
+        return;
+      }
+      if (s.phase === "polylineDrawing" && s.polylineVerticesMm.length >= 1) {
+        set({ slabCoordinateModalOpen: true, lastError: null });
+      }
+    },
+
+    closeSlabCoordinateModal: () => set({ slabCoordinateModalOpen: false }),
+
+    applySlabCoordinateModal: (input) => {
+      const s = get().slabPlacementSession;
+      if (!s) {
+        set({ slabCoordinateModalOpen: false });
+        return;
+      }
+      if (!Number.isFinite(input.dxMm) || !Number.isFinite(input.dyMm)) {
+        set({ lastError: "Введите числовые X и Y (мм)." });
+        return;
+      }
+      let anchor: Point2D | null = null;
+      if (s.phase === "waitingSecondPoint" && s.firstPointMm) {
+        anchor = s.firstPointMm;
+      } else if (s.phase === "polylineDrawing" && s.polylineVerticesMm.length > 0) {
+        anchor = s.polylineVerticesMm[s.polylineVerticesMm.length - 1]!;
+      }
+      if (!anchor) {
+        set({ slabCoordinateModalOpen: false });
+        return;
+      }
+      const previewEndMm = { x: anchor.x + input.dxMm, y: anchor.y + input.dyMm };
+      set({
+        slabCoordinateModalOpen: false,
+        slabPlacementSession: { ...s, previewEndMm, lastSnapKind: "grid" },
+        lastError: null,
+      });
+    },
+
+    openSlabEditModal: (slabId) => set({ slabEditModal: { slabId }, lastError: null }),
+
+    closeSlabEditModal: () => set({ slabEditModal: null }),
+
+    applySlabEditModal: (input) => {
+      const m = get().slabEditModal;
+      if (!m) {
+        return;
+      }
+      const depthMm = Number(input.depthMm);
+      const levelMm = Number(input.levelMm);
+      if (!Number.isFinite(depthMm) || depthMm <= 0) {
+        set({ lastError: "Глубина должна быть числом больше 0 (мм)." });
+        return;
+      }
+      if (!Number.isFinite(levelMm)) {
+        set({ lastError: "Уровень должен быть числом (мм)." });
+        return;
+      }
+      const p0 = get().currentProject;
+      const r = updateSlabInProject(p0, m.slabId, { depthMm, levelMm });
+      if ("error" in r) {
+        set({ lastError: r.error });
+        return;
+      }
+      set((st) =>
+        buildProjectMutationState(
+          st,
+          touchProjectMeta(r.project),
+          {
+            dirty: true,
+            lastError: null,
+            slabEditModal: null,
+          },
+          { historyBefore: st.currentProject },
+        ),
+      );
+    },
+
     openFoundationStripAutoPilesModal: (seedStripId) =>
       set({
         foundationStripAutoPilesModal: { seedStripId },
@@ -1933,6 +2538,11 @@ export const useAppStore = create<AppStore>((set, get) => {
           foundationPilePlacementSession: null,
           foundationPilePlacementHistoryBaseline: null,
           foundationStripAutoPilesModal: null,
+          addSlabModalOpen: false,
+          slabPlacementSession: null,
+          slabPlacementHistoryBaseline: null,
+          slabCoordinateModalOpen: false,
+          slabEditModal: null,
           wallPlacementSession: null,
           wallJointSession: null,
           wallJointParamsModalOpen: false,
@@ -1968,6 +2578,11 @@ export const useAppStore = create<AppStore>((set, get) => {
           addFoundationPileModalOpen: false,
           foundationPilePlacementSession: null,
           foundationPilePlacementHistoryBaseline: null,
+          addSlabModalOpen: false,
+          slabPlacementSession: null,
+          slabPlacementHistoryBaseline: null,
+          slabCoordinateModalOpen: false,
+          slabEditModal: null,
           wallPlacementSession: null,
           wallJointSession: null,
           wallJointParamsModalOpen: false,
@@ -2826,6 +3441,9 @@ export const useAppStore = create<AppStore>((set, get) => {
       if (isSceneCoordinateModalBlocking(get())) {
         return;
       }
+      if (!viewport) {
+        return;
+      }
       const p0 = get().currentProject;
       const e2 = p0.settings.editor2d;
       const snap = editor2dSnapSettings(p0);
@@ -2932,6 +3550,45 @@ export const useAppStore = create<AppStore>((set, get) => {
         return;
       }
 
+      const ecEng = get().entityCopySession;
+      if (ecEng?.phase === "pickTarget" && ecEng.worldAnchorStart) {
+        const layerIdsEc = layerIdsForEntityCopy(p0);
+        const structuralEc = snap.snapToVertex || snap.snapToEdge;
+        const u = computeShiftDirectionLockUnit({
+          anchor: ecEng.worldAnchorStart,
+          previewEnd: ecEng.previewTargetWorldMm,
+          cursorWorldMm,
+          viewport,
+          project: p0,
+          snapSettings: snap,
+          gridStepMm: p0.settings.gridStepMm,
+          resolveRawSnap: (raw) => {
+            const tagged = collectEntityCopySnapPointsForFullScene(p0, layerIdsEc);
+            return resolveEntityCopySnap({
+              refWorldMm: raw,
+              viewport,
+              project: p0,
+              snapSettings: snap,
+              gridStepMm: p0.settings.gridStepMm,
+              altKey: false,
+              structuralSnapEnabled: structuralEc,
+              taggedPoints: tagged,
+            }).point;
+          },
+        });
+        if (!u) {
+          return;
+        }
+        set({
+          entityCopySession: {
+            ...ecEng,
+            shiftDirectionLockUnit: u,
+            shiftLockReferenceMm: null,
+          },
+        });
+        return;
+      }
+
       const mc = get().wallMoveCopySession;
       if (mc?.phase === "pickTarget" && mc.anchorWorldMm) {
         const u = computeShiftDirectionLockUnit({
@@ -2961,6 +3618,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       const rs = get().ruler2dSession;
       const ls = get().line2dSession;
       const mc = get().wallMoveCopySession;
+      const ec = get().entityCopySession;
       const lc = get().lengthChange2dSession;
       const wClear =
         ws && (ws.shiftDirectionLockUnit != null || ws.shiftLockReferenceMm != null)
@@ -3002,6 +3660,16 @@ export const useAppStore = create<AppStore>((set, get) => {
               },
             }
           : {};
+      const ecClear =
+        ec && (ec.shiftDirectionLockUnit != null || ec.shiftLockReferenceMm != null)
+          ? {
+              entityCopySession: {
+                ...ec,
+                shiftDirectionLockUnit: null,
+                shiftLockReferenceMm: null,
+              },
+            }
+          : {};
       const lcClear =
         lc && (lc.shiftDirectionLockUnit != null || lc.shiftLockReferenceMm != null)
           ? {
@@ -3017,10 +3685,11 @@ export const useAppStore = create<AppStore>((set, get) => {
           Object.keys(rClear).length +
           Object.keys(lLineClear).length +
           Object.keys(mClear).length +
+          Object.keys(ecClear).length +
           Object.keys(lcClear).length >
         0
       ) {
-        set({ ...wClear, ...rClear, ...lLineClear, ...mClear, ...lcClear });
+        set({ ...wClear, ...rClear, ...lLineClear, ...mClear, ...ecClear, ...lcClear });
       }
     },
 
@@ -3344,6 +4013,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({
         wallContextMenu: { wallId: input.wallId, clientX: input.clientX, clientY: input.clientY },
         foundationPileContextMenu: null,
+        editor2dSecondaryContextMenu: null,
         lastError: null,
       }),
 
@@ -3356,11 +4026,15 @@ export const useAppStore = create<AppStore>((set, get) => {
         buildProjectMutationState(s, next, {
           wallContextMenu: null,
           foundationPileContextMenu: null,
+          editor2dSecondaryContextMenu: null,
           wallMoveCopySession: null,
           foundationPileMoveCopySession: null,
           foundationPileMoveCopyHistoryBaseline: null,
           wallMoveCopyCoordinateModalOpen: false,
           wallMoveCopyHistoryBaseline: null,
+          entityCopySession: null,
+          entityCopyParamsModal: null,
+          entityCopyHistoryBaseline: null,
           selectedEntityIds: selectedEntityIds.filter((id) => id !== wallId),
           wallDetailWallId: wallDetailWallId === wallId ? null : wallDetailWallId,
           dirty: true,
@@ -3377,10 +4051,21 @@ export const useAppStore = create<AppStore>((set, get) => {
           clientY: input.clientY,
         },
         wallContextMenu: null,
+        editor2dSecondaryContextMenu: null,
         lastError: null,
       }),
 
     closeFoundationPileContextMenu: () => set({ foundationPileContextMenu: null }),
+
+    openEditor2dSecondaryContextMenu: (input) =>
+      set({
+        editor2dSecondaryContextMenu: input,
+        wallContextMenu: null,
+        foundationPileContextMenu: null,
+        lastError: null,
+      }),
+
+    closeEditor2dSecondaryContextMenu: () => set({ editor2dSecondaryContextMenu: null }),
 
     deleteFoundationPileFromContextMenu: (pileId) => {
       const { currentProject, selectedEntityIds } = get();
@@ -3388,6 +4073,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       set((s) =>
         buildProjectMutationState(s, next, {
           foundationPileContextMenu: null,
+          editor2dSecondaryContextMenu: null,
           foundationPileMoveCopySession: null,
           foundationPileMoveCopyHistoryBaseline: null,
           selectedEntityIds: selectedEntityIds.filter((id) => id !== pileId),
@@ -3407,10 +4093,14 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({
         foundationPileMoveCopyHistoryBaseline: baseline,
         foundationPileContextMenu: null,
+        editor2dSecondaryContextMenu: null,
         wallContextMenu: null,
         wallMoveCopySession: null,
         wallMoveCopyCoordinateModalOpen: false,
         wallMoveCopyHistoryBaseline: null,
+        entityCopySession: null,
+        entityCopyParamsModal: null,
+        entityCopyHistoryBaseline: null,
         foundationPileMoveCopySession: {
           mode: "move",
           sourcePileId: pileId,
@@ -3426,40 +4116,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
 
     startFoundationPileCopyFromContextMenu: (pileId) => {
-      const p0 = get().currentProject;
-      const baseline = cloneProjectSnapshot(p0);
-      const r = duplicateFoundationPileInProject(p0, pileId);
-      if ("error" in r) {
-        set({ lastError: r.error, foundationPileContextMenu: null });
-        return;
-      }
-      set((s) =>
-        buildProjectMutationState(
-          s,
-          r.project,
-          {
-            foundationPileMoveCopyHistoryBaseline: baseline,
-            foundationPileContextMenu: null,
-            wallContextMenu: null,
-            wallMoveCopySession: null,
-            wallMoveCopyCoordinateModalOpen: false,
-            wallMoveCopyHistoryBaseline: null,
-            foundationPileMoveCopySession: {
-              mode: "copy",
-              sourcePileId: pileId,
-              workingPileId: r.newPileId,
-              phase: "pickBase",
-              baseOffsetFromCenterMm: null,
-              previewCenterMm: null,
-              lastSnapKind: null,
-            },
-            selectedEntityIds: [r.newPileId],
-            dirty: true,
-            lastError: null,
-          },
-          { skipHistory: true },
-        ),
-      );
+      get().startEntityCopyMode({ kind: "foundationPile", id: pileId });
     },
 
     cancelFoundationPileMoveCopy: () => {
@@ -3582,8 +4239,12 @@ export const useAppStore = create<AppStore>((set, get) => {
         wallMoveCopyHistoryBaseline: baseline,
         wallContextMenu: null,
         foundationPileContextMenu: null,
+        editor2dSecondaryContextMenu: null,
         foundationPileMoveCopySession: null,
         foundationPileMoveCopyHistoryBaseline: null,
+        entityCopySession: null,
+        entityCopyParamsModal: null,
+        entityCopyHistoryBaseline: null,
         wallPlacementSession: null,
         wallCoordinateModalOpen: false,
         wallAnchorCoordinateModalOpen: false,
@@ -3614,48 +4275,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     },
 
     startWallCopyFromContextMenu: (wallId) => {
-      const p0 = get().currentProject;
-      const baseline = cloneProjectSnapshot(p0);
-      const r = duplicateWallWithDependents(p0, wallId);
-      if ("error" in r) {
-        set({ lastError: r.error, wallContextMenu: null });
-        return;
-      }
-        set((s) =>
-        buildProjectMutationState(
-          s,
-          r.project,
-          {
-            wallMoveCopyHistoryBaseline: baseline,
-            wallContextMenu: null,
-            foundationPileContextMenu: null,
-            foundationPileMoveCopySession: null,
-            foundationPileMoveCopyHistoryBaseline: null,
-            wallPlacementSession: null,
-            wallCoordinateModalOpen: false,
-            wallJointSession: null,
-            pendingWindowPlacement: null,
-            pendingDoorPlacement: null,
-            wallMoveCopyCoordinateModalOpen: false,
-            wallMoveCopySession: {
-              mode: "copy",
-              sourceWallId: wallId,
-              workingWallId: r.newWallId,
-              phase: "pickAnchor",
-              anchorWorldMm: null,
-              previewTargetMm: null,
-              lastSnapKind: null,
-              angleSnapLockedDeg: null,
-              shiftDirectionLockUnit: null,
-              shiftLockReferenceMm: null,
-            },
-            selectedEntityIds: [r.newWallId],
-            dirty: true,
-            lastError: null,
-          },
-          { skipHistory: true },
-        ),
-      );
+      get().startEntityCopyMode({ kind: "wall", id: wallId });
     },
 
     cancelWallMoveCopy: () => {
@@ -3819,6 +4439,425 @@ export const useAppStore = create<AppStore>((set, get) => {
       /** Ручной ввод: целевая точка строго по ΔX/ΔY, без snap и без угловой привязки направления. */
       const finalPt = { x: s.anchorWorldMm.x + input.dxMm, y: s.anchorWorldMm.y + input.dyMm };
       get().wallMoveCopyCommitTarget(finalPt);
+    },
+
+    startEntityCopyMode: (target) => {
+      const p0 = get().currentProject;
+      const layer = narrowProjectToActiveLayer(p0);
+      let ok = false;
+      if (target.kind === "wall") {
+        ok = layer.walls.some((w) => w.id === target.id);
+      } else if (target.kind === "foundationPile") {
+        ok = layer.foundationPiles.some((x) => x.id === target.id);
+      } else if (target.kind === "planLine") {
+        ok = layer.planLines.some((x) => x.id === target.id);
+      } else if (target.kind === "foundationStrip") {
+        ok = layer.foundationStrips.some((x) => x.id === target.id);
+      } else if (target.kind === "slab") {
+        ok = layer.slabs.some((x) => x.id === target.id);
+      } else if (target.kind === "opening") {
+        const o = p0.openings.find((x) => x.id === target.id);
+        ok = Boolean(
+          o?.wallId &&
+            o.offsetFromStartMm != null &&
+            (o.kind === "window" || o.kind === "door"),
+        );
+      }
+      if (!ok) {
+        set({
+          lastError: "Объект не найден на активном слое или для него копирование недоступно.",
+          wallContextMenu: null,
+          foundationPileContextMenu: null,
+        });
+        return;
+      }
+      const baseline = cloneProjectSnapshot(p0);
+      set({
+        entityCopyHistoryBaseline: baseline,
+        entityCopySession: {
+          target,
+          phase: "pickAnchor",
+          worldAnchorStart: null,
+          openingAnchorAlongWallMm: null,
+          previewTargetWorldMm: null,
+          resolvedCursorWorldMm: null,
+          snapMarkers: [],
+          activeSnapVisual: "none",
+          lastSnapKind: null,
+          shiftDirectionLockUnit: null,
+          angleSnapLockedDeg: null,
+          shiftLockReferenceMm: null,
+        },
+        entityCopyParamsModal: null,
+        wallContextMenu: null,
+        foundationPileContextMenu: null,
+        editor2dSecondaryContextMenu: null,
+        wallMoveCopySession: null,
+        wallMoveCopyCoordinateModalOpen: false,
+        wallMoveCopyHistoryBaseline: null,
+        foundationPileMoveCopySession: null,
+        foundationPileMoveCopyHistoryBaseline: null,
+        selectedEntityIds: [target.id],
+        lastError: null,
+      });
+    },
+
+    cancelEntityCopyFlow: () =>
+      set({
+        entityCopySession: null,
+        entityCopyParamsModal: null,
+        entityCopyHistoryBaseline: null,
+        lastError: null,
+      }),
+
+    entityCopyPreviewMove: (worldMm, viewport, opts) => {
+      const s = get().entityCopySession;
+      if (!s || !viewport) {
+        return;
+      }
+      if (isSceneCoordinateModalBlocking(get())) {
+        return;
+      }
+      const p0 = get().currentProject;
+      const snap = editor2dSnapSettings(p0);
+      const layerIds = layerIdsForEntityCopy(p0);
+      const structural = snap.snapToVertex || snap.snapToEdge;
+      const altKey = Boolean(opts?.altKey);
+
+      if (s.phase === "pickAnchor") {
+        const tagged = collectEntityCopySnapPointsForSourceTarget(p0, layerIds, s.target);
+        const r = resolveEntityCopySnap({
+          refWorldMm: worldMm,
+          viewport,
+          project: p0,
+          snapSettings: snap,
+          gridStepMm: p0.settings.gridStepMm,
+          altKey,
+          structuralSnapEnabled: structural,
+          taggedPoints: tagged,
+        });
+        const markers = buildEntityCopySnapMarkers(
+          worldMm,
+          viewport,
+          tagged,
+          altKey ? null : r.point,
+          structural && !altKey,
+        );
+        set({
+          entityCopySession: {
+            ...s,
+            resolvedCursorWorldMm: r.point,
+            snapMarkers: markers,
+            activeSnapVisual: r.visual === "none" ? "none" : r.visual,
+            lastSnapKind: r.snapKind,
+          },
+        });
+        return;
+      }
+
+      if (s.phase === "pickTarget" && s.worldAnchorStart) {
+        const { refWorldMm, nextAngleSnapLockedDeg } = computeEntityCopyPickTargetRefWorldMm({
+          anchorWorldMm: s.worldAnchorStart,
+          rawWorldMm: worldMm,
+          shiftDirectionLockUnit: s.shiftDirectionLockUnit,
+          angleSnapLockedDeg: s.angleSnapLockedDeg,
+          altKey,
+        });
+        const tagged = collectEntityCopySnapPointsForFullScene(p0, layerIds);
+        const r = resolveEntityCopySnap({
+          refWorldMm,
+          viewport,
+          project: p0,
+          snapSettings: snap,
+          gridStepMm: p0.settings.gridStepMm,
+          altKey,
+          structuralSnapEnabled: structural,
+          taggedPoints: tagged,
+        });
+        const markers = buildEntityCopySnapMarkers(
+          worldMm,
+          viewport,
+          tagged,
+          altKey ? null : r.point,
+          structural && !altKey,
+        );
+        set({
+          entityCopySession: {
+            ...s,
+            resolvedCursorWorldMm: r.point,
+            previewTargetWorldMm: r.point,
+            snapMarkers: markers,
+            activeSnapVisual: r.visual === "none" ? "none" : r.visual,
+            lastSnapKind: r.snapKind,
+            angleSnapLockedDeg: nextAngleSnapLockedDeg,
+            shiftLockReferenceMm: null,
+          },
+        });
+      }
+    },
+
+    entityCopyPrimaryClick: (worldMm, viewport, opts) => {
+      if (isSceneCoordinateModalBlocking(get())) {
+        return;
+      }
+      const s = get().entityCopySession;
+      if (!s) {
+        return;
+      }
+      if (!viewport) {
+        return;
+      }
+      const p0 = get().currentProject;
+      const layer = narrowProjectToActiveLayer(p0);
+      const t = s.target;
+
+      if (s.phase === "pickAnchor") {
+        const snap = editor2dSnapSettings(p0);
+        const layerIds = layerIdsForEntityCopy(p0);
+        const structural = snap.snapToVertex || snap.snapToEdge;
+        const tagged = collectEntityCopySnapPointsForSourceTarget(p0, layerIds, t);
+        if (tagged.length === 0) {
+          get().cancelEntityCopyFlow();
+          return;
+        }
+        const r = resolveEntityCopySnap({
+          refWorldMm: worldMm,
+          viewport,
+          project: p0,
+          snapSettings: snap,
+          gridStepMm: p0.settings.gridStepMm,
+          altKey: Boolean(opts?.altKey),
+          structuralSnapEnabled: structural,
+          taggedPoints: tagged,
+        });
+        const anchorMm = r.point;
+
+        let openingAlong: number | null = null;
+        if (t.kind === "wall") {
+          if (!layer.walls.some((x) => x.id === t.id)) {
+            get().cancelEntityCopyFlow();
+            return;
+          }
+        } else if (t.kind === "foundationPile") {
+          if (!layer.foundationPiles.some((x) => x.id === t.id)) {
+            get().cancelEntityCopyFlow();
+            return;
+          }
+        } else if (t.kind === "planLine") {
+          if (!layer.planLines.some((x) => x.id === t.id)) {
+            get().cancelEntityCopyFlow();
+            return;
+          }
+        } else if (t.kind === "foundationStrip") {
+          if (!layer.foundationStrips.some((x) => x.id === t.id)) {
+            get().cancelEntityCopyFlow();
+            return;
+          }
+        } else if (t.kind === "slab") {
+          if (!layer.slabs.some((x) => x.id === t.id)) {
+            get().cancelEntityCopyFlow();
+            return;
+          }
+        } else if (t.kind === "opening") {
+          const o = p0.openings.find((x) => x.id === t.id);
+          const wall = o?.wallId ? p0.walls.find((w) => w.id === o.wallId) : undefined;
+          if (!o || !wall) {
+            get().cancelEntityCopyFlow();
+            return;
+          }
+          openingAlong = distanceAlongWallAxisFromStartUnclampedMm(wall, anchorMm);
+        } else {
+          return;
+        }
+
+        set({
+          entityCopySession: {
+            ...s,
+            phase: "pickTarget",
+            worldAnchorStart: anchorMm,
+            openingAnchorAlongWallMm: openingAlong,
+            previewTargetWorldMm: anchorMm,
+            resolvedCursorWorldMm: anchorMm,
+            snapMarkers: [],
+            activeSnapVisual: "none",
+            lastSnapKind: r.snapKind,
+            shiftDirectionLockUnit: null,
+            angleSnapLockedDeg: null,
+            shiftLockReferenceMm: null,
+          },
+          lastError: null,
+        });
+        return;
+      }
+
+      if (s.phase === "pickTarget" && s.worldAnchorStart) {
+        const snap = editor2dSnapSettings(p0);
+        const layerIds = layerIdsForEntityCopy(p0);
+        const structural = snap.snapToVertex || snap.snapToEdge;
+        const altKey = Boolean(opts?.altKey);
+        const { refWorldMm } = computeEntityCopyPickTargetRefWorldMm({
+          anchorWorldMm: s.worldAnchorStart,
+          rawWorldMm: worldMm,
+          shiftDirectionLockUnit: s.shiftDirectionLockUnit,
+          angleSnapLockedDeg: s.angleSnapLockedDeg,
+          altKey,
+        });
+        const tagged = collectEntityCopySnapPointsForFullScene(p0, layerIds);
+        const r = resolveEntityCopySnap({
+          refWorldMm,
+          viewport,
+          project: p0,
+          snapSettings: snap,
+          gridStepMm: p0.settings.gridStepMm,
+          altKey,
+          structuralSnapEnabled: structural,
+          taggedPoints: tagged,
+        });
+        const finalMm = r.point;
+        const dx = finalMm.x - s.worldAnchorStart.x;
+        const dy = finalMm.y - s.worldAnchorStart.y;
+        if (Math.hypot(dx, dy) < MIN_WALL_SEGMENT_LENGTH_MM) {
+          set({
+            lastError: "Конечная точка совпадает с точкой привязки — укажите другую точку.",
+          });
+          return;
+        }
+        set({
+          entityCopyParamsModal: {
+            target: s.target,
+            worldAnchorStart: s.worldAnchorStart,
+            worldTargetEnd: finalMm,
+            openingAnchorAlongWallMm: s.openingAnchorAlongWallMm,
+          },
+          entityCopySession: null,
+          lastError: null,
+        });
+      }
+    },
+
+    closeEntityCopyParamsModal: () => {
+      get().cancelEntityCopyFlow();
+    },
+
+    applyEntityCopyParamsModal: (input) => {
+      const modal = get().entityCopyParamsModal;
+      if (!modal) {
+        return;
+      }
+      const n = Math.trunc(input.count);
+      if (!Number.isFinite(n) || n < 1) {
+        set({ lastError: "Укажите целое количество копий не меньше 1." });
+        return;
+      }
+      const targets = computeEntityCopyAnchorWorldTargets(
+        input.strategy,
+        modal.worldAnchorStart,
+        modal.worldTargetEnd,
+        n,
+      );
+      if (targets.length === 0) {
+        set({
+          lastError: "Не удалось разместить копии: отрезок между точками слишком короткий.",
+        });
+        return;
+      }
+      const r = applyEntityCopyWithAnchorTargets(
+        get().currentProject,
+        modal.target,
+        modal.worldAnchorStart,
+        targets,
+        modal.openingAnchorAlongWallMm,
+      );
+      if ("error" in r) {
+        set({ lastError: r.error });
+        return;
+      }
+      set((st) =>
+        buildProjectMutationState(
+          st,
+          touchProjectMeta(r.project),
+          {
+            entityCopyParamsModal: null,
+            entityCopySession: null,
+            entityCopyHistoryBaseline: null,
+            selectedEntityIds: [...r.newEntityIds],
+            dirty: true,
+            lastError: null,
+          },
+          {
+            historyBefore: st.entityCopyHistoryBaseline ?? st.currentProject,
+          },
+        ),
+      );
+    },
+
+    toggleTextureApply3dTool: () => {
+      const s = get();
+      if (s.activeTab !== "3d") {
+        set({
+          lastError: 'Инструмент «Применить текстуру» доступен только в 3D-виде.',
+        });
+        return;
+      }
+      const next = !s.textureApply3dToolActive;
+      set({
+        textureApply3dToolActive: next,
+        textureApply3dParamsModal: next ? s.textureApply3dParamsModal : null,
+        lastError: null,
+      });
+    },
+
+    cancelTextureApply3dTool: () =>
+      set({ textureApply3dToolActive: false, textureApply3dParamsModal: null, lastError: null }),
+
+    openTextureApply3dParamsModal: (pick) =>
+      set({ textureApply3dParamsModal: { pick }, lastError: null }),
+
+    closeTextureApply3dParamsModal: () => set({ textureApply3dParamsModal: null, lastError: null }),
+
+    applyTextureApply3dParamsModal: (input) => {
+      const modal = get().textureApply3dParamsModal;
+      if (!modal) {
+        return;
+      }
+      const meshKey = meshKeyFromEditorPick(modal.pick);
+      const layerId = pickLayerIdForSurfaceTexture(get().currentProject, modal.pick) ?? "";
+      if (input.mode === "layer" && !layerId) {
+        set({ lastError: "Не удалось определить слой объекта." });
+        return;
+      }
+      if (input.mode === "object" && !layerId) {
+        set({ lastError: "Не удалось определить слой для выбранного объекта." });
+        return;
+      }
+      const scalePercent = Math.min(500, Math.max(5, Number(input.scalePercent)));
+      if (!Number.isFinite(scalePercent)) {
+        set({ lastError: "Некорректный масштаб текстуры." });
+        return;
+      }
+      let binding: { readonly textureId: string; readonly scalePercent: number } | null = null;
+      if (!input.reset) {
+        const entry = getTextureCatalogEntry(input.textureId);
+        if (!entry) {
+          set({ lastError: "Выберите текстуру из каталога." });
+          return;
+        }
+        binding = { textureId: input.textureId, scalePercent };
+      }
+      const next = applySurfaceTextureToProject(get().currentProject, {
+        mode: input.mode,
+        reset: input.reset,
+        binding,
+        meshKey,
+        layerId,
+      });
+      set((st) =>
+        buildProjectMutationState(st, next, {
+          textureApply3dParamsModal: null,
+          lastError: null,
+          dirty: true,
+        }),
+      );
     },
 
     ruler2dPreviewMove: (worldMm, viewport, opts) => {
@@ -4410,6 +5449,34 @@ export const useAppStore = create<AppStore>((set, get) => {
         ),
       ),
 
+    setSlabBuildMode: (mode) =>
+      set((s) => {
+        const nextProject = touchProjectMeta({
+          ...s.currentProject,
+          settings: {
+            ...s.currentProject.settings,
+            editor2d: { ...s.currentProject.settings.editor2d, slabBuildMode: mode },
+          },
+        });
+        const sess = s.slabPlacementSession;
+        if (sess != null) {
+          return buildProjectMutationState(s, nextProject, {
+            dirty: true,
+            lastError: null,
+            slabPlacementSession: {
+              ...sess,
+              buildMode: mode,
+              phase: "waitingFirstPoint",
+              firstPointMm: null,
+              polylineVerticesMm: [],
+              previewEndMm: null,
+              lastSnapKind: null,
+            },
+          });
+        }
+        return buildProjectMutationState(s, nextProject, { dirty: true, lastError: null });
+      }),
+
     setLinearPlacementMode: (mode) =>
       set((s) =>
         buildProjectMutationState(
@@ -4483,6 +5550,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           addFoundationPileModalOpen: false,
           foundationPilePlacementSession: null,
           foundationPilePlacementHistoryBaseline: null,
+          textureApply3dToolActive: false,
+          textureApply3dParamsModal: null,
         });
       })();
     },
@@ -4542,14 +5611,20 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementAnchorAngleSnapLockedDeg: null,
           wallContextMenu: null,
           foundationPileContextMenu: null,
+          editor2dSecondaryContextMenu: null,
           wallMoveCopySession: null,
           foundationPileMoveCopySession: null,
+          entityCopySession: null,
+          entityCopyParamsModal: null,
+          entityCopyHistoryBaseline: null,
           addFoundationStripModalOpen: false,
           foundationStripPlacementSession: null,
           foundationStripPlacementHistoryBaseline: null,
           addFoundationPileModalOpen: false,
           foundationPilePlacementSession: null,
           foundationPilePlacementHistoryBaseline: null,
+          textureApply3dToolActive: false,
+          textureApply3dParamsModal: null,
         });
       })();
     },
@@ -4604,14 +5679,20 @@ export const useAppStore = create<AppStore>((set, get) => {
         wallPlacementAnchorAngleSnapLockedDeg: null,
         wallContextMenu: null,
         foundationPileContextMenu: null,
+        editor2dSecondaryContextMenu: null,
         wallMoveCopySession: null,
         foundationPileMoveCopySession: null,
+        entityCopySession: null,
+        entityCopyParamsModal: null,
+        entityCopyHistoryBaseline: null,
         addFoundationStripModalOpen: false,
         foundationStripPlacementSession: null,
         foundationStripPlacementHistoryBaseline: null,
         addFoundationPileModalOpen: false,
         foundationPilePlacementSession: null,
         foundationPilePlacementHistoryBaseline: null,
+        textureApply3dToolActive: false,
+        textureApply3dParamsModal: null,
       });
       try {
         await syncProjectToFirestore(loaded);
@@ -4699,14 +5780,20 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementAnchorAngleSnapLockedDeg: null,
           wallContextMenu: null,
           foundationPileContextMenu: null,
+          editor2dSecondaryContextMenu: null,
           wallMoveCopySession: null,
           foundationPileMoveCopySession: null,
+          entityCopySession: null,
+          entityCopyParamsModal: null,
+          entityCopyHistoryBaseline: null,
           addFoundationStripModalOpen: false,
           foundationStripPlacementSession: null,
           foundationStripPlacementHistoryBaseline: null,
           addFoundationPileModalOpen: false,
           foundationPilePlacementSession: null,
           foundationPilePlacementHistoryBaseline: null,
+          textureApply3dToolActive: false,
+          textureApply3dParamsModal: null,
         });
         void (async () => {
           try {

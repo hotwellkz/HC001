@@ -175,3 +175,34 @@ export function duplicateWallWithDependents(project: Project, wallId: string): {
     newWallId,
   };
 }
+
+/**
+ * Копия размещённого проёма на той же стене (тот же offset), новые id проёма и кусков обрамления.
+ */
+export function duplicateOpeningOnSameWall(
+  project: Project,
+  openingId: string,
+): { readonly project: Project; readonly newOpeningId: string } | { readonly error: string } {
+  const o = project.openings.find((x) => x.id === openingId);
+  if (!o || o.wallId == null || o.offsetFromStartMm == null) {
+    return { error: "Проём не на стене." };
+  }
+  const wallId = o.wallId;
+  const newOpeningId = newEntityId();
+  const cloned = cloneOpeningForWall(o, newOpeningId, wallId, project);
+  const framingSrc = project.openingFramingPieces.filter((p) => p.openingId === openingId);
+  const newFraming: OpeningFramingPiece[] = framingSrc.map((p) => ({
+    ...p,
+    id: newEntityId(),
+    openingId: newOpeningId,
+    wallId,
+  }));
+  return {
+    project: touchProjectMeta({
+      ...project,
+      openings: [...project.openings, cloned],
+      openingFramingPieces: [...project.openingFramingPieces, ...newFraming],
+    }),
+    newOpeningId,
+  };
+}

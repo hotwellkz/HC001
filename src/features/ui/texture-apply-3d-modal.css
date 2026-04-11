@@ -1,0 +1,506 @@
+/**
+ * Модалка текстур 3D — те же токены, что shell / layer-modals (theme.css).
+ * Читаемость в светлой и тёмной теме без хардкода «тяжёлых» фонов.
+ */
+
+.ta3d-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 210;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-lg);
+  background: var(--color-overlay);
+}
+
+.ta3d-dialog {
+  width: min(1040px, calc(100vw - 2 * var(--space-lg)));
+  max-height: min(90vh, 920px);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-modal);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+
+.ta3d-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  flex-shrink: 0;
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-base);
+}
+
+.ta3d-title {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+}
+
+.ta3d-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin: calc(-1 * var(--space-xs));
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background var(--t-fast) var(--ease-standard),
+    color var(--t-fast) var(--ease-standard);
+}
+
+.ta3d-close:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.ta3d-close:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-glow);
+}
+
+/* Категории | Галерея | Параметры */
+.ta3d-body {
+  display: grid;
+  grid-template-columns: minmax(168px, 188px) minmax(0, 1fr) minmax(268px, 304px);
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.ta3d-cats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-sm) var(--space-sm) var(--space-md);
+  border-right: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-base);
+  overflow-y: auto;
+}
+
+.ta3d-cats-label {
+  padding: var(--space-xs) var(--space-sm) var(--space-sm);
+  font-size: var(--text-label);
+  line-height: var(--lh-label);
+  font-weight: var(--fw-label);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ta3d-cat-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--text-body-sm);
+  line-height: var(--lh-body-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--t-fast) var(--ease-standard),
+    color var(--t-fast) var(--ease-standard);
+}
+
+.ta3d-cat-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.ta3d-cat-btn[data-active="true"] {
+  background: var(--color-accent-soft);
+  color: var(--color-text-on-accent-soft);
+  font-weight: 600;
+}
+
+.ta3d-cat-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-glow);
+}
+
+/* Центр: только галерея */
+.ta3d-gallery-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-surface-raised);
+  border-right: 1px solid var(--color-border-subtle);
+}
+
+.ta3d-gallery-header {
+  flex-shrink: 0;
+  padding: var(--space-md) var(--space-lg) var(--space-sm);
+  font-size: var(--text-label);
+  line-height: var(--lh-label);
+  font-weight: var(--fw-label);
+  color: var(--color-text-muted);
+}
+
+.ta3d-gallery {
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-sm) var(--space-lg) var(--space-lg);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: var(--space-md);
+  align-content: start;
+}
+
+.ta3d-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  margin: 0;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-sm);
+  background: var(--color-surface-base);
+  cursor: pointer;
+  text-align: center;
+  transition:
+    border-color var(--t-fast) var(--ease-standard),
+    background var(--t-fast) var(--ease-standard),
+    box-shadow var(--t-fast) var(--ease-standard);
+}
+
+.ta3d-card:hover:not(:disabled) {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-hover);
+}
+
+.ta3d-card[data-active="true"] {
+  border-color: var(--color-accent-outline);
+  background: var(--color-accent-soft);
+}
+
+.ta3d-card:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-glow);
+}
+
+.ta3d-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ta3d-card-img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  display: block;
+  background: var(--color-input-bg);
+  border: 1px solid var(--color-border-subtle);
+}
+
+.ta3d-card-name {
+  margin-top: var(--space-sm);
+  font-size: var(--text-body-sm);
+  line-height: var(--lh-body-sm);
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.ta3d-card[data-active="true"] .ta3d-card-name {
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+
+/* Правая колонка: превью + настройки */
+.ta3d-params {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--color-surface-raised);
+}
+
+.ta3d-preview-section {
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-base);
+}
+
+.ta3d-preview-section-title {
+  margin: 0 0 var(--space-md);
+  font-size: var(--text-label);
+  line-height: var(--lh-label);
+  font-weight: var(--fw-label);
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ta3d-preview-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  align-items: flex-start;
+}
+
+.ta3d-preview-thumb {
+  width: 112px;
+  height: 112px;
+  object-fit: cover;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  flex-shrink: 0;
+  background: var(--color-input-bg);
+}
+
+.ta3d-preview-meta {
+  flex: 1;
+  min-width: 160px;
+}
+
+.ta3d-preview-name {
+  margin: 0 0 var(--space-sm);
+  font-size: var(--text-body);
+  line-height: var(--lh-body);
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.ta3d-preview-hint {
+  margin: 0;
+  font-size: var(--text-body-sm);
+  line-height: var(--lh-body-sm);
+  color: var(--color-text-secondary);
+}
+
+.ta3d-cube-wrap {
+  width: 112px;
+  height: 112px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-input-bg);
+}
+
+.ta3d-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  padding: var(--space-lg);
+}
+
+.ta3d-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.ta3d-field-label {
+  font-size: var(--text-label);
+  line-height: var(--lh-label);
+  font-weight: var(--fw-label);
+  color: var(--color-text-muted);
+}
+
+.ta3d-field input[type="number"] {
+  min-height: 40px;
+  max-width: 140px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-input-bg);
+  color: var(--color-text-primary);
+  font-size: var(--text-body-sm);
+  transition:
+    border-color var(--t-fast) var(--ease-standard),
+    box-shadow var(--t-fast) var(--ease-standard);
+}
+
+.ta3d-field input[type="number"]:focus {
+  outline: none;
+  border-color: var(--color-accent-outline);
+  box-shadow: var(--shadow-focus-glow);
+}
+
+.ta3d-field input[type="number"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ta3d-radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.ta3d-radio-group-title {
+  font-size: var(--text-label);
+  line-height: var(--lh-label);
+  font-weight: var(--fw-label);
+  color: var(--color-text-muted);
+}
+
+.ta3d-radio-option {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--text-body-sm);
+  line-height: var(--lh-body-sm);
+  font-weight: 500;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.ta3d-radio-option input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.ta3d-check-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: var(--text-body-sm);
+  line-height: var(--lh-body-sm);
+  font-weight: 500;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.ta3d-check-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+.ta3d-error {
+  flex-shrink: 0;
+  padding: var(--space-sm) var(--space-lg);
+  font-size: var(--text-body-sm);
+  line-height: var(--lh-body-sm);
+  color: var(--color-danger);
+  background: var(--color-danger-soft);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.ta3d-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+  padding: var(--space-md) var(--space-lg);
+  border-top: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-base);
+}
+
+.ta3d-foot .ta3d-btn {
+  min-width: 120px;
+  min-height: 40px;
+  padding: 0 var(--space-lg);
+  border-radius: var(--radius-md);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background var(--t-fast) var(--ease-standard),
+    border-color var(--t-fast) var(--ease-standard),
+    box-shadow var(--t-fast) var(--ease-standard);
+}
+
+.ta3d-foot .ta3d-btn--secondary {
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-raised);
+  color: var(--color-text-primary);
+}
+
+.ta3d-foot .ta3d-btn--secondary:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-strong);
+}
+
+.ta3d-foot .ta3d-btn--secondary:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-glow);
+}
+
+.ta3d-foot .ta3d-btn--primary {
+  border: 1px solid var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.ta3d-foot .ta3d-btn--primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+}
+
+.ta3d-foot .ta3d-btn--primary:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-glow);
+}
+
+.ta3d-foot .ta3d-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 900px) {
+  .ta3d-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(200px, 45vh) auto;
+  }
+
+  .ta3d-cats {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border-subtle);
+    max-height: none;
+  }
+
+  .ta3d-cats-label {
+    width: 100%;
+  }
+
+  .ta3d-cat-btn {
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: center;
+  }
+
+  .ta3d-gallery-panel {
+    border-right: none;
+    border-bottom: 1px solid var(--color-border-subtle);
+  }
+
+  .ta3d-params {
+    max-height: 50vh;
+  }
+}

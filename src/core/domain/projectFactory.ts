@@ -3,6 +3,7 @@ import type { Layer } from "./layer";
 import type { Project } from "./project";
 import type { ProjectMeta } from "./projectMeta";
 import { normalizeProjectSettings } from "./settings";
+import { EMPTY_SURFACE_TEXTURE_STATE } from "./surfaceTextureState";
 import { newEntityId } from "./ids";
 
 function nowIso(): string {
@@ -48,6 +49,7 @@ export function createEmptyProject(): Project {
     planLines: [],
     foundationStrips: [],
     foundationPiles: [],
+    slabs: [],
     wallCalculations: [],
     wallJoints: [],
     openings: [],
@@ -59,6 +61,7 @@ export function createEmptyProject(): Project {
     sheets: [],
     dimensions: [],
     profiles: [],
+    surfaceTextureState: EMPTY_SURFACE_TEXTURE_STATE,
     settings: normalizeProjectSettings({
       gridStepMm: 100,
       show2dGrid: true,

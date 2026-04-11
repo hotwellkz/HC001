@@ -25,6 +25,18 @@ export const HOVER_BOX_OUTLINE_3D = {
   opacity: 0.55,
 } as const;
 
+/** Инструмент «Применить текстуру»: наведение (raycast). */
+export const TEXTURE_TOOL_HOVER_OUTLINE_3D = {
+  color: 0x6ee7b7,
+  opacity: 0.72,
+} as const;
+
+/** Объект, для которого открыто окно параметров текстуры. */
+export const TEXTURE_TOOL_LOCKED_OUTLINE_3D = {
+  color: 0xfbbf24,
+  opacity: 0.92,
+} as const;
+
 /**
  * Рёбра бруса каркаса (`Edges` на той же boxGeometry, что и solid) — границы досок без 1 мм seam-mesh.
  */

@@ -1,0 +1,114 @@
+.ecpm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.ecpm-dialog {
+  min-width: min(420px, 92vw);
+  max-width: 520px;
+  padding: 1.25rem 1.35rem;
+  border-radius: 10px;
+  background: var(--shell-surface, #1e1e1e);
+  color: var(--shell-fg, #f4f4f4);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.ecpm-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.ecpm-hint {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  opacity: 0.85;
+  line-height: 1.45;
+}
+
+.ecpm-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.ecpm-label {
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+
+.ecpm-input {
+  padding: 0.45rem 0.55rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.25);
+  color: inherit;
+  font-size: 0.95rem;
+}
+
+.ecpm-fieldset {
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+}
+
+.ecpm-legend {
+  padding: 0 0.35rem;
+  font-size: 0.8rem;
+}
+
+.ecpm-radio {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin: 0.45rem 0;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+
+.ecpm-radio input {
+  margin-top: 0.2rem;
+}
+
+.ecpm-error {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: #f87171;
+}
+
+.ecpm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.ecpm-btn {
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.ecpm-btn--ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.2);
+  color: inherit;
+}
+
+.ecpm-btn--primary {
+  background: #3b82f6;
+  color: #fff;
+}
+
+.ecpm-btn--primary:hover {
+  filter: brightness(1.05);
+}

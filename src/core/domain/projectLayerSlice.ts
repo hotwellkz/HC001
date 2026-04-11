@@ -22,6 +22,7 @@ export function narrowProjectToLayerSet(project: Project, layerIds: ReadonlySet<
   const planLines = project.planLines.filter((l) => layerIds.has(l.layerId));
   const foundationStrips = project.foundationStrips.filter((s) => layerIds.has(s.layerId));
   const foundationPiles = project.foundationPiles.filter((p) => layerIds.has(p.layerId));
+  const slabs = project.slabs.filter((s) => layerIds.has(s.layerId));
   const openings = project.openings.filter((o) => o.wallId != null && wallIds.has(o.wallId));
   const openingFramingPieces = project.openingFramingPieces.filter((p) => wallIds.has(p.wallId));
   const rooms = project.rooms.filter((r) => layerIds.has(r.layerId));
@@ -31,6 +32,7 @@ export function narrowProjectToLayerSet(project: Project, layerIds: ReadonlySet<
     planLines,
     foundationStrips,
     foundationPiles,
+    slabs,
     openings,
     openingFramingPieces,
     rooms,

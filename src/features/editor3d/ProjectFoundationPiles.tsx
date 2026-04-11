@@ -1,14 +1,26 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { DoubleSide } from "three";
 
+import type { Editor3dPickPayload } from "@/core/domain/editor3dPickPayload";
 import { getLayerById } from "@/core/domain/layerOps";
 import type { FoundationPileEntity } from "@/core/domain/foundationPile";
 import type { Project } from "@/core/domain/project";
+import { resolveSurfaceTextureBinding } from "@/core/domain/surfaceTextureResolve";
+import { surfaceTextureMeshKey } from "@/core/domain/surfaceTextureState";
+import { getCatalogDiffuseTexture } from "@/core/textures/proceduralDiffuseTextures";
+import { getTextureCatalogEntry } from "@/core/textures/textureCatalog";
 
 import { editor3dPickUserData } from "./editor3dPick";
 import { ExactBoxSelectionOutline } from "./ExactBoxSelectionOutline";
-import { HOVER_BOX_OUTLINE_3D, SELECTION_BOX_OUTLINE_3D } from "./calculationSeamVisual3d";
+import {
+  HOVER_BOX_OUTLINE_3D,
+  SELECTION_BOX_OUTLINE_3D,
+  TEXTURE_TOOL_HOVER_OUTLINE_3D,
+  TEXTURE_TOOL_LOCKED_OUTLINE_3D,
+} from "./calculationSeamVisual3d";
+import { editor3dTextureHighlightMatches } from "./editor3dTextureHighlight";
 import { meshStandardPresetForMaterialType } from "./materials3d";
+import { buildTexturedBoxMaterials, disposeOwnedMaterials } from "./surfaceTextureMaterial3d";
 
 const MM_TO_M = 0.001;
 
@@ -73,16 +85,130 @@ function pileMeshesForEntity(project: Project, pile: FoundationPileEntity) {
   return { parts, concrete };
 }
 
+function PilePartMesh({
+  pile,
+  pt,
+  project,
+  concrete,
+  texturePickHover,
+  texturePickLocked,
+}: {
+  readonly pile: FoundationPileEntity;
+  readonly pt: {
+    readonly key: string;
+    readonly position: readonly [number, number, number];
+    readonly width: number;
+    readonly height: number;
+    readonly depth: number;
+  };
+  readonly project: Project;
+  readonly concrete: ReturnType<typeof meshStandardPresetForMaterialType>;
+  readonly texturePickHover: Editor3dPickPayload | null;
+  readonly texturePickLocked: Editor3dPickPayload | null;
+}) {
+  const texturedMaterials = useMemo(() => {
+    const binding = resolveSurfaceTextureBinding(
+      project.surfaceTextureState,
+      surfaceTextureMeshKey("foundationPile", pt.key),
+      pile.layerId,
+    );
+    if (!binding) {
+      return null;
+    }
+    const entry = getTextureCatalogEntry(binding.textureId);
+    if (!entry) {
+      return null;
+    }
+    const tileM = entry.defaultScaleM * (binding.scalePercent / 100);
+    const baseMap = getCatalogDiffuseTexture(entry.id, entry.procedural.kind, entry.procedural.seed);
+    return buildTexturedBoxMaterials({
+      preset: concrete,
+      baseMap,
+      widthM: pt.width,
+      heightM: pt.height,
+      depthM: pt.depth,
+      tileWorldSizeM: tileM,
+      doubleSided: true,
+    });
+  }, [concrete, pile.layerId, project.surfaceTextureState, pt.depth, pt.height, pt.key, pt.width]);
+
+  useEffect(() => {
+    return () => {
+      if (texturedMaterials) {
+        disposeOwnedMaterials(texturedMaterials);
+      }
+    };
+  }, [texturedMaterials]);
+
+  const pick = editor3dPickUserData({
+    kind: "foundationPile",
+    entityId: pile.id,
+    reactKey: pt.key,
+  });
+
+  const texLocked = editor3dTextureHighlightMatches("foundationPile", pile.id, pt.key, texturePickLocked);
+  const texHover =
+    !texLocked && editor3dTextureHighlightMatches("foundationPile", pile.id, pt.key, texturePickHover);
+
+  const meshEl = texturedMaterials ? (
+    <mesh userData={pick} position={pt.position} castShadow receiveShadow material={texturedMaterials}>
+      <boxGeometry args={[pt.width, pt.height, pt.depth]} />
+    </mesh>
+  ) : (
+    <mesh userData={pick} position={pt.position} castShadow receiveShadow>
+      <boxGeometry args={[pt.width, pt.height, pt.depth]} />
+      <meshStandardMaterial
+        color={concrete.color}
+        roughness={concrete.roughness}
+        metalness={concrete.metalness}
+        side={DoubleSide}
+      />
+    </mesh>
+  );
+
+  return (
+    <group>
+      {meshEl}
+      {texLocked ? (
+        <ExactBoxSelectionOutline
+          width={pt.width}
+          height={pt.height}
+          depth={pt.depth}
+          position={pt.position}
+          rotationY={0}
+          color={TEXTURE_TOOL_LOCKED_OUTLINE_3D.color}
+          opacity={TEXTURE_TOOL_LOCKED_OUTLINE_3D.opacity}
+        />
+      ) : null}
+      {texHover ? (
+        <ExactBoxSelectionOutline
+          width={pt.width}
+          height={pt.height}
+          depth={pt.depth}
+          position={pt.position}
+          rotationY={0}
+          color={TEXTURE_TOOL_HOVER_OUTLINE_3D.color}
+          opacity={TEXTURE_TOOL_HOVER_OUTLINE_3D.opacity}
+        />
+      ) : null}
+    </group>
+  );
+}
+
 interface ProjectFoundationPilesProps {
   readonly project: Project;
   readonly selectedPileEntityId: string | null;
   readonly hoverPileEntityId: string | null;
+  readonly texturePickHover: Editor3dPickPayload | null;
+  readonly texturePickLocked: Editor3dPickPayload | null;
 }
 
 export function ProjectFoundationPiles({
   project,
   selectedPileEntityId,
   hoverPileEntityId,
+  texturePickHover,
+  texturePickLocked,
 }: ProjectFoundationPilesProps) {
   const items = useMemo(() => {
     const out: {
@@ -107,30 +233,17 @@ export function ProjectFoundationPiles({
         const hoverThis = hoverPileEntityId === pile.id && !shellSelected;
         return (
           <group key={pile.id}>
-            {parts.map((pt) => {
-              const pick = editor3dPickUserData({
-                kind: "foundationPile",
-                entityId: pile.id,
-                reactKey: pt.key,
-              });
-              return (
-                <mesh
-                  key={pt.key}
-                  userData={pick}
-                  position={pt.position}
-                  castShadow
-                  receiveShadow
-                >
-                  <boxGeometry args={[pt.width, pt.height, pt.depth]} />
-                  <meshStandardMaterial
-                    color={concrete.color}
-                    roughness={concrete.roughness}
-                    metalness={concrete.metalness}
-                    side={DoubleSide}
-                  />
-                </mesh>
-              );
-            })}
+            {parts.map((pt) => (
+              <PilePartMesh
+                key={pt.key}
+                pile={pile}
+                pt={pt}
+                project={project}
+                concrete={concrete}
+                texturePickHover={texturePickHover}
+                texturePickLocked={texturePickLocked}
+              />
+            ))}
             {shellSelected
               ? parts.map((pt) => (
                   <ExactBoxSelectionOutline

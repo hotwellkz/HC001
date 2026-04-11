@@ -35,6 +35,7 @@ export function deleteEntitiesFromProject(project: Project, selectedIds: Readonl
   const planLinesKept = project.planLines.filter((l) => !selectedIds.has(l.id));
   const foundationStripsKept = project.foundationStrips.filter((s) => !selectedIds.has(s.id));
   const foundationPilesKept = project.foundationPiles.filter((p) => !selectedIds.has(p.id));
+  const slabsKept = project.slabs.filter((s) => !selectedIds.has(s.id));
 
   return touchProjectMeta({
     ...project,
@@ -42,6 +43,7 @@ export function deleteEntitiesFromProject(project: Project, selectedIds: Readonl
     planLines: planLinesKept,
     foundationStrips: foundationStripsKept,
     foundationPiles: foundationPilesKept,
+    slabs: slabsKept,
     wallCalculations: wallCalculationsKept,
     wallJoints: wallJointsKept,
     openings: openingsKept,

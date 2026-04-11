@@ -45,6 +45,26 @@ export function computeMarqueeSelection(
     }
   }
 
+  for (const sl of project.slabs) {
+    const pts = sl.pointsMm;
+    if (pts.length === 0) {
+      continue;
+    }
+    let minX = pts[0]!.x;
+    let maxX = pts[0]!.x;
+    let minY = pts[0]!.y;
+    let maxY = pts[0]!.y;
+    for (const p of pts) {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+    }
+    if (rectsIntersectMm({ minX, maxX, minY, maxY }, rect)) {
+      ids.push(sl.id);
+    }
+  }
+
   for (const pile of project.foundationPiles) {
     const h = Math.max(pile.capSizeMm, pile.sizeMm) / 2;
     const bb = {

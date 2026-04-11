@@ -9,6 +9,8 @@ export function isSceneCoordinateModalBlocking(store: {
   readonly lengthChangeCoordinateModalOpen: boolean;
   readonly projectOriginCoordinateModalOpen: boolean;
   readonly openingAlongMoveNumericModalOpen: boolean;
+  readonly slabCoordinateModalOpen: boolean;
+  readonly entityCopyParamsModal: unknown | null;
 }): boolean {
   return (
     store.wallCoordinateModalOpen ||
@@ -16,6 +18,8 @@ export function isSceneCoordinateModalBlocking(store: {
     store.wallMoveCopyCoordinateModalOpen ||
     store.lengthChangeCoordinateModalOpen ||
     store.projectOriginCoordinateModalOpen ||
-    store.openingAlongMoveNumericModalOpen
+    store.openingAlongMoveNumericModalOpen ||
+    store.slabCoordinateModalOpen ||
+    store.entityCopyParamsModal != null
   );
 }

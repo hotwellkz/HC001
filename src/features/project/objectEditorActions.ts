@@ -6,6 +6,7 @@ export type ResolvedObjectEditorAction =
   | { readonly kind: "wall"; readonly wallId: string }
   | { readonly kind: "door"; readonly openingId: string }
   | { readonly kind: "window"; readonly openingId: string }
+  | { readonly kind: "slab"; readonly slabId: string }
   | { readonly kind: "hint"; readonly message: string };
 
 /**
@@ -31,6 +32,9 @@ export function resolveObjectEditorForSelection(
   }
   if (project.foundationPiles.some((p) => p.id === id)) {
     return { kind: "hint", message: "Свая: параметры задаются при установке; удаление и перетаскивание на плане." };
+  }
+  if (project.slabs.some((s) => s.id === id)) {
+    return { kind: "slab", slabId: id };
   }
   const wall = project.walls.find((w) => w.id === id);
   if (wall) {
@@ -64,6 +68,10 @@ export function applyResolvedObjectEditor(resolved: ResolvedObjectEditorAction):
   }
   if (resolved.kind === "door") {
     store.openDoorEditModal(resolved.openingId, "form");
+    return;
+  }
+  if (resolved.kind === "slab") {
+    store.openSlabEditModal(resolved.slabId);
     return;
   }
   store.openWindowEditModal(resolved.openingId, "form");

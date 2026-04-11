@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { createPortal } from "react-dom";
 
 import { Editor2DPlanToolbar } from "@/features/ui/Editor2DPlanToolbar";
+import { Editor3DToolbar } from "@/features/ui/Editor3DToolbar";
 import { LayerToolbar } from "@/features/ui/LayerToolbar";
 import { ThemeMenu } from "@/features/ui/ThemeMenu";
 import { projectCommands } from "@/features/project/commands";
@@ -285,6 +286,8 @@ export function TopBar() {
             <Editor2DPlanToolbar />
             {mode !== "narrow" ? <LayerToolbar /> : null}
           </>
+        ) : activeTab === "3d" ? (
+          <Editor3DToolbar />
         ) : null}
       </div>
       <div className="shell-top-right row tb-group tb-group--right">

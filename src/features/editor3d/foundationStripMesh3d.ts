@@ -9,6 +9,8 @@ import { getLayerById } from "@/core/domain/layerOps";
 import type { Project } from "@/core/domain/project";
 import type { Point2D } from "@/core/geometry/types";
 
+import { slabFootprintMaxSpanMm } from "./slabMesh3d";
+
 const MM_TO_M = 0.001;
 
 /**
@@ -130,4 +132,20 @@ export function buildFoundationStripExtrudeGeometry(
 
   const geometry = new ExtrudeGeometry(shape, { depth: depthM, bevelEnabled: false });
   return { geometry, bottomM };
+}
+
+/** Оценка размаха контура ленты в плане (мм) для тайлинга текстуры. */
+export function foundationStripFootprintMaxSpanMm(entity: FoundationStripEntity): number {
+  if (entity.kind === "ortho_ring") {
+    return Math.max(
+      Math.abs(entity.axisXmaxMm - entity.axisXminMm),
+      Math.abs(entity.axisYmaxMm - entity.axisYminMm),
+      100,
+    );
+  }
+  if (entity.kind === "footprint_poly") {
+    return slabFootprintMaxSpanMm(entity.outerRingMm);
+  }
+  const len = Math.hypot(entity.axisEnd.x - entity.axisStart.x, entity.axisEnd.y - entity.axisStart.y);
+  return Math.max(len, entity.sideInMm + entity.sideOutMm, 100);
 }
