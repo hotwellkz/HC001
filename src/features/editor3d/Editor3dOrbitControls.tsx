@@ -27,13 +27,16 @@ function serializeViewport3d(v: ViewportState3D): string {
  * Орбита и камера читают/пишут {@link Project.viewState.viewport3d} (персистится в проекте).
  * При смене target извне (например перенос базы плана) камера пересобирается из сферических координат.
  */
-export function Editor3dOrbitControls() {
+export function Editor3dOrbitControls({ flyModeActive }: { readonly flyModeActive: boolean }) {
   const ref = useRef<DreiOrbitControlsImpl | null>(null);
   const viewport3d = useAppStore((s) => s.currentProject.viewState.viewport3d);
   const setViewport3d = useAppStore((s) => s.setViewport3d);
   const lastApplied = useRef<string>("");
 
   useFrame(() => {
+    if (flyModeActive) {
+      return;
+    }
     const ctrl = ref.current;
     if (!ctrl) {
       return;
@@ -50,6 +53,7 @@ export function Editor3dOrbitControls() {
     <OrbitControls
       ref={ref}
       makeDefault
+      enabled={!flyModeActive}
       enableDamping
       dampingFactor={0.08}
       onEnd={() => {

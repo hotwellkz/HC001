@@ -4,23 +4,24 @@ import { useMemo } from "react";
 import type { Project } from "@/core/domain/project";
 import { buildCalculationSolidSpecsForProject } from "@/core/domain/wallCalculation3dSpecs";
 
-import { LUMBER_FRAME_VISUAL_3D, SELECTION_BOX_OUTLINE_3D } from "./calculationSeamVisual3d";
+import { HOVER_BOX_OUTLINE_3D, LUMBER_FRAME_VISUAL_3D, SELECTION_BOX_OUTLINE_3D } from "./calculationSeamVisual3d";
 import { useSharedCalculationMeshMaterials } from "./calculationMeshMaterials3d";
+import { editor3dPickUserData } from "./editor3dPick";
 import { ExactBoxSelectionOutline } from "./ExactBoxSelectionOutline";
 import { isCalculationSolidVisible } from "./view3dVisibility";
 
 interface ProjectCalculationMeshesProps {
   readonly project: Project;
   readonly visible: boolean;
-  readonly selectedReactKey: string | null;
-  readonly onSelect: (spec: (ReturnType<typeof buildCalculationSolidSpecsForProject>)[number]) => void;
+  readonly calcFocus: { readonly wallId: string; readonly reactKey: string } | null;
+  readonly hoverCalcReactKey: string | null;
 }
 
 /**
  * Объёмы из wallCalculations (SIP-панели + пиломатериалы).
  * Каркас: рёбра бруса через `Edges` на той же boxGeometry, без отдельных seam-mesh.
  */
-export function ProjectCalculationMeshes({ project, visible, selectedReactKey, onSelect }: ProjectCalculationMeshesProps) {
+export function ProjectCalculationMeshes({ project, visible, calcFocus, hoverCalcReactKey }: ProjectCalculationMeshesProps) {
   const materials = useSharedCalculationMeshMaterials();
   const edgeV = LUMBER_FRAME_VISUAL_3D.edges;
   const selV = SELECTION_BOX_OUTLINE_3D;
@@ -42,18 +43,18 @@ export function ProjectCalculationMeshes({ project, visible, selectedReactKey, o
             ? materials.lumber
             : (materials.byMaterialType.get(s.materialType) ?? materials.eps);
         const isLumber = s.source === "lumber";
+        const pick = editor3dPickUserData({ kind: "calc", entityId: s.wallId, reactKey: s.reactKey });
+        const selectedPiece = calcFocus != null && s.reactKey === calcFocus.reactKey;
+        const hoverPiece = hoverCalcReactKey === s.reactKey && !selectedPiece;
         return (
           <group key={s.reactKey}>
             <mesh
+              userData={pick}
               material={mat}
               position={s.position}
               rotation={[0, s.rotationY, 0]}
               castShadow
               receiveShadow
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                onSelect(s);
-              }}
             >
               <boxGeometry args={[s.width, s.height, s.depth]} />
               {isLumber ? (
@@ -70,7 +71,7 @@ export function ProjectCalculationMeshes({ project, visible, selectedReactKey, o
                 />
               ) : null}
             </mesh>
-            {selectedReactKey === s.reactKey ? (
+            {selectedPiece ? (
               <ExactBoxSelectionOutline
                 width={s.width}
                 height={s.height}
@@ -79,6 +80,17 @@ export function ProjectCalculationMeshes({ project, visible, selectedReactKey, o
                 rotationY={s.rotationY}
                 color={selV.color}
                 opacity={selV.opacity}
+              />
+            ) : null}
+            {hoverPiece ? (
+              <ExactBoxSelectionOutline
+                width={s.width}
+                height={s.height}
+                depth={s.depth}
+                position={s.position}
+                rotationY={s.rotationY}
+                color={HOVER_BOX_OUTLINE_3D.color}
+                opacity={HOVER_BOX_OUTLINE_3D.opacity}
               />
             ) : null}
           </group>

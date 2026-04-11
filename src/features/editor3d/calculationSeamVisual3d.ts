@@ -19,6 +19,12 @@ export const SELECTION_BOX_OUTLINE_3D = {
   opacity: 0.95,
 } as const;
 
+/** Мягкая подсветка под курсором (ниже контраста, чем выбор). */
+export const HOVER_BOX_OUTLINE_3D = {
+  color: 0x8ec5ff,
+  opacity: 0.55,
+} as const;
+
 /**
  * Рёбра бруса каркаса (`Edges` на той же boxGeometry, что и solid) — границы досок без 1 мм seam-mesh.
  */

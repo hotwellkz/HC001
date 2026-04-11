@@ -3,23 +3,27 @@ import { DoubleSide } from "three";
 
 import type { Project } from "@/core/domain/project";
 
-import { SELECTION_BOX_OUTLINE_3D } from "./calculationSeamVisual3d";
+import { HOVER_BOX_OUTLINE_3D, SELECTION_BOX_OUTLINE_3D } from "./calculationSeamVisual3d";
+import { editor3dPickUserData } from "./editor3dPick";
 import { ExactBoxSelectionOutline } from "./ExactBoxSelectionOutline";
 import { meshStandardPresetForLayerOrDefault } from "./materials3d";
 import { selectWallsForScene3d } from "./selectors/walls3d";
 import { isWallMeshSpecVisible } from "./view3dVisibility";
-import { wallsToMeshSpecs, type WallRenderMeshSpec } from "./wallMeshSpec";
+import { wallsToMeshSpecs } from "./wallMeshSpec";
 
 interface ProjectWallsProps {
   readonly project: Project;
-  readonly selectedReactKey?: string | null;
-  readonly onSelectWall?: (spec: WallRenderMeshSpec) => void;
+  /** Выбранная сущность — стена (id стены), без фокуса на расчётном куске. */
+  readonly selectedWallEntityId: string | null;
+  /** Фокус на элементе расчёта: оболочки стены не подсвечиваем как выбранные. */
+  readonly calcFocus: { readonly wallId: string; readonly reactKey: string } | null;
+  readonly hoverWallEntityId: string | null;
 }
 
 /**
  * Меши стен из domain model; обновляется при любом изменении project.
  */
-export function ProjectWalls({ project, selectedReactKey = null, onSelectWall }: ProjectWallsProps) {
+export function ProjectWalls({ project, selectedWallEntityId, calcFocus, hoverWallEntityId }: ProjectWallsProps) {
   const specs = useMemo(() => {
     const walls = selectWallsForScene3d(project);
     const all = wallsToMeshSpecs(project, walls);
@@ -29,20 +33,18 @@ export function ProjectWalls({ project, selectedReactKey = null, onSelectWall }:
     <group name="project-walls">
       {specs.map((s) => {
         const preset = meshStandardPresetForLayerOrDefault(s.materialType);
+        const pick = editor3dPickUserData({ kind: "wall", entityId: s.wallId, reactKey: s.reactKey });
+        const shellSelected =
+          selectedWallEntityId === s.wallId && (calcFocus == null || calcFocus.wallId !== s.wallId);
+        const hoverThis = hoverWallEntityId === s.wallId && !shellSelected;
         return (
           <group key={s.reactKey}>
             <mesh
+              userData={pick}
               position={s.position}
               rotation={[0, s.rotationY, 0]}
               castShadow
               receiveShadow
-              onPointerDown={(e) => {
-                if (!onSelectWall) {
-                  return;
-                }
-                e.stopPropagation();
-                onSelectWall(s);
-              }}
             >
               <boxGeometry args={[s.width, s.height, s.depth]} />
               <meshStandardMaterial
@@ -52,7 +54,7 @@ export function ProjectWalls({ project, selectedReactKey = null, onSelectWall }:
                 side={DoubleSide}
               />
             </mesh>
-            {selectedReactKey === s.reactKey ? (
+            {shellSelected ? (
               <ExactBoxSelectionOutline
                 width={s.width}
                 height={s.height}
@@ -61,6 +63,17 @@ export function ProjectWalls({ project, selectedReactKey = null, onSelectWall }:
                 rotationY={s.rotationY}
                 color={SELECTION_BOX_OUTLINE_3D.color}
                 opacity={SELECTION_BOX_OUTLINE_3D.opacity}
+              />
+            ) : null}
+            {hoverThis ? (
+              <ExactBoxSelectionOutline
+                width={s.width}
+                height={s.height}
+                depth={s.depth}
+                position={s.position}
+                rotationY={s.rotationY}
+                color={HOVER_BOX_OUTLINE_3D.color}
+                opacity={HOVER_BOX_OUTLINE_3D.opacity}
               />
             ) : null}
           </group>

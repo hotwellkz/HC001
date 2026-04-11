@@ -47,3 +47,26 @@ export function viewport3dFromOrbitControls(controls: OrbitControlsLike): Viewpo
     targetZMm: t.y / MM,
   };
 }
+
+/**
+ * Восстанавливает {@link ViewportState3D} из свободной FPS-камеры: синтетическая цель орбиты
+ * на луче взгляда на заданном расстоянии (мм), чтобы orbit снова совпал с кадром.
+ */
+export function viewport3dFromPerspectiveCamera(
+  cam: THREE.PerspectiveCamera,
+  forwardTargetDistanceMm: number,
+): ViewportState3D {
+  const forward = new THREE.Vector3();
+  cam.getWorldDirection(forward);
+  const target = cam.position.clone().addScaledVector(forward, forwardTargetDistanceMm * MM);
+  const offset = new THREE.Vector3().subVectors(cam.position, target);
+  const sph = new THREE.Spherical().setFromVector3(offset);
+  return {
+    polarAngle: sph.phi,
+    azimuthalAngle: sph.theta,
+    distance: sph.radius / MM,
+    targetXMm: target.x / MM,
+    targetYMm: -target.z / MM,
+    targetZMm: target.y / MM,
+  };
+}

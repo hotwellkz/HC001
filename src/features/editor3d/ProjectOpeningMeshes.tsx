@@ -5,14 +5,15 @@ import { buildOpening3dSpecsForProject } from "@/core/domain/opening3dAssemblySp
 import type { Opening3dMeshKind, Opening3dMeshSpec } from "@/core/domain/opening3dAssemblySpecs";
 import type { Project } from "@/core/domain/project";
 
-import { SELECTION_BOX_OUTLINE_3D } from "./calculationSeamVisual3d";
+import { HOVER_BOX_OUTLINE_3D, SELECTION_BOX_OUTLINE_3D } from "./calculationSeamVisual3d";
+import { editor3dPickUserData } from "./editor3dPick";
 import { ExactBoxSelectionOutline } from "./ExactBoxSelectionOutline";
 import { isOpening3dMeshVisible } from "./view3dVisibility";
 
 interface ProjectOpeningMeshesProps {
   readonly project: Project;
-  readonly selectedReactKey: string | null;
-  readonly onSelect: (spec: Opening3dMeshSpec) => void;
+  readonly selectedOpeningEntityId: string | null;
+  readonly hoverOpeningEntityId: string | null;
 }
 
 function materialForKind(kind: Opening3dMeshKind): {
@@ -52,24 +53,22 @@ function materialForKind(kind: Opening3dMeshKind): {
 function OpeningMesh({
   spec,
   selected,
-  onSelect,
+  hover,
 }: {
   readonly spec: Opening3dMeshSpec;
   readonly selected: boolean;
-  readonly onSelect: (spec: Opening3dMeshSpec) => void;
+  readonly hover: boolean;
 }) {
   const m = materialForKind(spec.kind);
+  const pick = editor3dPickUserData({ kind: "opening", entityId: spec.openingId, reactKey: spec.reactKey });
   return (
     <group>
       <mesh
+        userData={pick}
         position={spec.position}
         rotation={[0, spec.rotationY, 0]}
         castShadow
         receiveShadow
-        onPointerDown={(e) => {
-          e.stopPropagation();
-          onSelect(spec);
-        }}
       >
         <boxGeometry args={[spec.width, spec.height, spec.depth]} />
         {m.physical ? (
@@ -104,6 +103,17 @@ function OpeningMesh({
           opacity={SELECTION_BOX_OUTLINE_3D.opacity}
         />
       ) : null}
+      {hover && !selected ? (
+        <ExactBoxSelectionOutline
+          width={spec.width}
+          height={spec.height}
+          depth={spec.depth}
+          position={spec.position}
+          rotationY={spec.rotationY}
+          color={HOVER_BOX_OUTLINE_3D.color}
+          opacity={HOVER_BOX_OUTLINE_3D.opacity}
+        />
+      ) : null}
     </group>
   );
 }
@@ -112,7 +122,7 @@ function OpeningMesh({
  * Оконные блоки (рама, стекло, импосты) и элементы обрамления из openingFramingPieces.
  * Зависит только от project — синхронизация с 2D через store.
  */
-export function ProjectOpeningMeshes({ project, selectedReactKey, onSelect }: ProjectOpeningMeshesProps) {
+export function ProjectOpeningMeshes({ project, selectedOpeningEntityId, hoverOpeningEntityId }: ProjectOpeningMeshesProps) {
   const specs = useMemo(() => {
     return buildOpening3dSpecsForProject(project).filter((s) => isOpening3dMeshVisible(s, project));
   }, [project]);
@@ -124,7 +134,12 @@ export function ProjectOpeningMeshes({ project, selectedReactKey, onSelect }: Pr
   return (
     <group name="project-openings-3d">
       {specs.map((s) => (
-        <OpeningMesh key={s.reactKey} spec={s} selected={selectedReactKey === s.reactKey} onSelect={onSelect} />
+        <OpeningMesh
+          key={s.reactKey}
+          spec={s}
+          selected={selectedOpeningEntityId != null && s.openingId === selectedOpeningEntityId}
+          hover={hoverOpeningEntityId != null && s.openingId === hoverOpeningEntityId}
+        />
       ))}
     </group>
   );
