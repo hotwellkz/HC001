@@ -9,6 +9,7 @@ import {
   type WallProfileLayerStripMm,
 } from "@/core/domain/wallProfileLayers";
 
+import { wallCenterlinePointAtAlongMm } from "./doorSwingSymbolMm";
 import { fillColor2dForMaterialType } from "./materials2d";
 import { openingSlotCornersMm } from "./openingPlanGeometry2d";
 import { quadCornersAlongWallMm } from "./wallPlanGeometry2d";
@@ -65,21 +66,21 @@ export function drawDoorSwing2d(
   }
   const ux = dx / len;
   const uy = dy / len;
-  const nx = -uy;
-  const ny = ux;
   const hingeAtStart = swing.endsWith("left");
   /** "in" = внутрь помещения, "out" = наружу; для нашей нормали знак должен быть инвертирован. */
   const inward = swing.startsWith("in");
   const sideSign = inward ? -1 : 1;
   const leafLenMm = Math.max(120, widthMm);
-  const halfT = Math.max(1, wall.thicknessMm * 0.5);
-  const normalInsetMm = Math.max(2, Math.min(halfT - 1, 5));
-  const hingeNormalMm = sideSign * Math.max(0, halfT - normalInsetMm);
   const hingeAlong = hingeAtStart ? leftAlongMm : leftAlongMm + widthMm;
   const closedAlongDir = hingeAtStart ? 1 : -1;
 
-  const hx = wall.start.x + ux * hingeAlong + nx * hingeNormalMm;
-  const hy = wall.start.y + uy * hingeAlong + ny * hingeNormalMm;
+  /** Петля и начало полотна — на оси стены (центр толщины), без смещения к грани. */
+  const hingePt = wallCenterlinePointAtAlongMm(wall, hingeAlong);
+  if (!hingePt) {
+    return;
+  }
+  const hx = hingePt.x;
+  const hy = hingePt.y;
   const cdx = ux * closedAlongDir;
   const cdy = uy * closedAlongDir;
   const cex = hx + cdx * leafLenMm;

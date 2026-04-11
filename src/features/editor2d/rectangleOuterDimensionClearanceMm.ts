@@ -10,6 +10,7 @@ import { openingCenterOnWallMm } from "@/core/domain/openingPlacement";
 import type { Project } from "@/core/domain/project";
 import type { Wall } from "@/core/domain/wall";
 
+import { wallCenterlinePointAtAlongMm } from "./doorSwingSymbolMm";
 import { exteriorNormalForWallLabelMm } from "./wallLabelExteriorNormalMm";
 
 /** Минимальный зазор за выступающей аннотацией (мм), не меньше шага сетки подставляется отдельно. */
@@ -45,20 +46,19 @@ function collectDoorSwingWorldPointsMm(
   }
   const ux = dx / len;
   const uy = dy / len;
-  const nx = -uy;
-  const ny = ux;
   const hingeAtStart = swing.endsWith("left");
   const inward = swing.startsWith("in");
   const sideSign = inward ? -1 : 1;
   const leafLenMm = Math.max(120, widthMm);
-  const halfT = Math.max(1, wall.thicknessMm * 0.5);
-  const normalInsetMm = Math.max(2, Math.min(halfT - 1, 5));
-  const hingeNormalMm = sideSign * Math.max(0, halfT - normalInsetMm);
   const hingeAlong = hingeAtStart ? leftAlongMm : leftAlongMm + widthMm;
   const closedAlongDir = hingeAtStart ? 1 : -1;
 
-  const hx = wall.start.x + ux * hingeAlong + nx * hingeNormalMm;
-  const hy = wall.start.y + uy * hingeAlong + ny * hingeNormalMm;
+  const hingePt = wallCenterlinePointAtAlongMm(wall, hingeAlong);
+  if (!hingePt) {
+    return [];
+  }
+  const hx = hingePt.x;
+  const hy = hingePt.y;
   const cdx = ux * closedAlongDir;
   const cdy = uy * closedAlongDir;
   const cex = hx + cdx * leafLenMm;
