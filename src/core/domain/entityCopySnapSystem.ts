@@ -18,16 +18,16 @@ import type { Project } from "./project";
 import type { Wall } from "./wall";
 import { wallLengthMm } from "./wallCalculationGeometry";
 import { resolveWallProfileLayerStripsMm } from "./wallProfileLayers";
-import { layerIdsForSnapGeometry } from "../geometry/snap2d";
-import type { SnapKind, SnapSettings2d } from "../geometry/snap2d";
-import { wallStripQuadCornersMm } from "../geometry/snap2d";
+import { openingWallSlotCornersInset0Mm } from "../geometry/openingWallSlotCorners";
+import { projectPointOntoRayForward } from "../geometry/rayProjection2d";
+import { layerIdsForSnapGeometry, wallStripQuadCornersMm } from "../geometry/snap2dPrimitives";
+import type { SnapKind, SnapSettings2d } from "../geometry/snap2dTypes";
 import type { Point2D } from "../geometry/types";
 import type { ViewportTransform } from "../geometry/viewportTransform";
 import { worldToScreen } from "../geometry/viewportTransform";
 import { applyWallDirectionAngleSnapToPoint } from "../geometry/wallDirectionAngleSnap";
-import { projectPointOntoRayForward } from "../geometry/shiftDirectionLock2d";
 import { snapWorldToGridAlignedToOrigin } from "./projectOriginPlan";
-import { SNAP_GRID_PX } from "../geometry/snap2d";
+import { SNAP_GRID_PX } from "../geometry/snap2dTypes";
 
 /** Порог захвата опорной точки, пиксели экрана (стабилен при zoom). */
 export const ENTITY_COPY_SNAP_PX = 14;
@@ -506,6 +506,12 @@ export function collectEntityCopySnapPointsForFullScene(
     for (const p of snapPointsForOpeningOnWall(wall, o)) {
       pushDedupe(out, p);
     }
+    const slot = openingWallSlotCornersInset0Mm(wall, o.offsetFromStartMm, o.widthMm);
+    if (slot) {
+      for (const c of slot) {
+        pushDedupe(out, { world: c, visual: "vertex" });
+      }
+    }
   }
   for (const slab of project.slabs) {
     if (!layerIds.has(slab.layerId)) {
@@ -526,7 +532,45 @@ export function collectEntityCopySnapPointsForFullScene(
   for (const ip of collectSegmentIntersectionsForLayer(project, layerIds)) {
     pushDedupe(out, { world: ip, visual: "intersection" });
   }
+  if (project.projectOrigin) {
+    const o = project.projectOrigin;
+    pushDedupe(out, { world: { x: o.x, y: o.y }, visual: "key" });
+  }
   return out;
+}
+
+/**
+ * Ближайшая структурная опорная точка (как при копировании сущностей), для общего snap плана.
+ */
+export function pickNearestStructuralTaggedSnapMm(
+  refWorldMm: Point2D,
+  viewport: ViewportTransform,
+  taggedPoints: readonly EntityCopySnapTaggedPoint[],
+  maxScreenPx: number,
+): { readonly point: Point2D; readonly snapKind: SnapKind } | null {
+  let best: { p: EntityCopySnapTaggedPoint; d: number } | null = null;
+  for (const p of taggedPoints) {
+    if (p.visual === "grid") {
+      continue;
+    }
+    const d = screenDistPx(refWorldMm, p.world, viewport);
+    if (d > maxScreenPx) {
+      continue;
+    }
+    if (!best) {
+      best = { p, d };
+      continue;
+    }
+    const pb = priority(best.p.visual);
+    const pc = priority(p.visual);
+    if (pc < pb || (pc === pb && d < best.d)) {
+      best = { p, d };
+    }
+  }
+  if (!best) {
+    return null;
+  }
+  return { point: best.p.world, snapKind: entityCopyVisualToSnapKind(best.p.visual) };
 }
 
 export interface EntityCopySnapResolveInput {

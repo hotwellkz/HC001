@@ -8,3 +8,6 @@ dist-ssr
 src-tauri/target
 .vscode/*
 !.vscode/extensions.json
+
+# Local Netlify folder
+.netlify

@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { useAppStore } from "@/store/useAppStore";
 
@@ -7,17 +7,30 @@ import "./wall-coordinate-modal.css";
 export function WallCoordinateModal() {
   const wallCoordOpen = useAppStore((s) => s.wallCoordinateModalOpen);
   const moveCopyCoordOpen = useAppStore((s) => s.wallMoveCopyCoordinateModalOpen);
+  const floorBeamMoveCopyCoordOpen = useAppStore((s) => s.floorBeamMoveCopyCoordinateModalOpen);
+  const entityCopyCoordOpen = useAppStore((s) => s.entityCopyCoordinateModalOpen);
   const lengthChangeCoordOpen = useAppStore((s) => s.lengthChangeCoordinateModalOpen);
   const slabCoordOpen = useAppStore((s) => s.slabCoordinateModalOpen);
-  const open = wallCoordOpen || moveCopyCoordOpen || lengthChangeCoordOpen || slabCoordOpen;
+  const open =
+    wallCoordOpen ||
+    moveCopyCoordOpen ||
+    floorBeamMoveCopyCoordOpen ||
+    entityCopyCoordOpen ||
+    lengthChangeCoordOpen ||
+    slabCoordOpen;
   const closeWallCoord = useAppStore((s) => s.closeWallCoordinateModal);
   const closeMoveCopyCoord = useAppStore((s) => s.closeWallMoveCopyCoordinateModal);
+  const closeFloorBeamMoveCopyCoord = useAppStore((s) => s.closeFloorBeamMoveCopyCoordinateModal);
+  const closeEntityCopyCoord = useAppStore((s) => s.closeEntityCopyCoordinateModal);
   const closeLengthChangeCoord = useAppStore((s) => s.closeLengthChangeCoordinateModal);
   const closeSlabCoord = useAppStore((s) => s.closeSlabCoordinateModal);
   const applyWallCoord = useAppStore((s) => s.applyWallCoordinateModal);
   const applyMoveCopyCoord = useAppStore((s) => s.applyWallMoveCopyCoordinateModal);
+  const applyFloorBeamMoveCopyCoord = useAppStore((s) => s.applyFloorBeamMoveCopyCoordinateModal);
+  const applyEntityCopyCoord = useAppStore((s) => s.applyEntityCopyCoordinateModal);
   const applyLengthChangeCoord = useAppStore((s) => s.applyLengthChangeCoordinateModal);
   const applySlabCoord = useAppStore((s) => s.applySlabCoordinateModal);
+  const setSceneCoordModalDesiredFocus = useAppStore((s) => s.setSceneCoordModalDesiredFocus);
   const lastError = useAppStore((s) => s.lastError);
 
   const titleId = useId();
@@ -25,6 +38,8 @@ export function WallCoordinateModal() {
   const [yStr, setYStr] = useState("0");
   const [deltaStr, setDeltaStr] = useState("0");
   const [localError, setLocalError] = useState<string | null>(null);
+  const xInputRef = useRef<HTMLInputElement | null>(null);
+  const yInputRef = useRef<HTMLInputElement | null>(null);
 
   /** Один снимок значений при открытии модалки; движение мыши по холсту не должно перезаписывать поля. */
   useEffect(() => {
@@ -40,6 +55,26 @@ export function WallCoordinateModal() {
       const d = Math.round(L - lc.initialLengthMm);
       setDeltaStr(String(d));
       setLocalError(null);
+      return;
+    }
+    if (st.entityCopyCoordinateModalOpen) {
+      const ec = st.entityCopySession;
+      if (ec?.worldAnchorStart && ec.previewTargetWorldMm) {
+        const dx = ec.previewTargetWorldMm.x - ec.worldAnchorStart.x;
+        const dy = ec.previewTargetWorldMm.y - ec.worldAnchorStart.y;
+        setXStr(String(Math.round(dx)));
+        setYStr(String(Math.round(dy)));
+        setLocalError(null);
+      }
+      return;
+    }
+    if (st.floorBeamMoveCopyCoordinateModalOpen) {
+      const fb = st.floorBeamMoveCopySession;
+      if (fb?.baseAnchorWorldMm && fb.dragDeltaMm != null) {
+        setXStr(String(Math.round(fb.dragDeltaMm.x)));
+        setYStr(String(Math.round(fb.dragDeltaMm.y)));
+        setLocalError(null);
+      }
       return;
     }
     if (st.wallMoveCopyCoordinateModalOpen) {
@@ -95,12 +130,38 @@ export function WallCoordinateModal() {
     if (!open) {
       return;
     }
+    const st = useAppStore.getState();
+    if (st.lengthChangeCoordinateModalOpen) {
+      return;
+    }
+    const axis = st.sceneCoordModalDesiredFocus ?? "x";
+    const id = requestAnimationFrame(() => {
+      if (axis === "y") {
+        yInputRef.current?.focus();
+        yInputRef.current?.select?.();
+      } else {
+        xInputRef.current?.focus();
+        xInputRef.current?.select?.();
+      }
+      setSceneCoordModalDesiredFocus(null);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [open, setSceneCoordModalDesiredFocus]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
         const st = useAppStore.getState();
         if (st.lengthChangeCoordinateModalOpen) {
           closeLengthChangeCoord();
+        } else if (st.entityCopyCoordinateModalOpen) {
+          closeEntityCopyCoord();
+        } else if (st.floorBeamMoveCopyCoordinateModalOpen) {
+          closeFloorBeamMoveCopyCoord();
         } else if (st.wallMoveCopyCoordinateModalOpen) {
           closeMoveCopyCoord();
         } else if (st.slabCoordinateModalOpen) {
@@ -112,7 +173,15 @@ export function WallCoordinateModal() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, closeWallCoord, closeMoveCopyCoord, closeLengthChangeCoord, closeSlabCoord]);
+  }, [
+    open,
+    closeWallCoord,
+    closeMoveCopyCoord,
+    closeFloorBeamMoveCopyCoord,
+    closeEntityCopyCoord,
+    closeLengthChangeCoord,
+    closeSlabCoord,
+  ]);
 
   if (!open) {
     return null;
@@ -140,7 +209,11 @@ export function WallCoordinateModal() {
       setLocalError("Введите числовые значения X и Y (мм).");
       return;
     }
-    if (moveCopyCoordOpen) {
+    if (entityCopyCoordOpen) {
+      applyEntityCopyCoord({ dxMm: dx, dyMm: dy });
+    } else if (floorBeamMoveCopyCoordOpen) {
+      applyFloorBeamMoveCopyCoord({ dxMm: dx, dyMm: dy });
+    } else if (moveCopyCoordOpen) {
       applyMoveCopyCoord({ dxMm: dx, dyMm: dy });
     } else if (slabCoordOpen) {
       applySlabCoord({ dxMm: dx, dyMm: dy });
@@ -154,6 +227,10 @@ export function WallCoordinateModal() {
   const closeBackdrop = () => {
     if (lengthChangeCoordOpen) {
       closeLengthChangeCoord();
+    } else if (entityCopyCoordOpen) {
+      closeEntityCopyCoord();
+    } else if (floorBeamMoveCopyCoordOpen) {
+      closeFloorBeamMoveCopyCoord();
     } else if (moveCopyCoordOpen) {
       closeMoveCopyCoord();
     } else if (slabCoordOpen) {
@@ -162,6 +239,16 @@ export function WallCoordinateModal() {
       closeWallCoord();
     }
   };
+
+  const hintText = lengthChangeCoordOpen
+    ? "Δ длины вдоль оси объекта (стена, балка) в мм. Положительное значение — удлинение, отрицательное — укорочение."
+    : slabCoordOpen
+      ? "Смещение текущей точки относительно опорной (мм): прямоугольник — от первого угла; полилиния — от последней зафиксированной вершины."
+      : entityCopyCoordOpen
+        ? "Смещение конечной точки копирования относительно опорной (мм), как у копирования сваи. Знак учитывается."
+        : floorBeamMoveCopyCoordOpen
+          ? "Смещение балки в мм от выбранной точки привязки (как у переноса стены). Знак учитывается."
+          : "Смещение второй точки относительно первой (мм). Знак учитывается.";
 
   return (
     <div
@@ -190,13 +277,7 @@ export function WallCoordinateModal() {
         <h2 id={titleId} className="wcm-title">
           {lengthChangeCoordOpen ? "Изменение длины" : "Координаты"}
         </h2>
-        <p className="wcm-hint">
-          {lengthChangeCoordOpen
-            ? "Δ длины вдоль оси объекта (стена, балка) в мм. Положительное значение — удлинение, отрицательное — укорочение."
-            : slabCoordOpen
-              ? "Смещение текущей точки относительно опорной (мм): прямоугольник — от первого угла; полилиния — от последней зафиксированной вершины."
-              : "Смещение второй точки относительно первой (мм). Знак учитывается."}
-        </p>
+        <p className="wcm-hint">{hintText}</p>
         <div className="wcm-fields">
           {lengthChangeCoordOpen ? (
             <label className="wcm-field">
@@ -218,6 +299,7 @@ export function WallCoordinateModal() {
               <label className="wcm-field">
                 <span className="wcm-label">X</span>
                 <input
+                  ref={xInputRef}
                   className="wcm-input"
                   type="text"
                   inputMode="decimal"
@@ -226,12 +308,12 @@ export function WallCoordinateModal() {
                     setXStr(e.target.value);
                     setLocalError(null);
                   }}
-                  autoFocus
                 />
               </label>
               <label className="wcm-field">
                 <span className="wcm-label">Y</span>
                 <input
+                  ref={yInputRef}
                   className="wcm-input"
                   type="text"
                   inputMode="decimal"

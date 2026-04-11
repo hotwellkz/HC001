@@ -9,10 +9,12 @@ describe("isSceneCoordinateModalBlocking", () => {
         wallCoordinateModalOpen: false,
         wallAnchorCoordinateModalOpen: false,
         wallMoveCopyCoordinateModalOpen: false,
+        floorBeamMoveCopyCoordinateModalOpen: false,
         lengthChangeCoordinateModalOpen: false,
         projectOriginCoordinateModalOpen: false,
         openingAlongMoveNumericModalOpen: false,
         slabCoordinateModalOpen: false,
+        entityCopyCoordinateModalOpen: false,
         entityCopyParamsModal: null,
       }),
     ).toBe(false);
@@ -24,10 +26,12 @@ describe("isSceneCoordinateModalBlocking", () => {
         wallCoordinateModalOpen: true,
         wallAnchorCoordinateModalOpen: false,
         wallMoveCopyCoordinateModalOpen: false,
+        floorBeamMoveCopyCoordinateModalOpen: false,
         lengthChangeCoordinateModalOpen: false,
         projectOriginCoordinateModalOpen: false,
         openingAlongMoveNumericModalOpen: false,
         slabCoordinateModalOpen: false,
+        entityCopyCoordinateModalOpen: false,
         entityCopyParamsModal: null,
       }),
     ).toBe(true);
@@ -39,10 +43,29 @@ describe("isSceneCoordinateModalBlocking", () => {
         wallCoordinateModalOpen: false,
         wallAnchorCoordinateModalOpen: false,
         wallMoveCopyCoordinateModalOpen: false,
+        floorBeamMoveCopyCoordinateModalOpen: false,
         lengthChangeCoordinateModalOpen: false,
         projectOriginCoordinateModalOpen: false,
         openingAlongMoveNumericModalOpen: true,
         slabCoordinateModalOpen: false,
+        entityCopyCoordinateModalOpen: false,
+        entityCopyParamsModal: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("true если открыта модалка координат универсального копирования", () => {
+    expect(
+      isSceneCoordinateModalBlocking({
+        wallCoordinateModalOpen: false,
+        wallAnchorCoordinateModalOpen: false,
+        wallMoveCopyCoordinateModalOpen: false,
+        floorBeamMoveCopyCoordinateModalOpen: false,
+        lengthChangeCoordinateModalOpen: false,
+        projectOriginCoordinateModalOpen: false,
+        openingAlongMoveNumericModalOpen: false,
+        slabCoordinateModalOpen: false,
+        entityCopyCoordinateModalOpen: true,
         entityCopyParamsModal: null,
       }),
     ).toBe(true);
@@ -54,10 +77,12 @@ describe("isSceneCoordinateModalBlocking", () => {
         wallCoordinateModalOpen: false,
         wallAnchorCoordinateModalOpen: false,
         wallMoveCopyCoordinateModalOpen: false,
+        floorBeamMoveCopyCoordinateModalOpen: false,
         lengthChangeCoordinateModalOpen: false,
         projectOriginCoordinateModalOpen: false,
         openingAlongMoveNumericModalOpen: false,
         slabCoordinateModalOpen: false,
+        entityCopyCoordinateModalOpen: false,
         entityCopyParamsModal: {},
       }),
     ).toBe(true);

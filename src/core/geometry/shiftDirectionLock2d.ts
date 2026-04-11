@@ -4,8 +4,6 @@
 
 import { snapWorldToGridAlignedToOrigin } from "../domain/projectOriginPlan";
 import type { Project } from "../domain/project";
-import type { Wall } from "../domain/wall";
-import { isOpeningPlacedOnWall } from "../domain/opening";
 import { applyWallDirectionAngleSnapToPoint } from "./wallDirectionAngleSnap";
 import {
   lengthFromSnappedPointForWallLengthEdit,
@@ -16,18 +14,28 @@ import type { ViewportTransform } from "./viewportTransform";
 import { worldToScreen } from "./viewportTransform";
 import {
   closestPointOnSegment,
-  collectWallPlanVertexSnapCandidatesMm,
   layerIdsForSnapGeometry,
   resolveSnap2d,
   SNAP_GRID_PX,
   type SnapKind,
   type SnapSettings2d,
 } from "./snap2d";
+import { collectEntityCopySnapPointsForFullScene } from "../domain/entityCopySnapSystem";
+import { floorBeamPlanQuadCornersMm } from "../domain/floorBeamGeometry";
+import {
+  foundationStripOrthoRingFootprintContoursFromEntityMm,
+  foundationStripSegmentFootprintQuadMm,
+} from "../domain/foundationStripGeometry";
+import { projectPointOntoRayForward, unitDirectionOrNull } from "./rayProjection2d";
+
+export { projectPointOntoRayForward, unitDirectionOrNull } from "./rayProjection2d";
 
 /** Порог в экранных пикселях для поиска опорной точки в режиме Shift-lock. */
 export const SHIFT_LOCK_SNAP_SCREEN_PX = 14;
 
 const ENDPOINT_EPS = 1e-5;
+
+const SHIFT_LOCK_VERTEX_DEDUPE_MM = 0.5;
 
 function screenDistancePx(a: Point2D, b: Point2D, t: ViewportTransform): number {
   const sa = worldToScreen(a.x, a.y, t);
@@ -35,77 +43,27 @@ function screenDistancePx(a: Point2D, b: Point2D, t: ViewportTransform): number 
   return Math.hypot(sb.x - sa.x, sb.y - sa.y);
 }
 
-/** Углы проёма в плане (как в features/editor2d/openingPlanGeometry2d), inset=0 — внешний контур в полосе стены. */
-function openingSlotCornersMm(
-  wall: Wall,
-  leftAlongMm: number,
-  openingWidthMm: number,
-  insetFromHalfThicknessMm: number,
-): Point2D[] | null {
-  const sx = wall.start.x;
-  const sy = wall.start.y;
-  const ex = wall.end.x;
-  const ey = wall.end.y;
-  const dx = ex - sx;
-  const dy = ey - sy;
-  const len = Math.hypot(dx, dy);
-  if (len < 1e-6) {
-    return null;
+function dedupeVerticesShiftLockMm(points: readonly Point2D[], epsMm: number): Point2D[] {
+  const out: Point2D[] = [];
+  for (const p of points) {
+    if (!out.some((q) => Math.hypot(p.x - q.x, p.y - q.y) <= epsMm)) {
+      out.push({ x: p.x, y: p.y });
+    }
   }
-  const ux = dx / len;
-  const uy = dy / len;
-  const T = wall.thicknessMm;
-  const h = Math.max(0, T / 2 - insetFromHalfThicknessMm);
-  const w0 = leftAlongMm;
-  const w1 = leftAlongMm + openingWidthMm;
-  return [
-    { x: sx + ux * w0 + uy * h, y: sy + uy * w0 - ux * h },
-    { x: sx + ux * w1 + uy * h, y: sy + uy * w1 - ux * h },
-    { x: sx + ux * w1 - uy * h, y: sy + uy * w1 + ux * h },
-    { x: sx + ux * w0 - uy * h, y: sy + uy * w0 + ux * h },
-  ];
+  return out;
 }
 
+/** Все характерные точки плана (как у копирования сущностей), без сетки. */
 function collectShiftLockVertexCandidatesMm(project: Project, layerIds: ReadonlySet<string>): Point2D[] {
-  const wallVerts = collectWallPlanVertexSnapCandidatesMm(project, layerIds);
-  const extra: Point2D[] = [];
-  for (const o of project.openings) {
-    if (!isOpeningPlacedOnWall(o)) {
+  const raw: Point2D[] = [];
+  const tagged = collectEntityCopySnapPointsForFullScene(project, layerIds);
+  for (const tp of tagged) {
+    if (tp.visual === "grid") {
       continue;
     }
-    const wall = project.walls.find((w) => w.id === o.wallId);
-    if (!wall || !layerIds.has(wall.layerId)) {
-      continue;
-    }
-    const q = openingSlotCornersMm(wall, o.offsetFromStartMm, o.widthMm, 0);
-    if (q) {
-      extra.push(...q);
-    }
+    raw.push(tp.world);
   }
-  return [...wallVerts, ...extra];
-}
-
-export function unitDirectionOrNull(from: Point2D, to: Point2D): Point2D | null {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const len = Math.hypot(dx, dy);
-  if (len < 1e-6) {
-    return null;
-  }
-  return { x: dx / len, y: dy / len };
-}
-
-/**
- * Проекция точки на луч origin + t * u, t ≥ 0 (назад не уходим).
- */
-export function projectPointOntoRayForward(origin: Point2D, unit: Point2D, point: Point2D): Point2D {
-  const vx = point.x - origin.x;
-  const vy = point.y - origin.y;
-  let t = vx * unit.x + vy * unit.y;
-  if (t < 0) {
-    t = 0;
-  }
-  return { x: origin.x + t * unit.x, y: origin.y + t * unit.y };
+  return dedupeVerticesShiftLockMm(raw, SHIFT_LOCK_VERTEX_DEDUPE_MM);
 }
 
 export interface ShiftLockSnapHit {
@@ -138,41 +96,113 @@ export function findShiftLockSnapHit(input: {
       bestVertex = { point: { x: pt.x, y: pt.y }, dist: d };
     }
   }
-  for (const pl of planLines) {
-    for (const pt of [pl.start, pl.end]) {
-      const d = screenDistancePx(raw, pt, viewport);
-      if (d <= SHIFT_LOCK_SNAP_SCREEN_PX && (!bestVertex || d < bestVertex.dist)) {
-        bestVertex = { point: { x: pt.x, y: pt.y }, dist: d };
-      }
-    }
-  }
   if (bestVertex) {
     return { point: bestVertex.point, kind: "vertex" };
   }
 
-  let bestEdge: { readonly point: Point2D; readonly dist: number } | null = null;
-  for (const w of walls) {
-    const { point: q, t } = closestPointOnSegment(raw, w.start, w.end);
+  const edgePx = SHIFT_LOCK_SNAP_SCREEN_PX;
+  const edgeBest: { current: { readonly point: Point2D; readonly dist: number } | null } = { current: null };
+  const considerEdge = (q: Point2D, t: number) => {
     if (t <= ENDPOINT_EPS || t >= 1 - ENDPOINT_EPS) {
-      continue;
+      return;
     }
     const d = screenDistancePx(raw, q, viewport);
-    if (d <= SHIFT_LOCK_SNAP_SCREEN_PX && (!bestEdge || d < bestEdge.dist)) {
-      bestEdge = { point: { x: q.x, y: q.y }, dist: d };
+    const prev = edgeBest.current;
+    if (d <= edgePx && (!prev || d < prev.dist)) {
+      edgeBest.current = { point: { x: q.x, y: q.y }, dist: d };
     }
+  };
+  for (const w of walls) {
+    const { point: q, t } = closestPointOnSegment(raw, w.start, w.end);
+    considerEdge(q, t);
   }
   for (const pl of planLines) {
     const { point: q, t } = closestPointOnSegment(raw, pl.start, pl.end);
-    if (t <= ENDPOINT_EPS || t >= 1 - ENDPOINT_EPS) {
+    considerEdge(q, t);
+  }
+  for (const fs of project.foundationStrips) {
+    if (!layerIds.has(fs.layerId)) {
       continue;
     }
-    const d = screenDistancePx(raw, q, viewport);
-    if (d <= SHIFT_LOCK_SNAP_SCREEN_PX && (!bestEdge || d < bestEdge.dist)) {
-      bestEdge = { point: { x: q.x, y: q.y }, dist: d };
+    const quads =
+      fs.kind === "ortho_ring"
+        ? (() => {
+            const { outer, inner } = foundationStripOrthoRingFootprintContoursFromEntityMm(fs);
+            return [outer, inner] as const;
+          })()
+        : fs.kind === "footprint_poly"
+          ? [fs.outerRingMm, ...fs.holeRingsMm]
+          : [
+              foundationStripSegmentFootprintQuadMm(
+                fs.axisStart,
+                fs.axisEnd,
+                fs.outwardNormalX,
+                fs.outwardNormalY,
+                fs.sideOutMm,
+                fs.sideInMm,
+              ),
+            ];
+    for (const qd of quads) {
+      for (let i = 0; i < qd.length; i++) {
+        const a = qd[i]!;
+        const b = qd[(i + 1) % qd.length]!;
+        const { point: q, t } = closestPointOnSegment(raw, a, b);
+        considerEdge(q, t);
+      }
     }
   }
-  if (bestEdge) {
-    return { point: bestEdge.point, kind: "edge" };
+  for (const pile of project.foundationPiles) {
+    if (!layerIds.has(pile.layerId)) {
+      continue;
+    }
+    const h = pile.capSizeMm / 2;
+    const c = { x: pile.centerX, y: pile.centerY };
+    const quad: Point2D[] = [
+      { x: c.x - h, y: c.y - h },
+      { x: c.x + h, y: c.y - h },
+      { x: c.x + h, y: c.y + h },
+      { x: c.x - h, y: c.y + h },
+    ];
+    for (let i = 0; i < 4; i++) {
+      const a = quad[i]!;
+      const b = quad[(i + 1) % 4]!;
+      const { point: q, t } = closestPointOnSegment(raw, a, b);
+      considerEdge(q, t);
+    }
+  }
+  for (const beam of project.floorBeams) {
+    if (!layerIds.has(beam.layerId)) {
+      continue;
+    }
+    const q = floorBeamPlanQuadCornersMm(project, beam);
+    if (!q || q.length < 4) {
+      continue;
+    }
+    for (let i = 0; i < 4; i += 1) {
+      const a = q[i]!;
+      const b = q[(i + 1) % 4]!;
+      const { point: qq, t } = closestPointOnSegment(raw, a, b);
+      considerEdge(qq, t);
+    }
+  }
+  for (const slab of project.slabs) {
+    if (!layerIds.has(slab.layerId)) {
+      continue;
+    }
+    const ring = slab.pointsMm;
+    const n = ring.length;
+    if (n < 2) {
+      continue;
+    }
+    for (let i = 0; i < n; i += 1) {
+      const a = ring[i]!;
+      const b = ring[(i + 1) % n]!;
+      const { point: q, t } = closestPointOnSegment(raw, a, b);
+      considerEdge(q, t);
+    }
+  }
+  if (edgeBest.current) {
+    return { point: edgeBest.current.point, kind: "edge" };
   }
 
   if (snapSettings.snapToGrid && Number.isFinite(gridStepMm) && gridStepMm > 0) {

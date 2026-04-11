@@ -24,9 +24,12 @@ export interface EditorToolHotkeyAppSnapshot {
   readonly slabCoordinateModalOpen: boolean;
   readonly wallAnchorCoordinateModalOpen: boolean;
   readonly wallMoveCopyCoordinateModalOpen: boolean;
+  readonly floorBeamMoveCopyCoordinateModalOpen: boolean;
   readonly lengthChangeCoordinateModalOpen: boolean;
   readonly projectOriginCoordinateModalOpen: boolean;
   readonly openingAlongMoveNumericModalOpen: boolean;
+  /** Ручной ввод смещения при универсальном копировании (вторая точка). */
+  readonly entityCopyCoordinateModalOpen: boolean;
   /** Модалка «Авто-сваи» для ленты фундамента. */
   readonly foundationStripAutoPilesModal: unknown;
   /** Параметры универсального копирования по двум точкам. */

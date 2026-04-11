@@ -6,20 +6,24 @@ export function isSceneCoordinateModalBlocking(store: {
   readonly wallCoordinateModalOpen: boolean;
   readonly wallAnchorCoordinateModalOpen: boolean;
   readonly wallMoveCopyCoordinateModalOpen: boolean;
+  readonly floorBeamMoveCopyCoordinateModalOpen: boolean;
   readonly lengthChangeCoordinateModalOpen: boolean;
   readonly projectOriginCoordinateModalOpen: boolean;
   readonly openingAlongMoveNumericModalOpen: boolean;
   readonly slabCoordinateModalOpen: boolean;
+  readonly entityCopyCoordinateModalOpen: boolean;
   readonly entityCopyParamsModal: unknown | null;
 }): boolean {
   return (
     store.wallCoordinateModalOpen ||
     store.wallAnchorCoordinateModalOpen ||
     store.wallMoveCopyCoordinateModalOpen ||
+    store.floorBeamMoveCopyCoordinateModalOpen ||
     store.lengthChangeCoordinateModalOpen ||
     store.projectOriginCoordinateModalOpen ||
     store.openingAlongMoveNumericModalOpen ||
     store.slabCoordinateModalOpen ||
+    store.entityCopyCoordinateModalOpen ||
     store.entityCopyParamsModal != null
   );
 }

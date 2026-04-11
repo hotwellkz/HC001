@@ -12,9 +12,18 @@ export interface FirebaseWebConfig {
   readonly appId: string;
 }
 
-function readEnv(key: string): string | undefined {
-  const v = import.meta.env[key as keyof ImportMetaEnv] as string | undefined;
-  return v && v.trim().length > 0 ? v.trim() : undefined;
+/** Литеральные ключи в квадратных скобках — иначе Vite не подставит VITE_* в production-сборке. */
+function readEnv(key: keyof ImportMetaEnv): string | undefined {
+  const raw: Record<string, string | boolean | undefined> = {
+    VITE_FIREBASE_API_KEY: import.meta.env["VITE_FIREBASE_API_KEY"],
+    VITE_FIREBASE_AUTH_DOMAIN: import.meta.env["VITE_FIREBASE_AUTH_DOMAIN"],
+    VITE_FIREBASE_PROJECT_ID: import.meta.env["VITE_FIREBASE_PROJECT_ID"],
+    VITE_FIREBASE_STORAGE_BUCKET: import.meta.env["VITE_FIREBASE_STORAGE_BUCKET"],
+    VITE_FIREBASE_MESSAGING_SENDER_ID: import.meta.env["VITE_FIREBASE_MESSAGING_SENDER_ID"],
+    VITE_FIREBASE_APP_ID: import.meta.env["VITE_FIREBASE_APP_ID"],
+  };
+  const v = raw[key as string];
+  return typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
 }
 
 export function isFirebaseConfigured(): boolean {

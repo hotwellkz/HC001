@@ -49,12 +49,18 @@ export function computeEditorInstructionScreenPosition(opts: {
   readonly wallCoordinateModalOpen: boolean;
   readonly wallAnchorCoordinateModalOpen?: boolean;
   readonly wallMoveCopyCoordinateModalOpen?: boolean;
+  readonly floorBeamMoveCopyCoordinateModalOpen?: boolean;
+  readonly entityCopyCoordinateModalOpen?: boolean;
+  readonly slabCoordinateModalOpen?: boolean;
   readonly lengthChangeCoordinateModalOpen?: boolean;
 }): { readonly left: number; readonly top: number } {
   const anyCoordModalOpen =
     opts.wallCoordinateModalOpen ||
     Boolean(opts.wallAnchorCoordinateModalOpen) ||
     Boolean(opts.wallMoveCopyCoordinateModalOpen) ||
+    Boolean(opts.floorBeamMoveCopyCoordinateModalOpen) ||
+    Boolean(opts.entityCopyCoordinateModalOpen) ||
+    Boolean(opts.slabCoordinateModalOpen) ||
     Boolean(opts.lengthChangeCoordinateModalOpen);
 
   const r = opts.canvasRect;
@@ -173,6 +179,9 @@ export function computeEditorOverlayLayout(opts: {
   readonly wallCoordinateModalOpen: boolean;
   readonly wallAnchorCoordinateModalOpen?: boolean;
   readonly wallMoveCopyCoordinateModalOpen?: boolean;
+  readonly floorBeamMoveCopyCoordinateModalOpen?: boolean;
+  readonly entityCopyCoordinateModalOpen?: boolean;
+  readonly slabCoordinateModalOpen?: boolean;
   readonly lengthChangeCoordinateModalOpen?: boolean;
   readonly showCoordHud: boolean;
 }): EditorOverlayScreenLayout {
@@ -180,6 +189,9 @@ export function computeEditorOverlayLayout(opts: {
     opts.wallCoordinateModalOpen ||
     Boolean(opts.wallAnchorCoordinateModalOpen) ||
     Boolean(opts.wallMoveCopyCoordinateModalOpen) ||
+    Boolean(opts.floorBeamMoveCopyCoordinateModalOpen) ||
+    Boolean(opts.entityCopyCoordinateModalOpen) ||
+    Boolean(opts.slabCoordinateModalOpen) ||
     Boolean(opts.lengthChangeCoordinateModalOpen);
 
   const instruction = computeEditorInstructionScreenPosition({
@@ -187,6 +199,9 @@ export function computeEditorOverlayLayout(opts: {
     wallCoordinateModalOpen: opts.wallCoordinateModalOpen,
     wallAnchorCoordinateModalOpen: opts.wallAnchorCoordinateModalOpen,
     wallMoveCopyCoordinateModalOpen: opts.wallMoveCopyCoordinateModalOpen,
+    floorBeamMoveCopyCoordinateModalOpen: opts.floorBeamMoveCopyCoordinateModalOpen,
+    entityCopyCoordinateModalOpen: opts.entityCopyCoordinateModalOpen,
+    slabCoordinateModalOpen: opts.slabCoordinateModalOpen,
     lengthChangeCoordinateModalOpen: opts.lengthChangeCoordinateModalOpen,
   });
 

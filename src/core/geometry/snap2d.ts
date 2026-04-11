@@ -1,5 +1,5 @@
 import { snapWorldToGridAlignedToOrigin } from "../domain/projectOriginPlan";
-import { floorBeamCenterlineEndpointsMm, floorBeamPlanQuadCornersMm } from "../domain/floorBeamGeometry";
+import { floorBeamPlanQuadCornersMm } from "../domain/floorBeamGeometry";
 import type { Project } from "../domain/project";
 import { getProfileById } from "../domain/profileOps";
 import {
@@ -7,43 +7,31 @@ import {
   foundationStripSegmentFootprintQuadMm,
 } from "../domain/foundationStripGeometry";
 import { resolveWallProfileLayerStripsMm } from "../domain/wallProfileLayers";
+import {
+  collectEntityCopySnapPointsForFullScene,
+  foundationPileSnapPointsWorldMm,
+  pickNearestStructuralTaggedSnapMm,
+  snapTaggedPointsForFloorBeamEntity,
+} from "../domain/entityCopySnapSystem";
 import type { Point2D } from "./types";
 import type { ViewportTransform } from "./viewportTransform";
 import { worldToScreen } from "./viewportTransform";
+import { layerIdsForSnapGeometry, wallStripQuadCornersMm } from "./snap2dPrimitives";
+import { SNAP_EDGE_PX, SNAP_GRID_PX, SNAP_VERTEX_PX, type SnapResult2d, type SnapSettings2d } from "./snap2dTypes";
 
-/** Пороги в экранных пикселях (стабильны при zoom). */
-export const SNAP_VERTEX_PX = 14;
-export const SNAP_EDGE_PX = 10;
-export const SNAP_GRID_PX = 8;
+export {
+  SNAP_EDGE_PX,
+  SNAP_GRID_PX,
+  SNAP_VERTEX_PX,
+  type SnapKind,
+  type SnapResult2d,
+  type SnapSettings2d,
+} from "./snap2dTypes";
+
+export { layerIdsForSnapGeometry, wallStripQuadCornersMm } from "./snap2dPrimitives";
 
 /** Слияние близких вершин плана (мм), чтобы не дублировать кандидатов на одном углу. */
 const SNAP_VERTEX_MERGE_EPS_MM = 0.5;
-
-export type SnapKind = "vertex" | "edge" | "grid" | "none";
-
-export interface SnapSettings2d {
-  readonly snapToVertex: boolean;
-  readonly snapToEdge: boolean;
-  readonly snapToGrid: boolean;
-}
-
-export interface SnapResult2d {
-  readonly point: Point2D;
-  readonly kind: SnapKind;
-  /** Стена, к кромке которой привязались (edge). */
-  readonly wallId?: string;
-  /** Линия чертежа (edge). */
-  readonly planLineId?: string;
-}
-
-/** Слои, по геометрии которых разрешена привязка: активный + видимые контекстные. */
-export function layerIdsForSnapGeometry(project: Project): ReadonlySet<string> {
-  const ids = new Set<string>([project.activeLayerId]);
-  for (const id of project.visibleLayerIds) {
-    ids.add(id);
-  }
-  return ids;
-}
 
 function screenDistancePx(a: Point2D, b: Point2D, t: ViewportTransform): number {
   const sa = worldToScreen(a.x, a.y, t);
@@ -72,31 +60,6 @@ export function closestPointOnSegment(
 }
 
 const ENDPOINT_EPS = 1e-5;
-
-/** Четыре угла полосы стены в плане (мм) — та же геометрия, что и в 2D-отрисовке. */
-export function wallStripQuadCornersMm(
-  sx: number,
-  sy: number,
-  ex: number,
-  ey: number,
-  offStartMm: number,
-  offEndMm: number,
-): Point2D[] | null {
-  const dx = ex - sx;
-  const dy = ey - sy;
-  const len = Math.hypot(dx, dy);
-  if (len < 1e-6) {
-    return null;
-  }
-  const px = -dy / len;
-  const py = dx / len;
-  return [
-    { x: sx + px * offStartMm, y: sy + py * offStartMm },
-    { x: ex + px * offStartMm, y: ey + py * offStartMm },
-    { x: ex + px * offEndMm, y: ey + py * offEndMm },
-    { x: sx + px * offEndMm, y: sy + py * offEndMm },
-  ];
-}
 
 function dedupeVerticesMm(points: readonly Point2D[], epsMm: number): Point2D[] {
   const out: Point2D[] = [];
@@ -204,33 +167,9 @@ export function collectFoundationPlanVertexSnapCandidatesMm(
   return dedupeVerticesMm(raw, SNAP_VERTEX_MERGE_EPS_MM);
 }
 
-function collectFloorBeamPlanVertexSnapCandidatesMm(
-  project: Project,
-  layerIds: ReadonlySet<string>,
-  excludeFloorBeamId?: string,
-): Point2D[] {
-  const raw: Point2D[] = [];
-  for (const b of project.floorBeams) {
-    if (!layerIds.has(b.layerId)) {
-      continue;
-    }
-    if (excludeFloorBeamId != null && b.id === excludeFloorBeamId) {
-      continue;
-    }
-    const q = floorBeamPlanQuadCornersMm(project, b);
-    if (q) {
-      raw.push(...q);
-    }
-    const cl = floorBeamCenterlineEndpointsMm(project, b);
-    if (cl) {
-      raw.push({ x: cl.cs.x, y: cl.cs.y }, { x: cl.ce.x, y: cl.ce.y });
-    }
-  }
-  return dedupeVerticesMm(raw, SNAP_VERTEX_MERGE_EPS_MM);
-}
-
 /**
  * Унифицированная привязка: приоритет vertex → edge → grid; пороги в px.
+ * Вершины — общий набор характерных точек плана (стены, профили, плиты, пересечения и т.д.).
  * Без viewport vertex/edge/grid по пикселям не считаются — возвращается raw.
  */
 export function resolveSnap2d(input: {
@@ -256,34 +195,29 @@ export function resolveSnap2d(input: {
   const walls = project.walls.filter((w) => layerIds.has(w.layerId));
   const planLines = project.planLines.filter((l) => layerIds.has(l.layerId));
 
-  /** Лучший кандидат в категории: минимальная экранная дистанция. */
-  let bestVertex: { readonly point: Point2D; readonly dist: number } | null = null;
-
   if (snapSettings.snapToVertex) {
-    const vertexCandidates = dedupeVerticesMm(
-      [
-        ...collectWallPlanVertexSnapCandidatesMm(project, layerIds),
-        ...collectFoundationPlanVertexSnapCandidatesMm(project, layerIds, excludeFoundationPileId),
-        ...collectFloorBeamPlanVertexSnapCandidatesMm(project, layerIds, excludeFloorBeamId),
-      ],
-      SNAP_VERTEX_MERGE_EPS_MM,
-    );
-    for (const pt of vertexCandidates) {
-      const d = screenDistancePx(raw, pt, viewport);
-      if (d <= SNAP_VERTEX_PX && (!bestVertex || d < bestVertex.dist)) {
-        bestVertex = { point: { x: pt.x, y: pt.y }, dist: d };
+    let tagged = collectEntityCopySnapPointsForFullScene(project, layerIds);
+    const excludeEpsMm = 0.55;
+    const nearExcluded = (w: Point2D, excluded: readonly Point2D[]) =>
+      excluded.some((e) => Math.hypot(w.x - e.x, w.y - e.y) <= excludeEpsMm);
+    if (excludeFoundationPileId != null) {
+      const pile = project.foundationPiles.find((p) => p.id === excludeFoundationPileId);
+      if (pile && layerIds.has(pile.layerId)) {
+        const h = Math.max(pile.capSizeMm, pile.sizeMm) / 2;
+        const exc = foundationPileSnapPointsWorldMm(pile.centerX, pile.centerY, h).map((x) => x.world);
+        tagged = tagged.filter((tp) => !nearExcluded(tp.world, exc));
       }
     }
-    for (const pl of planLines) {
-      for (const pt of [pl.start, pl.end]) {
-        const d = screenDistancePx(raw, pt, viewport);
-        if (d <= SNAP_VERTEX_PX && (!bestVertex || d < bestVertex.dist)) {
-          bestVertex = { point: { x: pt.x, y: pt.y }, dist: d };
-        }
+    if (excludeFloorBeamId != null) {
+      const beam = project.floorBeams.find((b) => b.id === excludeFloorBeamId);
+      if (beam && layerIds.has(beam.layerId)) {
+        const exc = snapTaggedPointsForFloorBeamEntity(project, beam).map((x) => x.world);
+        tagged = tagged.filter((tp) => !nearExcluded(tp.world, exc));
       }
     }
-    if (bestVertex) {
-      return { point: bestVertex.point, kind: "vertex" };
+    const hit = pickNearestStructuralTaggedSnapMm(raw, viewport, tagged, SNAP_VERTEX_PX);
+    if (hit) {
+      return { point: hit.point, kind: hit.snapKind };
     }
   }
 
@@ -401,6 +335,28 @@ export function resolveSnap2d(input: {
         const d = screenDistancePx(raw, qq, viewport);
         if (d <= SNAP_EDGE_PX && (!bestEdge || d < bestEdge.dist)) {
           bestEdge = { point: { x: qq.x, y: qq.y }, dist: d };
+        }
+      }
+    }
+    for (const slab of project.slabs) {
+      if (!layerIds.has(slab.layerId)) {
+        continue;
+      }
+      const ring = slab.pointsMm;
+      const n = ring.length;
+      if (n < 2) {
+        continue;
+      }
+      for (let i = 0; i < n; i += 1) {
+        const a = ring[i]!;
+        const b = ring[(i + 1) % n]!;
+        const { point: q, t } = closestPointOnSegment(raw, a, b);
+        if (t <= ENDPOINT_EPS || t >= 1 - ENDPOINT_EPS) {
+          continue;
+        }
+        const d = screenDistancePx(raw, q, viewport);
+        if (d <= SNAP_EDGE_PX && (!bestEdge || d < bestEdge.dist)) {
+          bestEdge = { point: { x: q.x, y: q.y }, dist: d };
         }
       }
     }
