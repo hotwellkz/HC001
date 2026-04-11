@@ -2,7 +2,7 @@ import { useEffect, useMemo } from "react";
 import { DoubleSide } from "three";
 
 import type { Editor3dPickPayload } from "@/core/domain/editor3dPickPayload";
-import { getLayerById } from "@/core/domain/layerOps";
+import { computeLayerVerticalStack } from "@/core/domain/layerVerticalStack";
 import type { FoundationPileEntity } from "@/core/domain/foundationPile";
 import type { Project } from "@/core/domain/project";
 import { resolveSurfaceTextureBinding } from "@/core/domain/surfaceTextureResolve";
@@ -24,13 +24,16 @@ import { buildTexturedBoxMaterials, disposeOwnedMaterials } from "./surfaceTextu
 
 const MM_TO_M = 0.001;
 
-function pileMeshesForEntity(project: Project, pile: FoundationPileEntity) {
+function pileMeshesForEntity(
+  _project: Project,
+  pile: FoundationPileEntity,
+  layerBaseById: ReadonlyMap<string, { readonly computedBaseMm: number }>,
+) {
   const concrete = meshStandardPresetForMaterialType("concrete");
   if (pile.pileKind === "screw") {
     return { parts: [] as { key: string; position: readonly [number, number, number]; width: number; height: number; depth: number }[], concrete };
   }
-  const layer = getLayerById(project, pile.layerId);
-  const elevMm = layer?.elevationMm ?? 0;
+  const elevMm = layerBaseById.get(pile.layerId)?.computedBaseMm ?? 0;
   const topM = (elevMm + pile.levelMm) * MM_TO_M;
   const bottomM = topM - pile.heightMm * MM_TO_M;
   const capThkMm =
@@ -211,13 +214,14 @@ export function ProjectFoundationPiles({
   texturePickLocked,
 }: ProjectFoundationPilesProps) {
   const items = useMemo(() => {
+    const layerBaseById = computeLayerVerticalStack(project);
     const out: {
       readonly pile: FoundationPileEntity;
       readonly parts: ReturnType<typeof pileMeshesForEntity>["parts"];
       readonly concrete: ReturnType<typeof pileMeshesForEntity>["concrete"];
     }[] = [];
     for (const pile of project.foundationPiles) {
-      const r = pileMeshesForEntity(project, pile);
+      const r = pileMeshesForEntity(project, pile, layerBaseById);
       if (r.parts.length === 0) {
         continue;
       }

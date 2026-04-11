@@ -6,9 +6,11 @@ import {
   deleteLayerAndEntities,
   getNextLayerId,
   getPreviousLayerId,
+  moveLayerToStackPosition,
   reorderLayerRelative,
   setActiveLayerId,
   updateLayerInProject,
+  type LayerUpdatePatch,
 } from "@/core/domain/layerOps";
 import { normalizeVisibleLayerIds, setVisibleLayerIdsOnProject } from "@/core/domain/layerVisibility";
 import { createDemoProject } from "@/core/domain/demoProject";
@@ -60,6 +62,7 @@ import {
   pickClosestWallAlongPoint,
   validateWindowPlacementOnWall,
 } from "@/core/domain/openingWindowGeometry";
+import { editor3dPickSupportsContextDelete } from "@/core/domain/editor3dContextMenuPolicy";
 import { deleteEntitiesFromProject } from "@/core/domain/projectMutations";
 import { type ViewportTransform } from "@/core/geometry/viewportTransform";
 import type { Point2D } from "@/core/geometry/types";
@@ -382,12 +385,28 @@ interface AppState {
   /** 3D: назначение текстур по raycast. */
   readonly textureApply3dToolActive: boolean;
   readonly textureApply3dParamsModal: TextureApply3dParamsModalState | null;
+  /** ПКМ по объекту в 3D: контекстное меню (экранные координаты + pick). */
+  readonly editor3dContextMenu: {
+    readonly clientX: number;
+    readonly clientY: number;
+    readonly pick: Editor3dPickPayload;
+  } | null;
+  /** Увеличивается после удаления из 3D-меню — сброс hover в оболочке 3D. */
+  readonly editor3dContextDeleteEpoch: number;
 }
 
 interface AppActions {
   setSelectedEntityIds: (ids: readonly string[]) => void;
   clearSelection: () => void;
   deleteSelectedEntities: () => void;
+  openEditor3dContextMenu: (payload: {
+    readonly clientX: number;
+    readonly clientY: number;
+    readonly pick: Editor3dPickPayload;
+  }) => void;
+  closeEditor3dContextMenu: () => void;
+  /** Удаляет сущность из открытого 3D-контекстного меню (как deleteEntitiesFromProject). */
+  deleteEntityFromEditor3dContextMenu: () => void;
   setActiveTool: (tool: ActiveTool) => void;
   setViewport2d: (v: Project["viewState"]["viewport2d"]) => void;
   setViewport3d: (v: Project["viewState"]["viewport3d"]) => void;
@@ -427,9 +446,10 @@ interface AppActions {
   goToNextLayer: () => void;
   deleteCurrentLayer: () => void;
   setActiveLayer: (layerId: string) => void;
-  updateLayer: (layerId: string, patch: { readonly name?: string; readonly elevationMm?: number }) => void;
+  updateLayer: (layerId: string, patch: LayerUpdatePatch) => void;
   reorderLayerUp: (layerId: string) => void;
   reorderLayerDown: (layerId: string) => void;
+  moveLayerToStackIndex: (layerId: string, targetSortedIndex: number) => void;
   deleteLayerById: (layerId: string) => void;
   openLayerManager: () => void;
   closeLayerManager: () => void;
@@ -834,6 +854,8 @@ function historyJumpClearTransientUi(s: AppStore, restored: Project): Partial<Ap
     wallDetailWallId: wd,
     textureApply3dToolActive: false,
     textureApply3dParamsModal: null,
+    editor3dContextMenu: null,
+    editor3dContextDeleteEpoch: 0,
   };
 }
 
@@ -1136,6 +1158,8 @@ export const useAppStore = create<AppStore>((set, get) => {
     openingAlongMoveNumericModalOpen: false,
     textureApply3dToolActive: false,
     textureApply3dParamsModal: null,
+    editor3dContextMenu: null,
+    editor3dContextDeleteEpoch: 0,
 
     setViewportCanvas2dPx: (width, height) =>
       set({
@@ -1158,6 +1182,28 @@ export const useAppStore = create<AppStore>((set, get) => {
       set((s) =>
         buildProjectMutationState(s, next, { selectedEntityIds: [], dirty: true, lastError: null }),
       );
+    },
+
+    openEditor3dContextMenu: (payload) => set({ editor3dContextMenu: payload }),
+
+    closeEditor3dContextMenu: () => set({ editor3dContextMenu: null }),
+
+    deleteEntityFromEditor3dContextMenu: () => {
+      set((s) => {
+        const menu = s.editor3dContextMenu;
+        if (!menu || !editor3dPickSupportsContextDelete(menu.pick)) {
+          return {};
+        }
+        const id = menu.pick.entityId;
+        const next = deleteEntitiesFromProject(s.currentProject, new Set([id]));
+        return buildProjectMutationState(s, next, {
+          selectedEntityIds: s.selectedEntityIds.filter((x) => x !== id),
+          editor3dContextMenu: null,
+          editor3dContextDeleteEpoch: s.editor3dContextDeleteEpoch + 1,
+          dirty: true,
+          lastError: null,
+        });
+      });
     },
 
     setActiveTool: (tool) =>
@@ -1396,6 +1442,7 @@ export const useAppStore = create<AppStore>((set, get) => {
               : s.wallDetailWallId,
           textureApply3dToolActive: tab === "3d" ? s.textureApply3dToolActive : false,
           textureApply3dParamsModal: tab === "3d" ? s.textureApply3dParamsModal : null,
+          editor3dContextMenu: tab === "3d" ? s.editor3dContextMenu : null,
           ...baselinePatch,
         };
         if (modelTouched) {
@@ -1584,6 +1631,11 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     reorderLayerDown: (layerId) => {
       const next = reorderLayerRelative(get().currentProject, layerId, "down");
+      set((s) => buildProjectMutationState(s, next, { dirty: true }));
+    },
+
+    moveLayerToStackIndex: (layerId, targetSortedIndex) => {
+      const next = moveLayerToStackPosition(get().currentProject, layerId, targetSortedIndex);
       set((s) => buildProjectMutationState(s, next, { dirty: true }));
     },
 
@@ -4803,12 +4855,18 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({
         textureApply3dToolActive: next,
         textureApply3dParamsModal: next ? s.textureApply3dParamsModal : null,
+        editor3dContextMenu: next ? null : s.editor3dContextMenu,
         lastError: null,
       });
     },
 
     cancelTextureApply3dTool: () =>
-      set({ textureApply3dToolActive: false, textureApply3dParamsModal: null, lastError: null }),
+      set({
+        textureApply3dToolActive: false,
+        textureApply3dParamsModal: null,
+        editor3dContextMenu: null,
+        lastError: null,
+      }),
 
     openTextureApply3dParamsModal: (pick) =>
       set({ textureApply3dParamsModal: { pick }, lastError: null }),
@@ -5552,6 +5610,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           foundationPilePlacementHistoryBaseline: null,
           textureApply3dToolActive: false,
           textureApply3dParamsModal: null,
+          editor3dContextMenu: null,
+          editor3dContextDeleteEpoch: 0,
         });
       })();
     },
@@ -5625,6 +5685,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           foundationPilePlacementHistoryBaseline: null,
           textureApply3dToolActive: false,
           textureApply3dParamsModal: null,
+          editor3dContextMenu: null,
+          editor3dContextDeleteEpoch: 0,
         });
       })();
     },
@@ -5693,6 +5755,8 @@ export const useAppStore = create<AppStore>((set, get) => {
         foundationPilePlacementHistoryBaseline: null,
         textureApply3dToolActive: false,
         textureApply3dParamsModal: null,
+        editor3dContextMenu: null,
+        editor3dContextDeleteEpoch: 0,
       });
       try {
         await syncProjectToFirestore(loaded);
@@ -5794,6 +5858,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           foundationPilePlacementHistoryBaseline: null,
           textureApply3dToolActive: false,
           textureApply3dParamsModal: null,
+          editor3dContextMenu: null,
+          editor3dContextDeleteEpoch: 0,
         });
         void (async () => {
           try {

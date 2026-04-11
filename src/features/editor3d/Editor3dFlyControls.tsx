@@ -42,6 +42,7 @@ function editorOverlaySnapshot() {
     foundationStripAutoPilesModal: s.foundationStripAutoPilesModal,
     entityCopyParamsModal: s.entityCopyParamsModal,
     textureApply3dParamsModal: s.textureApply3dParamsModal,
+    editor3dContextMenu: s.editor3dContextMenu,
   };
 }
 

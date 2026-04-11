@@ -1,4 +1,4 @@
-import { getLayerById } from "./layerOps";
+import { wallWorldBottomMm } from "./layerVerticalStack";
 import { openingSillLevelMm, openingTopLevelMmForShell } from "./doorGeometry";
 import { isOpeningPlacedOnWall, type Opening } from "./opening";
 import type { OpeningFramingPiece, OpeningFramingPieceKind } from "./openingFramingPiece";
@@ -33,13 +33,6 @@ export interface Opening3dMeshSpec {
   readonly width: number;
   readonly height: number;
   readonly depth: number;
-}
-
-function wallBottomElevationMm(wall: Wall, project: Project): number {
-  if (wall.baseElevationMm != null && Number.isFinite(wall.baseElevationMm)) {
-    return wall.baseElevationMm;
-  }
-  return getLayerById(project, wall.layerId)?.elevationMm ?? 0;
 }
 
 function thicknessNormalUnit(
@@ -126,7 +119,7 @@ export function buildWindowAssemblySpecsForOpening(wall: Wall, opening: Opening,
   const innerW = Math.max(40, W - 2 * FRAME_MM);
   const innerH = Math.max(40, H - 2 * FRAME_MM);
 
-  const bottomMm = wallBottomElevationMm(wall, project);
+  const bottomMm = wallWorldBottomMm(wall, project);
   const preset = viewPresetByKey((opening.viewPreset ?? "form1") as WindowViewPresetKey);
   const variant = preset?.previewVariant ?? 1;
 
@@ -325,7 +318,7 @@ export function buildDoorAssemblySpecsForOpening(wall: Wall, opening: Opening, p
   const dxM = (ex - sx) * MM_TO_M;
   const dzM = -(ey - sy) * MM_TO_M;
   const rotationY = Math.atan2(dxM, dzM);
-  const bottomMm = wallBottomElevationMm(wall, project);
+  const bottomMm = wallWorldBottomMm(wall, project);
   const o0 = opening.offsetFromStartMm;
   const o1 = o0 + opening.widthMm;
   const sill = openingSillLevelMm(opening);
@@ -449,7 +442,7 @@ export function buildOpeningFramingPieceSpecs(wall: Wall, project: Project): rea
   const dxM = (ex - sx) * MM_TO_M;
   const dzM = -(ey - sy) * MM_TO_M;
   const rotationY = Math.atan2(dxM, dzM);
-  const bottomMm = wallBottomElevationMm(wall, project);
+  const bottomMm = wallWorldBottomMm(wall, project);
 
   const byOpening = new Map<string, OpeningFramingPiece[]>();
   for (const p of project.openingFramingPieces) {

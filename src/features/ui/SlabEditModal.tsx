@@ -81,7 +81,7 @@ export function SlabEditModal() {
           />
         </label>
         <label className="lm-field">
-          <span className="lm-label">Уровень (мм)</span>
+          <span className="lm-label">Уровень верха в слое (мм)</span>
           <input
             className="lm-input"
             type="number"

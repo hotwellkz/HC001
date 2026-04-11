@@ -1,5 +1,5 @@
 import { doorAlongWallOccupiedIntervalMm } from "./frameGklDoorAlongGeometry";
-import { getLayerById } from "./layerOps";
+import { computeLayerVerticalStack, wallWorldBottomMmFromMap } from "./layerVerticalStack";
 import { openingSillLevelMm, openingTopLevelMmForShell } from "./doorGeometry";
 import type { Opening } from "./opening";
 import type { Project } from "./project";
@@ -17,13 +17,6 @@ const MM_TO_M = 0.001;
 
 /** Отступ линии шва от номинальной наружной плоскости оболочки (мм), чтобы не теряться в z-fighting с OSB/EPS. */
 export const SIP_SEAM_LINE_FACE_OFFSET_MM = 2.8;
-
-function wallBottomElevationMm(wall: Wall, project: Project): number {
-  if (wall.baseElevationMm != null && Number.isFinite(wall.baseElevationMm)) {
-    return wall.baseElevationMm;
-  }
-  return getLayerById(project, wall.layerId)?.elevationMm ?? 0;
-}
 
 function subtractYIntervals(baseLo: number, baseHi: number, cuts: readonly { lo: number; hi: number }[]): [number, number][] {
   let segments: [number, number][] = [[baseLo, baseHi]];
@@ -66,6 +59,7 @@ function isAlignedPanelSeamGapMm(gapMm: number, jointThicknessMm: number): boole
 }
 
 export function buildSipSeamVerticalLineSegmentsForProject(project: Project): readonly SipSeamLineSegment3d[] {
+  const vMap = computeLayerVerticalStack(project);
   const out: SipSeamLineSegment3d[] = [];
   for (const calc of project.wallCalculations) {
     const wall = project.walls.find((w) => w.id === calc.wallId);
@@ -86,7 +80,7 @@ export function buildSipSeamVerticalLineSegmentsForProject(project: Project): re
     const uy = dy / L;
     const nx = -dy / L;
     const nz = -dx / L;
-    const bottomMm = wallBottomElevationMm(wall, project);
+    const bottomMm = wallWorldBottomMmFromMap(wall, vMap, project);
     const jT = calc.settingsSnapshot.jointBoardThicknessMm;
     const regions = [...calc.sipRegions].sort((a, b) => a.startOffsetMm - b.startOffsetMm);
     const seamAlongSeen: number[] = [];

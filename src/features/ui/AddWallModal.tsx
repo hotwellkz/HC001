@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { getLayerById } from "@/core/domain/layerOps";
+import { computedLayerBaseMm } from "@/core/domain/layerVerticalStack";
 import { useAppStore } from "@/store/useAppStore";
 
 import "./layer-modals.css";
@@ -37,7 +38,7 @@ export function AddWallModal() {
     setHeightMm(
       first?.defaultHeightMm != null && Number.isFinite(first.defaultHeightMm) ? first.defaultHeightMm : 2500,
     );
-    setElevationMm(active?.elevationMm ?? 0);
+    setElevationMm(active ? computedLayerBaseMm(p, active.id) : 0);
   }, [open]);
 
   if (!open) {

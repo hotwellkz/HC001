@@ -1,5 +1,5 @@
 import { PROJECT_SCHEMA_VERSION, PROJECT_UNITS } from "./constants";
-import type { Layer } from "./layer";
+import { normalizeLayer, type Layer } from "./layer";
 import type { Project } from "./project";
 import type { ProjectMeta } from "./projectMeta";
 import { normalizeProjectSettings } from "./settings";
@@ -25,15 +25,18 @@ export function createEmptyMeta(overrides?: Partial<Pick<ProjectMeta, "name">>):
 function createDefaultLayer(): { layer: Layer; layerId: string } {
   const layerId = newEntityId();
   const t = nowIso();
-  const layer: Layer = {
+  const layer: Layer = normalizeLayer({
     id: layerId,
     name: "Стены 1 эт",
     orderIndex: 0,
     elevationMm: 0,
+    levelMode: "absolute",
+    offsetFromBelowMm: 0,
+    manualHeightMm: 0,
     isVisible: true,
     createdAt: t,
     updatedAt: t,
-  };
+  });
   return { layer, layerId };
 }
 

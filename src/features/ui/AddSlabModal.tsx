@@ -46,8 +46,9 @@ export function AddSlabModal() {
           {session ? "Параметры плиты" : "Добавить плиту"}
         </h2>
         <p className="muted" style={{ margin: "0 0 12px", lineHeight: 1.5, fontSize: 13 }}>
-          Плита создаётся на активном слое. Глубина — толщина вниз от верхней плоскости; уровень — отметка верхней
-          плоскости относительно нуля проекта (мм).
+          Плита создаётся на активном слое. Глубина — толщина вниз от верхней плоскости. Уровень — отметка верхней
+          плоскости над расчётным низом слоя (мм), как у свай; в 3D суммируется с базой слоя (абсолютный или
+          относительный режим в параметрах слоя).
         </p>
         <label className="lm-field">
           <span className="lm-label">Глубина (мм)</span>
@@ -61,7 +62,7 @@ export function AddSlabModal() {
           />
         </label>
         <label className="lm-field">
-          <span className="lm-label">Уровень (мм)</span>
+          <span className="lm-label">Уровень верха в слое (мм)</span>
           <input
             className="lm-input"
             type="number"

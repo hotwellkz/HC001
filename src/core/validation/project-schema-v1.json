@@ -149,6 +149,9 @@
         "name": { "type": "string" },
         "orderIndex": { "type": "number" },
         "elevationMm": { "type": "number" },
+        "levelMode": { "type": "string", "enum": ["absolute", "relativeToBelow"] },
+        "offsetFromBelowMm": { "type": "number" },
+        "manualHeightMm": { "type": "number" },
         "isVisible": { "type": "boolean" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }

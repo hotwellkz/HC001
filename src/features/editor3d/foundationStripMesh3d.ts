@@ -6,6 +6,7 @@ import {
   foundationStripSegmentFootprintQuadMm,
 } from "@/core/domain/foundationStripGeometry";
 import { getLayerById } from "@/core/domain/layerOps";
+import { computedLayerBaseMm } from "@/core/domain/layerVerticalStack";
 import type { Project } from "@/core/domain/project";
 import type { Point2D } from "@/core/geometry/types";
 
@@ -96,7 +97,7 @@ export function buildFoundationStripExtrudeGeometry(
   if (layer?.isVisible === false) {
     return null;
   }
-  const topMm = layer?.elevationMm ?? 0;
+  const topMm = computedLayerBaseMm(project, entity.layerId);
   const depthMm = entity.depthMm;
   if (!(depthMm > 0)) {
     return null;

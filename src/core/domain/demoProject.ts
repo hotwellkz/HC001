@@ -1,7 +1,7 @@
 import { createEmptyMeta, touchProjectMeta } from "./projectFactory";
 import { normalizeProjectSettings } from "./settings";
 import { EMPTY_SURFACE_TEXTURE_STATE } from "./surfaceTextureState";
-import type { Layer } from "./layer";
+import { normalizeLayer, type Layer } from "./layer";
 import type { Project } from "./project";
 import type { Profile } from "./profile";
 import { newEntityId } from "./ids";
@@ -13,15 +13,18 @@ export function createDemoProject(): Project {
   const meta = createEmptyMeta({ name: "Демо SIP (этап 1)" });
   const t = new Date().toISOString();
   const layerId = newEntityId();
-  const defaultLayer: Layer = {
+  const defaultLayer: Layer = normalizeLayer({
     id: layerId,
     name: "Стены 1 эт",
     orderIndex: 0,
     elevationMm: 0,
+    levelMode: "absolute",
+    offsetFromBelowMm: 0,
+    manualHeightMm: 0,
     isVisible: true,
     createdAt: t,
     updatedAt: t,
-  };
+  });
 
   const wallNorthId = newEntityId();
   const wallEastId = newEntityId();

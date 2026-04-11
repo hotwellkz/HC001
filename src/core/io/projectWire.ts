@@ -10,6 +10,7 @@ import { normalizeViewState, projectWithViewport3dTargetAlignedToOriginIfDefault
 
 import { normalizeWallCalculationsInProject } from "../domain/wallCalculationNormalize";
 import { normalizeSurfaceTextureState } from "../domain/surfaceTextureOps";
+import { normalizeLayer, type Layer } from "../domain/layer";
 import { migrateWireV0ToProject } from "./migrateWireV0";
 
 /** Старые проекты без markPrefix у профилей «стена». */
@@ -104,7 +105,7 @@ export function projectFromWireV1(wire: ProjectFileV1): Project {
   const base: Project = {
     meta,
     projectOrigin: wire.projectOrigin ?? null,
-    layers: wire.layers,
+    layers: wire.layers.map((l) => normalizeLayer(l as Layer)),
     activeLayerId: wire.activeLayerId,
     visibleLayerIds: visibleRaw,
     walls: wire.walls,

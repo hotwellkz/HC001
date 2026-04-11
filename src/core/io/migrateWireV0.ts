@@ -1,6 +1,6 @@
 import { normalizeWallCalculationsInProject } from "../domain/wallCalculationNormalize";
 import { PROJECT_SCHEMA_VERSION, PROJECT_UNITS } from "../domain/constants";
-import type { Layer } from "../domain/layer";
+import { normalizeLayer, type Layer } from "../domain/layer";
 import type { Project } from "../domain/project";
 import type { ProjectMeta } from "../domain/projectMeta";
 import { normalizeProjectSettings, type ProjectSettingsWire } from "../domain/settings";
@@ -31,15 +31,20 @@ export function migrateWireV0ToProject(data: Record<string, unknown>): Project {
     throw new Error("v0: ожидался непустой массив levels");
   }
   const t = new Date().toISOString();
-  const layers: Layer[] = levels.map((lev, i) => ({
-    id: lev.id,
-    name: i === 0 ? "Стены 1 эт" : lev.name,
-    orderIndex: lev.order,
-    elevationMm: lev.elevationMm,
-    isVisible: true,
-    createdAt: t,
-    updatedAt: t,
-  }));
+  const layers: Layer[] = levels.map((lev, i) =>
+    normalizeLayer({
+      id: lev.id,
+      name: i === 0 ? "Стены 1 эт" : lev.name,
+      orderIndex: lev.order,
+      elevationMm: lev.elevationMm,
+      levelMode: "absolute",
+      offsetFromBelowMm: 0,
+      manualHeightMm: 0,
+      isVisible: true,
+      createdAt: t,
+      updatedAt: t,
+    }),
+  );
   const sorted = [...layers].sort((a, b) => a.orderIndex - b.orderIndex);
   const activeLayerId = sorted[0]!.id;
 

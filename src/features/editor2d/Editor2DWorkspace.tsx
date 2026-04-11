@@ -503,6 +503,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               foundationStripAutoPilesModal: stA.foundationStripAutoPilesModal,
               entityCopyParamsModal: stA.entityCopyParamsModal,
               textureApply3dParamsModal: stA.textureApply3dParamsModal,
+              editor3dContextMenu: stA.editor3dContextMenu,
             },
             {
               shortcutsSettingsModalOpen: uiA.shortcutsSettingsModalOpen,
@@ -560,6 +561,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             foundationStripAutoPilesModal: st0.foundationStripAutoPilesModal,
             entityCopyParamsModal: st0.entityCopyParamsModal,
             textureApply3dParamsModal: st0.textureApply3dParamsModal,
+            editor3dContextMenu: st0.editor3dContextMenu,
           })
         ) {
           return;

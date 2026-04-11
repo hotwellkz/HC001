@@ -1,4 +1,4 @@
-import { getLayerById } from "@/core/domain/layerOps";
+import { computeLayerVerticalStack, wallWorldBottomMmFromMap } from "@/core/domain/layerVerticalStack";
 import { getProfileById } from "@/core/domain/profileOps";
 import type { Profile, ProfileMaterialType } from "@/core/domain/profile";
 import type { Project } from "@/core/domain/project";
@@ -30,13 +30,6 @@ export interface WallRenderMeshSpec {
   readonly height: number;
   readonly depth: number;
   readonly materialType: ProfileMaterialType | "default";
-}
-
-function wallBottomElevationMm(wall: Wall, project: Project): number {
-  if (wall.baseElevationMm != null && Number.isFinite(wall.baseElevationMm)) {
-    return wall.baseElevationMm;
-  }
-  return getLayerById(project, wall.layerId)?.elevationMm ?? 0;
 }
 
 /** Нормаль к толщине и единичный вектор вдоль стены в плане XZ. */
@@ -84,6 +77,7 @@ function singleSolidSpecs(
   wall: Wall,
   project: Project,
   materialType: ProfileMaterialType | "default",
+  verticalById: ReturnType<typeof computeLayerVerticalStack>,
 ): WallRenderMeshSpec[] {
   if (!(wall.thicknessMm > 0) || !(wall.heightMm > 0)) {
     return [];
@@ -100,7 +94,7 @@ function singleSolidSpecs(
   const dyMm = ey - sy;
   const dxM = dxMm * MM_TO_M;
   const dzM = -dyMm * MM_TO_M;
-  const bottomMm = wallBottomElevationMm(wall, project);
+  const bottomMm = wallWorldBottomMmFromMap(wall, verticalById, project);
   const heightMm = wall.heightMm;
   const bottomM = bottomMm * MM_TO_M;
   const rotationY = Math.atan2(dxM, dzM);
@@ -169,7 +163,12 @@ function shouldHideCoreInsulationStrip(
   return stripW > 1e-6 && inter / stripW >= 0.45;
 }
 
-function layeredSpecsFromProfile(wall: Wall, project: Project, profile: Profile): WallRenderMeshSpec[] | null {
+function layeredSpecsFromProfile(
+  wall: Wall,
+  project: Project,
+  profile: Profile,
+  verticalById: ReturnType<typeof computeLayerVerticalStack>,
+): WallRenderMeshSpec[] | null {
   if (!(wall.thicknessMm > 0) || !(wall.heightMm > 0)) {
     return null;
   }
@@ -191,7 +190,7 @@ function layeredSpecsFromProfile(wall: Wall, project: Project, profile: Profile)
   const dyMm = ey - sy;
   const dxM = dxMm * MM_TO_M;
   const dzM = -dyMm * MM_TO_M;
-  const bottomMm = wallBottomElevationMm(wall, project);
+  const bottomMm = wallWorldBottomMmFromMap(wall, verticalById, project);
   const heightMm = wall.heightMm;
   const bottomM = bottomMm * MM_TO_M;
 
@@ -260,24 +259,36 @@ function resolveSolidMaterialType(profile: Profile | undefined): ProfileMaterial
 /**
  * Все меши для одной стены (один при solid / упрощённо, несколько при layered+показ слоёв).
  */
-export function wallToRenderSpecs(wall: Wall, project: Project, showProfileLayers: boolean): readonly WallRenderMeshSpec[] {
+export function wallToRenderSpecs(
+  wall: Wall,
+  project: Project,
+  showProfileLayers: boolean,
+  verticalById?: ReturnType<typeof computeLayerVerticalStack>,
+): readonly WallRenderMeshSpec[] {
+  const vMap = verticalById ?? computeLayerVerticalStack(project);
   const profile = wall.profileId ? getProfileById(project, wall.profileId) : undefined;
   const solidMat = resolveSolidMaterialType(profile);
 
   if (showProfileLayers && profile?.compositionMode === "layered" && profile.layers.length >= 2) {
-    const layered = layeredSpecsFromProfile(wall, project, profile);
+    const layered = layeredSpecsFromProfile(wall, project, profile, vMap);
     if (layered && layered.length > 0) {
       return layered;
     }
   }
 
-  return singleSolidSpecs(wall, project, solidMat);
+  return singleSolidSpecs(wall, project, solidMat, vMap);
 }
 
-export function wallsToRenderSpecs(project: Project, walls: readonly Wall[], showProfileLayers: boolean): readonly WallRenderMeshSpec[] {
+export function wallsToRenderSpecs(
+  project: Project,
+  walls: readonly Wall[],
+  showProfileLayers: boolean,
+  verticalById?: ReturnType<typeof computeLayerVerticalStack>,
+): readonly WallRenderMeshSpec[] {
+  const vMap = verticalById ?? computeLayerVerticalStack(project);
   const out: WallRenderMeshSpec[] = [];
   for (const w of walls) {
-    out.push(...wallToRenderSpecs(w, project, showProfileLayers));
+    out.push(...wallToRenderSpecs(w, project, showProfileLayers, vMap));
   }
   return out;
 }
@@ -292,5 +303,6 @@ export function wallToMeshSpec(wall: Wall, project: Project): WallRenderMeshSpec
 
 export function wallsToMeshSpecs(project: Project, walls: readonly Wall[]): readonly WallRenderMeshSpec[] {
   const show = project.viewState.show3dProfileLayers !== false;
-  return wallsToRenderSpecs(project, walls, show);
+  const vMap = computeLayerVerticalStack(project);
+  return wallsToRenderSpecs(project, walls, show, vMap);
 }

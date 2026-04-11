@@ -30,6 +30,7 @@ const baseApp = {
   foundationStripAutoPilesModal: null,
   entityCopyParamsModal: null,
   textureApply3dParamsModal: null,
+  editor3dContextMenu: null,
 } as const;
 
 describe("getResolvedShortcutCodes", () => {

@@ -1,4 +1,5 @@
-import { getLayerById } from "./layerOps";
+import { computeLayerVerticalStack, wallWorldBottomMm, wallWorldBottomMmFromMap } from "./layerVerticalStack";
+import type { LayerVerticalSlice } from "./layerVerticalStack";
 import type { ProfileMaterialType } from "./profile";
 import { getProfileById } from "./profileOps";
 import { resolveWallCalculationModel } from "./wallManufacturing";
@@ -205,7 +206,7 @@ export function lumberPieceWallElevationRectMm(
   project: Project,
   calc: WallCalculationResult,
 ): { readonly x0: number; readonly x1: number; readonly b0: number; readonly b1: number } {
-  const bottomMm = wallBottomElevationMm(wall, project);
+  const bottomMm = wallWorldBottomMm(wall, project);
   const plateT = calc.settingsSnapshot.plateBoardThicknessMm;
   const vCoreMm = verticalCoreSpanMm(wall, calc);
   const [x0, x1] = pieceAlongIntervalMm(piece);
@@ -244,13 +245,6 @@ export interface CalculationSolidSpec {
   readonly height: number;
   readonly depth: number;
   readonly materialType: ProfileMaterialType;
-}
-
-function wallBottomElevationMm(wall: Wall, project: Project): number {
-  if (wall.baseElevationMm != null && Number.isFinite(wall.baseElevationMm)) {
-    return wall.baseElevationMm;
-  }
-  return getLayerById(project, wall.layerId)?.elevationMm ?? 0;
 }
 
 function thicknessNormalUnit(
@@ -697,6 +691,7 @@ export function buildCalculationSolidSpecsForWall(
   wall: Wall,
   project: Project,
   calc: WallCalculationResult,
+  layerVerticalById?: ReadonlyMap<string, LayerVerticalSlice>,
 ): readonly CalculationSolidSpec[] {
   const sx = wall.start.x;
   const sy = wall.start.y;
@@ -711,7 +706,8 @@ export function buildCalculationSolidSpecsForWall(
   const dzM = -(ey - sy) * MM_TO_M;
   const rotationY = Math.atan2(dxM, dzM);
 
-  const bottomMm = wallBottomElevationMm(wall, project);
+  const vMap = layerVerticalById ?? computeLayerVerticalStack(project);
+  const bottomMm = wallWorldBottomMmFromMap(wall, vMap, project);
   const plateT = calc.settingsSnapshot.plateBoardThicknessMm;
   const vCoreMm = verticalCoreSpanMm(wall, calc);
   const coreMid = coreMidNormalMm(wall, calc, project);
@@ -758,6 +754,7 @@ export function buildCalculationSolidSpecsForWall(
 
 export function buildCalculationSolidSpecsForProject(project: Project): readonly CalculationSolidSpec[] {
   const calcByWall = new Map(project.wallCalculations.map((c) => [c.wallId, c]));
+  const vMap = computeLayerVerticalStack(project);
   const out: CalculationSolidSpec[] = [];
   let sipCount = 0;
   let lumberCount = 0;
@@ -766,7 +763,7 @@ export function buildCalculationSolidSpecsForProject(project: Project): readonly
     if (!calc) {
       continue;
     }
-    const chunk = buildCalculationSolidSpecsForWall(w, project, calc);
+    const chunk = buildCalculationSolidSpecsForWall(w, project, calc, vMap);
     for (const s of chunk) {
       if (s.source === "sip") {
         sipCount++;

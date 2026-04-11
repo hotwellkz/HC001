@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type DragEvent } from "react";
 
+import type { LayerLevelMode } from "@/core/domain/layer";
 import { getLayerById, sortLayersByOrder } from "@/core/domain/layerOps";
 import { normalizeVisibleLayerIds } from "@/core/domain/layerVisibility";
+import { computeLayerVerticalStack, getLayerVerticalSlice } from "@/core/domain/layerVerticalStack";
 import { useAppStore } from "@/store/useAppStore";
 
 import "./layer-modals.css";
@@ -13,19 +15,43 @@ interface LayerParamsModalProps {
   readonly onClose: () => void;
 }
 
+function modeLabel(m: LayerLevelMode): string {
+  return m === "absolute" ? "Абс." : "От пред.";
+}
+
+function topHint(slice: ReturnType<typeof getLayerVerticalSlice>, manualHeightMm: number): string {
+  if (slice.geometryTopMm == null) {
+    return manualHeightMm > 0
+      ? "Верх: низ + ручная высота (нет геометрии)"
+      : "Верх совпадает с низом (пустой слой, ручная высота 0)";
+  }
+  if (Math.abs(slice.computedTopMm - slice.geometryTopMm) < 0.5) {
+    return "Верх вычислен по объектам слоя";
+  }
+  return "Верх = max(объекты, низ + ручная высота)";
+}
+
 export function LayerParamsModal({ open, onClose }: LayerParamsModalProps) {
   const project = useAppStore((s) => s.currentProject);
   const updateLayer = useAppStore((s) => s.updateLayer);
   const toggleVisibleLayer = useAppStore((s) => s.toggleVisibleLayer);
+  const reorderLayerUp = useAppStore((s) => s.reorderLayerUp);
+  const reorderLayerDown = useAppStore((s) => s.reorderLayerDown);
+  const moveLayerToStackIndex = useAppStore((s) => s.moveLayerToStackIndex);
 
   const [tab, setTab] = useState<TabId>("current");
   const [name, setName] = useState("");
   const [elevationMm, setElevationMm] = useState(0);
+  const [levelMode, setLevelMode] = useState<LayerLevelMode>("absolute");
+  const [offsetFromBelowMm, setOffsetFromBelowMm] = useState(0);
+  const [manualHeightMm, setManualHeightMm] = useState(0);
+  const [dragLayerId, setDragLayerId] = useState<string | null>(null);
 
   const activeId = project.activeLayerId;
   const activeLayer = useMemo(() => getLayerById(project, activeId), [project, activeId]);
   const sortedLayers = useMemo(() => sortLayersByOrder(project.layers), [project.layers]);
   const extraVisible = useMemo(() => new Set(normalizeVisibleLayerIds(project)), [project]);
+  const verticalById = useMemo(() => computeLayerVerticalStack(project), [project]);
 
   useEffect(() => {
     if (!open) {
@@ -40,7 +66,43 @@ export function LayerParamsModal({ open, onClose }: LayerParamsModalProps) {
     }
     setName(activeLayer.name);
     setElevationMm(activeLayer.elevationMm);
+    setLevelMode(activeLayer.levelMode);
+    setOffsetFromBelowMm(activeLayer.offsetFromBelowMm);
+    setManualHeightMm(activeLayer.manualHeightMm);
   }, [open, tab, activeLayer]);
+
+  const activeSlice = useMemo(
+    () => (activeLayer ? getLayerVerticalSlice(project, activeLayer.id, verticalById) : null),
+    [project, activeLayer, verticalById],
+  );
+
+  const onRowDragStart = useCallback((e: DragEvent, layerId: string) => {
+    setDragLayerId(layerId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", layerId);
+  }, []);
+
+  const onRowDragEnd = useCallback(() => {
+    setDragLayerId(null);
+  }, []);
+
+  const onRowDragOver = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  }, []);
+
+  const onRowDrop = useCallback(
+    (e: DragEvent, targetSortedIndex: number) => {
+      e.preventDefault();
+      const id = dragLayerId ?? e.dataTransfer.getData("text/plain");
+      if (!id) {
+        return;
+      }
+      moveLayerToStackIndex(id, targetSortedIndex);
+      setDragLayerId(null);
+    },
+    [dragLayerId, moveLayerToStackIndex],
+  );
 
   if (!open) {
     return null;
@@ -51,19 +113,29 @@ export function LayerParamsModal({ open, onClose }: LayerParamsModalProps) {
     if (!n || !activeLayer) {
       return;
     }
-    updateLayer(activeId, { name: n, elevationMm: Number.isFinite(elevationMm) ? elevationMm : activeLayer.elevationMm });
+    updateLayer(activeId, {
+      name: n,
+      elevationMm: Number.isFinite(elevationMm) ? elevationMm : activeLayer.elevationMm,
+      levelMode,
+      offsetFromBelowMm: Number.isFinite(offsetFromBelowMm) ? offsetFromBelowMm : 0,
+      manualHeightMm: Number.isFinite(manualHeightMm) ? manualHeightMm : 0,
+    });
   };
 
-  const canApply =
-    tab === "current" &&
+  const dirtyCurrent =
     activeLayer &&
-    name.trim().length > 0 &&
-    (name.trim() !== activeLayer.name || elevationMm !== activeLayer.elevationMm);
+    (name.trim() !== activeLayer.name ||
+      elevationMm !== activeLayer.elevationMm ||
+      levelMode !== activeLayer.levelMode ||
+      offsetFromBelowMm !== activeLayer.offsetFromBelowMm ||
+      manualHeightMm !== activeLayer.manualHeightMm);
+
+  const canApply = tab === "current" && activeLayer && name.trim().length > 0 && dirtyCurrent;
 
   return (
     <div className="lm-backdrop" role="presentation" onClick={onClose}>
       <div
-        className="lm-dialog lm-dialog--wide lp-dialog"
+        className="lm-dialog lm-dialog--wide lp-dialog lp-dialog--stack"
         role="dialog"
         aria-modal="true"
         aria-labelledby="lp-title"
@@ -94,7 +166,7 @@ export function LayerParamsModal({ open, onClose }: LayerParamsModalProps) {
           </button>
         </div>
 
-        {tab === "current" && activeLayer && (
+        {tab === "current" && activeLayer && activeSlice && (
           <div className="lp-panel" role="tabpanel">
             <div className="lm-field">
               <label className="lm-label" htmlFor="lp-name">
@@ -108,41 +180,155 @@ export function LayerParamsModal({ open, onClose }: LayerParamsModalProps) {
                 autoComplete="off"
               />
             </div>
+
             <div className="lm-field">
-              <label className="lm-label" htmlFor="lp-elev">
-                Уровень
+              <span className="lm-label">Режим уровня</span>
+              <div className="lp-radio-row">
+                <label className="lp-radio">
+                  <input
+                    type="radio"
+                    name="lp-level-mode"
+                    checked={levelMode === "absolute"}
+                    onChange={() => setLevelMode("absolute")}
+                  />
+                  Абсолютный <span className="lp-muted">(от нуля проекта)</span>
+                </label>
+                <label className="lp-radio">
+                  <input
+                    type="radio"
+                    name="lp-level-mode"
+                    checked={levelMode === "relativeToBelow"}
+                    onChange={() => setLevelMode("relativeToBelow")}
+                  />
+                  Относительно предыдущего слоя <span className="lp-muted">(от его верха)</span>
+                </label>
+              </div>
+            </div>
+
+            {levelMode === "absolute" ? (
+              <div className="lm-field">
+                <label className="lm-label" htmlFor="lp-elev">
+                  Базовый уровень (мм)
+                </label>
+                <input
+                  id="lp-elev"
+                  className="lm-input lm-input--narrow"
+                  type="number"
+                  value={elevationMm}
+                  onChange={(e) => setElevationMm(Number(e.target.value))}
+                />
+                <span className="lp-unit">мм</span>
+              </div>
+            ) : (
+              <div className="lm-field">
+                <label className="lm-label" htmlFor="lp-offset">
+                  Смещение от верха слоя ниже (мм)
+                </label>
+                <input
+                  id="lp-offset"
+                  className="lm-input lm-input--narrow"
+                  type="number"
+                  value={offsetFromBelowMm}
+                  onChange={(e) => setOffsetFromBelowMm(Number(e.target.value))}
+                />
+                <span className="lp-unit">мм</span>
+                <p className="lp-micro">
+                  Слой ниже — предыдущая строка в списке (снизу вверх). Для самого нижнего слоя используется
+                  запасной базовый уровень из поля «Базовый уровень».
+                </p>
+              </div>
+            )}
+
+            {levelMode === "relativeToBelow" && (
+              <div className="lm-field">
+                <label className="lm-label" htmlFor="lp-fallback">
+                  Запасной базовый уровень (мм)
+                </label>
+                <input
+                  id="lp-fallback"
+                  className="lm-input lm-input--narrow"
+                  type="number"
+                  value={elevationMm}
+                  onChange={(e) => setElevationMm(Number(e.target.value))}
+                />
+                <span className="lp-unit">мм</span>
+                <p className="lp-micro">Используется, если у слоя нет нижнего соседа в стеке.</p>
+              </div>
+            )}
+
+            <div className="lm-field">
+              <label className="lm-label" htmlFor="lp-manual-h">
+                Высота слоя для расчёта следующего (мм)
               </label>
               <input
-                id="lp-elev"
+                id="lp-manual-h"
                 className="lm-input lm-input--narrow"
                 type="number"
-                value={elevationMm}
-                onChange={(e) => setElevationMm(Number(e.target.value))}
+                value={manualHeightMm}
+                onChange={(e) => setManualHeightMm(Number(e.target.value))}
               />
               <span className="lp-unit">мм</span>
+              <p className="lp-micro">
+                Участвует в верхней отметке: max(геометрия слоя, расчётный низ + это значение). Для пустого слоя
+                задайте толщину/высоту «воздуха», чтобы следующий слой опирался на неё.
+              </p>
+            </div>
+
+            <div className="lp-readonly-block">
+              <div className="lp-readonly-row">
+                <span className="lp-readonly-label">Расчётный низ слоя</span>
+                <span className="lp-readonly-val">{Math.round(activeSlice.computedBaseMm)} мм</span>
+              </div>
+              <div className="lp-readonly-row">
+                <span className="lp-readonly-label">Расчётный верх слоя</span>
+                <span className="lp-readonly-val">{Math.round(activeSlice.computedTopMm)} мм</span>
+              </div>
+              <p className="lp-micro lp-micro--tight">{topHint(activeSlice, manualHeightMm)}</p>
             </div>
           </div>
         )}
 
         {tab === "list" && (
           <div className="lp-panel" role="tabpanel">
+            <p className="lp-stack-legend">
+              Порядок в таблице: <strong>снизу вверх</strong> по зданию (первая строка — нижний слой). Перетащите строку
+              или используйте стрелки.
+            </p>
             <div className="lp-table-wrap">
-              <table className="lp-table">
+              <table className="lp-table lp-table--stack">
                 <thead>
                   <tr>
+                    <th className="lp-th-drag" scope="col" aria-label="Перетаскивание" />
                     <th className="lp-th-check" scope="col">
                       Видимость
                     </th>
-                    <th scope="col">Название слоя</th>
-                    <th scope="col">Уровень</th>
+                    <th scope="col">Название</th>
+                    <th scope="col">Режим</th>
+                    <th scope="col">По высоте</th>
+                    <th scope="col">Стек</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sortedLayers.map((l) => {
+                  {sortedLayers.map((l, sortedIdx) => {
                     const isActive = l.id === activeId;
                     const checked = isActive || extraVisible.has(l.id);
+                    const slice = getLayerVerticalSlice(project, l.id, verticalById);
+                    const isDrag = dragLayerId === l.id;
                     return (
-                      <tr key={l.id} className={isActive ? "lp-row-active" : undefined}>
+                      <tr
+                        key={l.id}
+                        className={`${isActive ? "lp-row-active" : ""} ${isDrag ? "lp-row-drag" : ""}`}
+                        draggable
+                        onDragStart={(e) => onRowDragStart(e, l.id)}
+                        onDragEnd={onRowDragEnd}
+                        onDragOver={onRowDragOver}
+                        onDrop={(e) => onRowDrop(e, sortedIdx)}
+                      >
+                        <td className="lp-drag-cell" title="Перетащить">
+                          <span className="lp-drag-grip" aria-hidden>
+                            ⋮⋮
+                          </span>
+                        </td>
                         <td>
                           <input
                             type="checkbox"
@@ -169,7 +355,34 @@ export function LayerParamsModal({ open, onClose }: LayerParamsModalProps) {
                             </span>
                           )}
                         </td>
-                        <td className="lp-num">{l.elevationMm} мм</td>
+                        <td className="lp-mode-cell">
+                          <span title={l.levelMode === "absolute" ? "От нуля проекта" : "От верха предыдущего слоя"}>
+                            {modeLabel(l.levelMode)}
+                          </span>
+                        </td>
+                        <td className="lp-num lp-range-cell" title="Расчётный низ → верх">
+                          {Math.round(slice.computedBaseMm)}→{Math.round(slice.computedTopMm)} мм
+                        </td>
+                        <td className="lp-stack-actions">
+                          <button
+                            type="button"
+                            className="lm-btn lm-btn--ghost lm-btn--sm"
+                            title="Выше по зданию"
+                            disabled={sortedIdx >= sortedLayers.length - 1}
+                            onClick={() => reorderLayerDown(l.id)}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            className="lm-btn lm-btn--ghost lm-btn--sm"
+                            title="Ниже по зданию"
+                            disabled={sortedIdx <= 0}
+                            onClick={() => reorderLayerUp(l.id)}
+                          >
+                            ↓
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}

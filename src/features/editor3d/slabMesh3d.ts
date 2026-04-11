@@ -1,6 +1,7 @@
 import { ExtrudeGeometry, Shape } from "three";
 
 import { getLayerById } from "@/core/domain/layerOps";
+import { slabWorldTopMm } from "@/core/domain/layerVerticalStack";
 import type { Project } from "@/core/domain/project";
 import type { SlabEntity } from "@/core/domain/slab";
 import type { Point2D } from "@/core/geometry/types";
@@ -48,8 +49,8 @@ export interface SlabExtrudeBuilt {
 }
 
 /**
- * Верх плиты — levelMm от нуля проекта; низ — levelMm − depthMm.
- * Совпадает с логикой ленты: ExtrudeGeometry вниз, меш поднят так, что «верх» shape на levelMm.
+ * Верх плиты — мировая отметка (`slabWorldTopMm` = низ слоя + локальный levelMm); низ — верх − depthMm.
+ * Совпадает с логикой ленты/свай: ExtrudeGeometry вниз, меш поднят так, что «верх» shape на world top.
  */
 export function buildSlabExtrudeGeometry(entity: SlabEntity, _project: Project): SlabExtrudeBuilt | null {
   const layer = getLayerById(_project, entity.layerId);
@@ -60,7 +61,7 @@ export function buildSlabExtrudeGeometry(entity: SlabEntity, _project: Project):
   if (!(depthMm > 0)) {
     return null;
   }
-  const topMm = entity.levelMm;
+  const topMm = slabWorldTopMm(entity, _project);
   const bottomMm = topMm - depthMm;
   const depthM = depthMm * MM_TO_M;
   const bottomM = bottomMm * MM_TO_M;

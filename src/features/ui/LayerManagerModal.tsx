@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { sortLayersByOrder } from "@/core/domain/layerOps";
+import { computeLayerVerticalStack, getLayerVerticalSlice } from "@/core/domain/layerVerticalStack";
 import type { Layer } from "@/core/domain/layer";
 import { useAppStore } from "@/store/useAppStore";
 
@@ -20,6 +21,7 @@ export function LayerManagerModal({ open, onClose }: LayerManagerModalProps) {
   const deleteLayerById = useAppStore((s) => s.deleteLayerById);
 
   const sorted = useMemo(() => sortLayersByOrder(project.layers), [project.layers]);
+  const verticalById = useMemo(() => computeLayerVerticalStack(project), [project]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editElev, setEditElev] = useState(0);
@@ -62,6 +64,7 @@ export function LayerManagerModal({ open, onClose }: LayerManagerModalProps) {
           {sorted.map((l) => {
             const isActive = l.id === project.activeLayerId;
             const canDel = project.layers.length > 1;
+            const vSlice = getLayerVerticalSlice(project, l.id, verticalById);
             return (
               <li key={l.id} className="lm-row">
                 {editingId === l.id ? (
@@ -89,16 +92,28 @@ export function LayerManagerModal({ open, onClose }: LayerManagerModalProps) {
                     <div className="lm-row-main">
                       <span className={isActive ? "lm-active-dot" : "lm-inactive-dot"} title={isActive ? "Активный" : ""} />
                       <span className="lm-name">{l.name}</span>
-                      <span className="lm-elev">{l.elevationMm} мм</span>
+                      <span className="lm-elev" title="Расчётный низ → верх">
+                        {Math.round(vSlice.computedBaseMm)}→{Math.round(vSlice.computedTopMm)} мм
+                      </span>
                     </div>
                     <div className="lm-row-actions">
                       <button type="button" className="lm-btn lm-btn--ghost lm-btn--sm" onClick={() => startEdit(l)}>
                         Изменить
                       </button>
-                      <button type="button" className="lm-btn lm-btn--ghost lm-btn--sm" onClick={() => reorderUp(l.id)}>
+                      <button
+                        type="button"
+                        className="lm-btn lm-btn--ghost lm-btn--sm"
+                        title="Выше по зданию"
+                        onClick={() => reorderDown(l.id)}
+                      >
                         Выше
                       </button>
-                      <button type="button" className="lm-btn lm-btn--ghost lm-btn--sm" onClick={() => reorderDown(l.id)}>
+                      <button
+                        type="button"
+                        className="lm-btn lm-btn--ghost lm-btn--sm"
+                        title="Ниже по зданию"
+                        onClick={() => reorderUp(l.id)}
+                      >
                         Ниже
                       </button>
                       <button

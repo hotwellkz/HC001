@@ -1,4 +1,5 @@
 import { getLayerById } from "@/core/domain/layerOps";
+import { getLayerVerticalSlice } from "@/core/domain/layerVerticalStack";
 import { useAppStore } from "@/store/useAppStore";
 
 import "./active-layer-badge.css";
@@ -12,10 +13,12 @@ export function ActiveLayerBadge() {
     return null;
   }
 
+  const v = getLayerVerticalSlice(project, layer.id);
+
   return (
     <button type="button" className="alb" title="Управление слоями" onClick={() => openLayerManager()}>
       <span className="alb-text">
-        {layer.name}: {layer.elevationMm} мм
+        {layer.name}: {Math.round(v.computedBaseMm)}→{Math.round(v.computedTopMm)} мм
       </span>
     </button>
   );

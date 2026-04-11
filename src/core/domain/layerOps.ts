@@ -1,5 +1,5 @@
 import { newEntityId } from "./ids";
-import type { Layer } from "./layer";
+import { normalizeLayer, type Layer } from "./layer";
 import { normalizeVisibleLayerIds, removeLayerFromVisibleLayerIds } from "./layerVisibility";
 import type { Project } from "./project";
 import { touchProjectMeta } from "./projectFactory";
@@ -45,15 +45,18 @@ export function createLayerInProject(
   const sorted = sortLayersByOrder(project.layers);
   const maxOrder = sorted.length === 0 ? -1 : sorted[sorted.length - 1]!.orderIndex;
   const t = nowIso();
-  const newLayer: Layer = {
+  const newLayer: Layer = normalizeLayer({
     id: newEntityId(),
     name: input.name,
     orderIndex: maxOrder + 1,
     elevationMm: input.elevationMm,
+    levelMode: "absolute",
+    offsetFromBelowMm: 0,
+    manualHeightMm: 0,
     isVisible: true,
     createdAt: t,
     updatedAt: t,
-  };
+  });
   return touchProjectMeta({
     ...project,
     layers: [...project.layers, newLayer],
@@ -62,23 +65,51 @@ export function createLayerInProject(
   });
 }
 
-export function updateLayerInProject(
-  project: Project,
-  layerId: string,
-  patch: { readonly name?: string; readonly elevationMm?: number },
-): Project {
+export type LayerUpdatePatch = {
+  readonly name?: string;
+  readonly elevationMm?: number;
+  readonly levelMode?: Layer["levelMode"];
+  readonly offsetFromBelowMm?: number;
+  readonly manualHeightMm?: number;
+};
+
+export function updateLayerInProject(project: Project, layerId: string, patch: LayerUpdatePatch): Project {
   const t = nowIso();
   return touchProjectMeta({
     ...project,
     layers: project.layers.map((l) =>
       l.id === layerId
-        ? {
+        ? normalizeLayer({
             ...l,
             ...patch,
             updatedAt: t,
-          }
+          })
         : l,
     ),
+  });
+}
+
+/**
+ * Переставить слой в стеке по целевому индексу в списке снизу вверх (0 = самый нижний).
+ */
+export function moveLayerToStackPosition(project: Project, layerId: string, targetSortedIndex: number): Project {
+  const sorted = sortLayersByOrder(project.layers);
+  const idx = sorted.findIndex((l) => l.id === layerId);
+  if (idx < 0) {
+    return project;
+  }
+  const clamped = Math.max(0, Math.min(sorted.length - 1, Math.floor(targetSortedIndex)));
+  if (clamped === idx) {
+    return project;
+  }
+  const reordered = [...sorted];
+  const [item] = reordered.splice(idx, 1);
+  reordered.splice(clamped, 0, item!);
+  const t = nowIso();
+  const byId = new Map(reordered.map((l, i) => [l.id, normalizeLayer({ ...l, orderIndex: i, updatedAt: t })]));
+  return touchProjectMeta({
+    ...project,
+    layers: project.layers.map((l) => byId.get(l.id) ?? l),
   });
 }
 
@@ -101,10 +132,10 @@ export function reorderLayerRelative(project: Project, layerId: string, directio
     ...project,
     layers: project.layers.map((l) => {
       if (l.id === a.id) {
-        return { ...l, orderIndex: ob, updatedAt: t };
+        return normalizeLayer({ ...l, orderIndex: ob, updatedAt: t });
       }
       if (l.id === b.id) {
-        return { ...l, orderIndex: oa, updatedAt: t };
+        return normalizeLayer({ ...l, orderIndex: oa, updatedAt: t });
       }
       return l;
     }),
@@ -139,7 +170,7 @@ export function deleteLayerAndEntities(project: Project, layerId: string): Proje
   const rooms = project.rooms.filter((r) => r.layerId !== layerId);
   const layersLeft = project.layers.filter((l) => l.id !== layerId);
   const sorted = sortLayersByOrder(layersLeft);
-  const reindexed = sorted.map((l, i) => ({ ...l, orderIndex: i, updatedAt: nowIso() }));
+  const reindexed = sorted.map((l, i) => normalizeLayer({ ...l, orderIndex: i, updatedAt: nowIso() }));
 
   const pruned: Project = {
     ...project,

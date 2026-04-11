@@ -35,6 +35,7 @@ function appSnapshotFromStore(): Parameters<typeof shouldIgnoreEditorToolHotkeys
     foundationStripAutoPilesModal: s.foundationStripAutoPilesModal,
     entityCopyParamsModal: s.entityCopyParamsModal,
     textureApply3dParamsModal: s.textureApply3dParamsModal,
+    editor3dContextMenu: s.editor3dContextMenu,
   };
 }
 

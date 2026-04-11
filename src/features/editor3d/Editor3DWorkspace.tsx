@@ -2,6 +2,7 @@ import { Grid } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { slabWorldBottomMm, slabWorldTopMm } from "@/core/domain/layerVerticalStack";
 import { formatLumberDisplayMark, lumberDisplayIndexByPieceId } from "@/core/domain/pieceDisplayMark";
 import { buildCalculationSolidSpecsForProject } from "@/core/domain/wallCalculation3dSpecs";
 import { lumberRoleLabelRu } from "@/core/domain/wallSpecification";
@@ -12,6 +13,7 @@ import { useAppStore } from "@/store/useAppStore";
 import { Editor3dFlyControls } from "./Editor3dFlyControls";
 import { Editor3dOrbitControls } from "./Editor3dOrbitControls";
 import { Editor3dOrbitPivotCoordinator } from "./Editor3dOrbitPivotCoordinator";
+import { Editor3dEntityContextMenu } from "./Editor3dEntityContextMenu";
 import { Editor3dPickController } from "./Editor3dPickController";
 import { Editor3dTexturePickController } from "./Editor3dTexturePickController";
 import { Editor3dPivotMarker } from "./Editor3dPivotMarker";
@@ -84,6 +86,7 @@ function editorOverlaySnapshot() {
     foundationStripAutoPilesModal: s.foundationStripAutoPilesModal,
     entityCopyParamsModal: s.entityCopyParamsModal,
     textureApply3dParamsModal: s.textureApply3dParamsModal,
+    editor3dContextMenu: s.editor3dContextMenu,
   };
 }
 
@@ -364,6 +367,15 @@ export function Editor3DWorkspace() {
     setHoverPick(p);
   }, []);
 
+  const editor3dContextDeleteEpoch = useAppStore((s) => s.editor3dContextDeleteEpoch);
+  const prevCtxEpochRef = useRef(0);
+  useEffect(() => {
+    if (editor3dContextDeleteEpoch !== prevCtxEpochRef.current && editor3dContextDeleteEpoch > 0) {
+      setHoverPick(null);
+    }
+    prevCtxEpochRef.current = editor3dContextDeleteEpoch;
+  }, [editor3dContextDeleteEpoch]);
+
   const onTextureHoverPick = useCallback((p: Editor3dPickPayload | null) => {
     setTextureToolHoverPick(p);
   }, []);
@@ -427,6 +439,11 @@ export function Editor3DWorkspace() {
         e.preventDefault();
         st.cancelTextureApply3dTool();
         setTextureToolHoverPick(null);
+        return;
+      }
+      if (st.editor3dContextMenu != null) {
+        e.preventDefault();
+        st.closeEditor3dContextMenu();
         return;
       }
       if (hasBlockingEditorOverlayModal(editorOverlaySnapshot())) {
@@ -550,12 +567,16 @@ export function Editor3DWorkspace() {
 
     const slab = project.slabs.find((s) => s.id === id);
     if (slab) {
+      const topW = Math.round(slabWorldTopMm(slab, project));
+      const botW = Math.round(slabWorldBottomMm(slab, project));
       return {
         title: "Плита",
         rows: [
           ["ID", slab.id],
           ["Вершин", String(slab.pointsMm.length)],
-          ["Уровень (верх)", `${Math.round(slab.levelMm)} мм`],
+          ["Верх в слое", `${Math.round(slab.levelMm)} мм`],
+          ["Верх (мир)", `${topW} мм`],
+          ["Низ (мир)", `${botW} мм`],
           ["Глубина", `${Math.round(slab.depthMm)} мм`],
         ] as const,
       };
@@ -602,6 +623,9 @@ export function Editor3DWorkspace() {
         minHeight: 0,
         cursor:
           textureApply3dToolActive && !flyModeActive && !textureParamsModalOpen ? "crosshair" : undefined,
+      }}
+      onContextMenu={(e) => {
+        e.preventDefault();
       }}
     >
       <Editor3dVisibilityPanel />
@@ -907,6 +931,7 @@ export function Editor3DWorkspace() {
           ))}
         </div>
       ) : null}
+      <Editor3dEntityContextMenu />
     </div>
   );
 }

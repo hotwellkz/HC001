@@ -32,6 +32,8 @@ export interface EditorToolHotkeyAppSnapshot {
   readonly entityCopyParamsModal: unknown | null;
   /** Параметры текстуры 3D. */
   readonly textureApply3dParamsModal: unknown | null;
+  /** Контекстное меню объекта в 3D (ПКМ). */
+  readonly editor3dContextMenu: unknown | null;
 }
 
 export interface EditorToolHotkeyIgnoreOptions {
@@ -59,6 +61,7 @@ export function hasBlockingEditorOverlayModal(app: EditorToolHotkeyAppSnapshot):
     app.wallCalculationModalOpen ||
     app.foundationStripAutoPilesModal != null ||
     app.textureApply3dParamsModal != null ||
+    app.editor3dContextMenu != null ||
     isSceneCoordinateModalBlocking(app)
   );
 }

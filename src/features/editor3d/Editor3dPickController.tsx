@@ -2,6 +2,7 @@ import { useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import { Raycaster } from "three";
 
+import { editor3dPickSupportsContextDelete } from "@/core/domain/editor3dContextMenuPolicy";
 import { openSelectedObjectEditor } from "@/features/project/objectEditorActions";
 import { hasBlockingEditorOverlayModal } from "@/shared/editorToolShortcuts/shouldIgnoreEditorToolHotkeys";
 import { useAppStore } from "@/store/useAppStore";
@@ -39,6 +40,7 @@ function editorHotkeySnapshot() {
     foundationStripAutoPilesModal: s.foundationStripAutoPilesModal,
     entityCopyParamsModal: s.entityCopyParamsModal,
     textureApply3dParamsModal: s.textureApply3dParamsModal,
+    editor3dContextMenu: s.editor3dContextMenu,
   };
 }
 
@@ -97,12 +99,10 @@ export function Editor3dPickController({
   const { gl, camera, scene } = useThree();
   const raycaster = useMemo(() => new Raycaster(), []);
 
-  const pointerDownRef = useRef<{
-    readonly x: number;
-    readonly y: number;
-    readonly button: number;
-  } | null>(null);
+  const pointerDownRef = useRef<{ readonly x: number; readonly y: number } | null>(null);
   const draggedRef = useRef(false);
+  const rightDownRef = useRef<{ readonly x: number; readonly y: number } | null>(null);
+  const rightDraggedRef = useRef(false);
 
   useEffect(() => {
     if (pickingSuspended) {
@@ -118,20 +118,32 @@ export function Editor3dPickController({
     };
 
     const onPointerDown = (ev: PointerEvent): void => {
-      if (ev.button !== 0) {
+      if (ev.button === 0) {
+        pointerDownRef.current = { x: ev.clientX, y: ev.clientY };
+        draggedRef.current = false;
         return;
       }
-      pointerDownRef.current = { x: ev.clientX, y: ev.clientY, button: ev.button };
-      draggedRef.current = false;
+      if (ev.button === 2) {
+        rightDownRef.current = { x: ev.clientX, y: ev.clientY };
+        rightDraggedRef.current = false;
+      }
     };
 
     const onPointerMove = (ev: PointerEvent): void => {
-      const down = pointerDownRef.current;
-      if (down) {
-        const dx = ev.clientX - down.x;
-        const dy = ev.clientY - down.y;
+      const leftDown = pointerDownRef.current;
+      if (leftDown) {
+        const dx = ev.clientX - leftDown.x;
+        const dy = ev.clientY - leftDown.y;
         if (dx * dx + dy * dy > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
           draggedRef.current = true;
+        }
+      }
+      const rDown = rightDownRef.current;
+      if (rDown) {
+        const dx = ev.clientX - rDown.x;
+        const dy = ev.clientY - rDown.y;
+        if (dx * dx + dy * dy > DRAG_THRESHOLD_PX * DRAG_THRESHOLD_PX) {
+          rightDraggedRef.current = true;
         }
       }
       if (pickBlocked()) {
@@ -146,9 +158,16 @@ export function Editor3dPickController({
     };
 
     const onPointerUp = (ev: PointerEvent): void => {
+      if (ev.button === 2) {
+        rightDownRef.current = null;
+        return;
+      }
+      if (ev.button !== 0) {
+        return;
+      }
       const down = pointerDownRef.current;
       pointerDownRef.current = null;
-      if (!down || ev.button !== 0) {
+      if (!down) {
         return;
       }
       if (pickBlocked()) {
@@ -173,6 +192,33 @@ export function Editor3dPickController({
     const onPointerCancel = (): void => {
       pointerDownRef.current = null;
       draggedRef.current = false;
+      rightDownRef.current = null;
+      rightDraggedRef.current = false;
+    };
+
+    const onContextMenu = (ev: MouseEvent): void => {
+      ev.preventDefault();
+      if (pickBlocked()) {
+        return;
+      }
+      const rect = el.getBoundingClientRect();
+      const payload = pickEditor3dFromPointer(ev.clientX, ev.clientY, rect, camera, scene, raycaster);
+      const wasRightDrag = rightDraggedRef.current;
+      rightDraggedRef.current = false;
+      rightDownRef.current = null;
+      if (wasRightDrag) {
+        return;
+      }
+      if (!payload || !editor3dPickSupportsContextDelete(payload)) {
+        return;
+      }
+      ev.stopPropagation();
+      applyPickToStore(payload, setCalcFocus);
+      useAppStore.getState().openEditor3dContextMenu({
+        clientX: ev.clientX,
+        clientY: ev.clientY,
+        pick: payload,
+      });
     };
 
     const onDblClick = (ev: MouseEvent): void => {
@@ -206,6 +252,7 @@ export function Editor3dPickController({
     el.addEventListener("pointercancel", onPointerCancel);
     el.addEventListener("dblclick", onDblClick);
     el.addEventListener("pointerleave", onPointerLeave);
+    el.addEventListener("contextmenu", onContextMenu);
 
     return () => {
       el.removeEventListener("pointerdown", onPointerDown);
@@ -214,6 +261,7 @@ export function Editor3dPickController({
       el.removeEventListener("pointercancel", onPointerCancel);
       el.removeEventListener("dblclick", onDblClick);
       el.removeEventListener("pointerleave", onPointerLeave);
+      el.removeEventListener("contextmenu", onContextMenu);
       el.style.cursor = "auto";
     };
   }, [gl, camera, scene, raycaster, setCalcFocus, onHoverPickChange, pickingSuspended, deferClickSelection]);
