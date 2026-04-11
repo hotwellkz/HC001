@@ -126,6 +126,8 @@ import { initialWallPlacementPhase } from "@/core/domain/wallPlacement";
 import { commitFloorBeamPlacementSecondPoint } from "@/core/domain/floorBeamPlacementCommit";
 import type { FloorBeamPlacementSession } from "@/core/domain/floorBeamPlacement";
 import { initialFloorBeamPlacementPhase } from "@/core/domain/floorBeamPlacement";
+import { applyFloorBeamSplitInProject } from "@/core/domain/floorBeamSplit";
+import type { FloorBeamSplitMode } from "@/core/domain/floorBeamSplitMode";
 import { beamPlanThicknessAndVerticalMm, isProfileUsableForFloorBeam } from "@/core/domain/floorBeamSection";
 import { applyCornerWallJoint, applyTeeWallJoint } from "@/core/domain/wallJointApply";
 import type { WallEndSide, WallJointKind } from "@/core/domain/wallJoint";
@@ -345,6 +347,9 @@ interface AppState {
   readonly addFloorBeamModalOpen: boolean;
   readonly floorBeamPlacementSession: FloorBeamPlacementSession | null;
   readonly floorBeamPlacementHistoryBaseline: Project | null;
+  readonly floorBeamSplitModalOpen: boolean;
+  /** Активен режим «Разделить»: после «Применить» в модалке — клик по балке. */
+  readonly floorBeamSplitSession: { readonly mode: FloorBeamSplitMode; readonly overlapMm: number } | null;
   readonly wallCoordinateModalOpen: boolean;
   /** Модалка смещения начала стены от опорной точки (Пробел после выбора опоры). */
   readonly wallAnchorCoordinateModalOpen: boolean;
@@ -683,6 +688,15 @@ interface AppActions {
     opts?: { readonly altKey?: boolean },
   ) => void;
   floorBeamPlacementCompleteSecondPoint: (secondSnappedMm: Point2D) => void;
+  openFloorBeamSplitModal: () => void;
+  closeFloorBeamSplitModal: () => void;
+  applyFloorBeamSplitModal: (input: { readonly mode: FloorBeamSplitMode; readonly overlapMm: number }) => void;
+  cancelFloorBeamSplitTool: () => void;
+  floorBeamSplitCommitOnBeamClick: (input: {
+    readonly beamId: string;
+    readonly rawWorldMm: Point2D;
+    readonly viewport: ViewportTransform;
+  }) => void;
   setEditor2dPlanScope: (scope: Editor2dPlanScope) => void;
   setLinearPlacementMode: (mode: LinearProfilePlacementMode) => void;
   setWallShapeMode: (mode: WallShapeMode) => void;
@@ -958,6 +972,8 @@ function historyJumpClearTransientUi(s: AppStore, restored: Project): Partial<Ap
     addFloorBeamModalOpen: false,
     floorBeamPlacementSession: null,
     floorBeamPlacementHistoryBaseline: null,
+    floorBeamSplitModalOpen: false,
+    floorBeamSplitSession: null,
     activeTool: "select",
     wallDetailWallId: wd,
     textureApply3dToolActive: false,
@@ -1232,6 +1248,8 @@ export const useAppStore = create<AppStore>((set, get) => {
     addFloorBeamModalOpen: false,
     floorBeamPlacementSession: null,
     floorBeamPlacementHistoryBaseline: null,
+    floorBeamSplitModalOpen: false,
+    floorBeamSplitSession: null,
     wallCoordinateModalOpen: false,
     wallAnchorCoordinateModalOpen: false,
     wallAnchorPlacementModeActive: false,
@@ -1422,6 +1440,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           addFloorBeamModalOpen: false,
           floorBeamPlacementSession: null,
           floorBeamPlacementHistoryBaseline: null,
+          floorBeamSplitModalOpen: false,
+          floorBeamSplitSession: null,
         };
         const mergeHist = (base: Partial<AppStore>): Partial<AppStore> =>
           projectMutated ? { ...base, ...buildProjectMutationState(s, proj, { dirty: true }) } : base;
@@ -1544,6 +1564,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           floorBeamPlacementSession: tab === "2d" ? s.floorBeamPlacementSession : null,
           floorBeamPlacementHistoryBaseline: tab === "2d" ? s.floorBeamPlacementHistoryBaseline : null,
           addFloorBeamModalOpen: tab === "2d" ? s.addFloorBeamModalOpen : false,
+          floorBeamSplitModalOpen: tab === "2d" ? s.floorBeamSplitModalOpen : false,
+          floorBeamSplitSession: tab === "2d" ? s.floorBeamSplitSession : null,
           wallJointSession: tab === "2d" ? s.wallJointSession : null,
           wallJointParamsModalOpen: tab === "2d" ? s.wallJointParamsModalOpen : false,
           addWallModalOpen: tab === "2d" ? s.addWallModalOpen : false,
@@ -3505,6 +3527,8 @@ export const useAppStore = create<AppStore>((set, get) => {
         },
         floorBeamPlacementSession: null,
         floorBeamPlacementHistoryBaseline: null,
+        floorBeamSplitSession: null,
+        floorBeamSplitModalOpen: false,
         addFloorBeamModalOpen: false,
         addWallModalOpen: false,
         addWindowModalOpen: false,
@@ -4180,18 +4204,26 @@ export const useAppStore = create<AppStore>((set, get) => {
       );
     },
 
-    openAddFloorBeamModal: () => set({ addFloorBeamModalOpen: true, lastError: null }),
+    openAddFloorBeamModal: () =>
+      set({
+        addFloorBeamModalOpen: true,
+        floorBeamSplitModalOpen: false,
+        floorBeamSplitSession: null,
+        lastError: null,
+      }),
 
     closeAddFloorBeamModal: () => set({ addFloorBeamModalOpen: false }),
 
     setEditor2dPlanScope: (scope) =>
       set((s) => {
         const nextProject = touchProjectMeta(mergeViewState(s.currentProject, { editor2dPlanScope: scope }));
-        if (scope === "main" && s.floorBeamPlacementSession) {
+        if (scope === "main" && (s.floorBeamPlacementSession || s.floorBeamSplitSession || s.floorBeamSplitModalOpen)) {
           return buildProjectMutationState(s, nextProject, {
             floorBeamPlacementSession: null,
             floorBeamPlacementHistoryBaseline: null,
             addFloorBeamModalOpen: false,
+            floorBeamSplitSession: null,
+            floorBeamSplitModalOpen: false,
             dirty: true,
             lastError: null,
           });
@@ -4239,6 +4271,8 @@ export const useAppStore = create<AppStore>((set, get) => {
           shiftLockReferenceMm: null,
         },
         addFloorBeamModalOpen: false,
+        floorBeamSplitModalOpen: false,
+        floorBeamSplitSession: null,
         wallPlacementSession: null,
         wallPlacementHistoryBaseline: null,
         addWallModalOpen: false,
@@ -4256,6 +4290,67 @@ export const useAppStore = create<AppStore>((set, get) => {
         addFloorBeamModalOpen: false,
         lastError: null,
       }),
+
+    openFloorBeamSplitModal: () =>
+      set({
+        floorBeamSplitModalOpen: true,
+        floorBeamPlacementSession: null,
+        floorBeamPlacementHistoryBaseline: null,
+        addFloorBeamModalOpen: false,
+        lastError: null,
+      }),
+
+    closeFloorBeamSplitModal: () => set({ floorBeamSplitModalOpen: false }),
+
+    applyFloorBeamSplitModal: (input) => {
+      const overlapRaw = input.overlapMm;
+      const overlapMm =
+        !Number.isFinite(overlapRaw) || overlapRaw < 0 ? 0 : Math.round(overlapRaw * 1000) / 1000;
+      set({
+        floorBeamSplitModalOpen: false,
+        floorBeamSplitSession: { mode: input.mode, overlapMm },
+        lastError: null,
+      });
+    },
+
+    cancelFloorBeamSplitTool: () => set({ floorBeamSplitSession: null, lastError: null }),
+
+    floorBeamSplitCommitOnBeamClick: (input) => {
+      const sess = get().floorBeamSplitSession;
+      if (!sess) {
+        return;
+      }
+      if (get().currentProject.viewState.editor2dPlanScope !== "floorStructure") {
+        set({ lastError: "Переключитесь в режим «Перекрытие» на плане." });
+        return;
+      }
+      const p0 = get().currentProject;
+      const beam = p0.floorBeams.find((b) => b.id === input.beamId);
+      if (!beam) {
+        set({ lastError: "Балка не найдена." });
+        return;
+      }
+      const snap = resolvePlacementSnap(get, input.rawWorldMm, input.viewport, undefined, beam.id);
+      const worldPick = sess.mode === "atPoint" ? snap.point : null;
+      const before = cloneProjectSnapshot(p0);
+      const r = applyFloorBeamSplitInProject(p0, beam.id, sess.mode, sess.overlapMm, worldPick);
+      if (!r.ok) {
+        set({ lastError: r.error });
+        return;
+      }
+      set((s) =>
+        buildProjectMutationState(
+          s,
+          r.project,
+          {
+            selectedEntityIds: [...r.newBeamIds],
+            dirty: true,
+            lastError: null,
+          },
+          { historyBefore: before },
+        ),
+      );
+    },
 
     floorBeamPlacementBackOrExit: () => {
       const session = get().floorBeamPlacementSession;
@@ -4912,6 +5007,8 @@ export const useAppStore = create<AppStore>((set, get) => {
         addFloorBeamModalOpen: false,
         floorBeamPlacementSession: null,
         floorBeamPlacementHistoryBaseline: null,
+        floorBeamSplitModalOpen: false,
+        floorBeamSplitSession: null,
         floorBeamMoveCopyCoordinateModalOpen: false,
         sceneCoordModalDesiredFocus: null,
         floorBeamMoveCopySession: {
@@ -5443,6 +5540,8 @@ export const useAppStore = create<AppStore>((set, get) => {
         floorBeamPlacementSession: null,
         floorBeamPlacementHistoryBaseline: null,
         addFloorBeamModalOpen: false,
+        floorBeamSplitModalOpen: false,
+        floorBeamSplitSession: null,
         selectedEntityIds: [target.id],
         lastError: null,
       });

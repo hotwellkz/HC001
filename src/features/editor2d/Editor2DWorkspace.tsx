@@ -381,6 +381,7 @@ function wallInnerNormalSign(project: Project, wallId: string): 1 | -1 {
 export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   const wallPlacementSession = useAppStore((s) => s.wallPlacementSession);
   const floorBeamPlacementSession = useAppStore((s) => s.floorBeamPlacementSession);
+  const floorBeamSplitSession = useAppStore((s) => s.floorBeamSplitSession);
   const wallMoveCopySession = useAppStore((s) => s.wallMoveCopySession);
   const wallContextMenu = useAppStore((s) => s.wallContextMenu);
   const foundationPileContextMenu = useAppStore((s) => s.foundationPileContextMenu);
@@ -553,6 +554,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               profilesModalOpen: stA.profilesModalOpen,
               addWallModalOpen: stA.addWallModalOpen,
               addFloorBeamModalOpen: stA.addFloorBeamModalOpen,
+              floorBeamSplitModalOpen: stA.floorBeamSplitModalOpen,
               addFoundationStripModalOpen: stA.addFoundationStripModalOpen,
               addFoundationPileModalOpen: stA.addFoundationPileModalOpen,
               addSlabModalOpen: stA.addSlabModalOpen,
@@ -591,6 +593,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           activeTab: stA.activeTab,
           wallPlacementSession: stA.wallPlacementSession,
           floorBeamPlacementSession: stA.floorBeamPlacementSession,
+          floorBeamSplitSession: stA.floorBeamSplitSession,
           slabPlacementSession: stA.slabPlacementSession,
           foundationStripPlacementSession: stA.foundationStripPlacementSession,
           foundationPilePlacementSession: stA.foundationPilePlacementSession,
@@ -615,6 +618,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             profilesModalOpen: st0.profilesModalOpen,
             addWallModalOpen: st0.addWallModalOpen,
             addFloorBeamModalOpen: st0.addFloorBeamModalOpen,
+            floorBeamSplitModalOpen: st0.floorBeamSplitModalOpen,
             addFoundationStripModalOpen: st0.addFoundationStripModalOpen,
             addFoundationPileModalOpen: st0.addFoundationPileModalOpen,
             addSlabModalOpen: st0.addSlabModalOpen,
@@ -788,6 +792,13 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         if (stEsc.floorBeamPlacementSession) {
           e.preventDefault();
           useAppStore.getState().floorBeamPlacementBackOrExit();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          return;
+        }
+        if (stEsc.floorBeamSplitSession) {
+          e.preventDefault();
+          useAppStore.getState().cancelFloorBeamSplitTool();
           setWallHintRef.current(null);
           setCoordHudRef.current(null);
           return;
@@ -1061,6 +1072,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       pendingDoorPlacement ||
       projectOriginMoveToolActive ||
       floorBeamPlacementSession ||
+      floorBeamSplitSession ||
       activeToolCrosshair === "line" ||
       activeToolCrosshair === "ruler"
     ) {
@@ -1073,6 +1085,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
     pendingDoorPlacement,
     projectOriginMoveToolActive,
     floorBeamPlacementSession,
+    floorBeamSplitSession,
     activeToolCrosshair,
   ]);
 
@@ -4326,6 +4339,40 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               });
               setCoordHudRef.current(null);
             }
+          } else if (useAppStore.getState().floorBeamSplitSession) {
+            const spl = useAppStore.getState().floorBeamSplitSession!;
+            const laySpl = computeEditorOverlayLayout({
+              canvasRect: rect,
+              cursorCanvasX: ev.global.x,
+              cursorCanvasY: ev.global.y,
+              viewportWidth: viewportW,
+              viewportHeight: viewportH,
+              wallCoordinateModalOpen: false,
+              showCoordHud: false,
+            });
+            const modeRu =
+              spl.mode === "maxLength"
+                ? "по максимальной длине"
+                : spl.mode === "center"
+                  ? "по центру"
+                  : "по указанному месту";
+            setWallHintRef.current({
+              left: laySpl.instruction.left,
+              top: laySpl.instruction.top,
+              lines: hintLines("Разделить перекрытие", [
+                { text: `Режим: ${modeRu} · наложение ${spl.overlapMm} мм` },
+                {
+                  text:
+                    spl.mode === "atPoint"
+                      ? "ЛКМ по балке в нужной точке (привязки учитываются)"
+                      : "ЛКМ по балке или профилю",
+                  variant: "muted",
+                },
+                { text: "ПКМ / Esc — выход", variant: "muted" },
+              ]),
+            });
+            setCoordHudRef.current(null);
+            paint();
           } else if (useAppStore.getState().foundationStripPlacementSession) {
             const fsS = useAppStore.getState().foundationStripPlacementSession;
             if (fsS) {
@@ -4768,6 +4815,39 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           return;
         }
 
+        const floorBeamSplitSessionPtr = useAppStore.getState().floorBeamSplitSession;
+        if (floorBeamSplitSessionPtr && ev.button === 2) {
+          ev.preventDefault();
+          useAppStore.getState().cancelFloorBeamSplitTool();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          paint();
+          return;
+        }
+        if (floorBeamSplitSessionPtr && ev.button === 0) {
+          const cpSpl = useAppStore.getState().currentProject;
+          if (cpSpl.viewState.editor2dPlanScope !== "floorStructure") {
+            useAppStore.getState().cancelFloorBeamSplitTool();
+            paint();
+            return;
+          }
+          const layerSpl = narrowProjectToActiveLayer(cpSpl);
+          const segTolSpl = Math.max(14, 22 / viewport2d.zoomPixelsPerMm);
+          const hitSpl = pickFloorBeamAtPlanPoint(cpSpl, layerSpl.floorBeams, worldMm, segTolSpl);
+          if (!hitSpl) {
+            useAppStore.setState({ lastError: "Укажите балку или профиль перекрытия на плане." });
+            paint();
+            return;
+          }
+          useAppStore.getState().floorBeamSplitCommitOnBeamClick({
+            beamId: hitSpl.id,
+            rawWorldMm: worldMm,
+            viewport: t,
+          });
+          paint();
+          return;
+        }
+
         const wallMoveCopySessionPtr = useAppStore.getState().wallMoveCopySession;
         if (wallMoveCopySessionPtr && ev.button === 2) {
           ev.preventDefault();
@@ -4872,6 +4952,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           !wallJointSession &&
           !wallPlacementSession &&
           !useAppStore.getState().floorBeamPlacementSession &&
+          !useAppStore.getState().floorBeamSplitSession &&
           !useAppStore.getState().foundationStripPlacementSession &&
           !useAppStore.getState().foundationPilePlacementSession &&
           !useAppStore.getState().slabPlacementSession &&
@@ -5022,6 +5103,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           !wallJointSession &&
           !wallPlacementSession &&
           !useAppStore.getState().floorBeamPlacementSession &&
+          !useAppStore.getState().floorBeamSplitSession &&
           !useAppStore.getState().foundationStripPlacementSession &&
           !useAppStore.getState().foundationPilePlacementSession &&
           !useAppStore.getState().slabPlacementSession &&
@@ -5450,6 +5532,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           !st.wallMoveCopySession &&
           !st.foundationPileMoveCopySession &&
           !st.floorBeamMoveCopySession &&
+          !st.floorBeamSplitSession &&
           !st.entityCopySession &&
           !st.foundationStripPlacementSession &&
           !st.foundationPilePlacementSession &&
@@ -5467,6 +5550,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           st.wallMoveCopySession ||
           st.foundationPileMoveCopySession ||
           st.floorBeamMoveCopySession ||
+          st.floorBeamSplitSession ||
           st.entityCopySession ||
           st.foundationStripPlacementSession ||
           st.foundationPilePlacementSession ||

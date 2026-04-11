@@ -9,6 +9,7 @@ export interface SelectAllEditorSnapshot {
   readonly activeTab: string;
   readonly wallPlacementSession: unknown | null;
   readonly floorBeamPlacementSession: unknown | null;
+  readonly floorBeamSplitSession: unknown | null;
   readonly slabPlacementSession: unknown | null;
   readonly foundationStripPlacementSession: unknown | null;
   readonly foundationPilePlacementSession: unknown | null;
@@ -37,6 +38,10 @@ export function entityIdsForSelectAll2d(project: Project, snap: SelectAllEditorS
   }
 
   if (snap.floorBeamPlacementSession) {
+    return layerView.floorBeams.map((b) => b.id);
+  }
+
+  if (snap.floorBeamSplitSession) {
     return layerView.floorBeams.map((b) => b.id);
   }
 

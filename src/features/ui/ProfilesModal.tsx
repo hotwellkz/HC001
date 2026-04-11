@@ -35,6 +35,8 @@ const CATEGORY_LABELS: Record<ProfileCategory, string> = {
   custom: "Другое",
 };
 
+const LINEAR_STOCK_PROFILE_CATEGORIES = new Set<ProfileCategory>(["beam", "board", "pipe", "slab", "roof", "custom"]);
+
 const MATERIAL_OPTIONS: { value: ProfileMaterialType; label: string }[] = [
   { value: "osb", label: "OSB" },
   { value: "eps", label: "EPS" },
@@ -519,6 +521,34 @@ export function ProfilesModal({ open, onClose }: ProfilesModalProps) {
                     }}
                   />
                 </div>
+
+                {LINEAR_STOCK_PROFILE_CATEGORIES.has(draft.category) ? (
+                  <div className="pm-field">
+                    <label className="pm-label" htmlFor="pm-linear-stock">
+                      Макс. длина заготовки / сегмента, мм
+                    </label>
+                    <input
+                      id="pm-linear-stock"
+                      className="pm-input"
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={draft.linearStockMaxLengthMm ?? ""}
+                      placeholder="6000 — по умолчанию"
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        updateDraft({
+                          ...draft,
+                          linearStockMaxLengthMm: v === "" ? undefined : Number(v),
+                        });
+                      }}
+                    />
+                    <p className="muted" style={{ margin: "6px 0 0", fontSize: 12, lineHeight: 1.5 }}>
+                      Для инструмента «Разделить» в режиме перекрытия. Если поле пустое, используется значение по умолчанию
+                      6000 мм (или число из производственных настроек профиля, если оно задано).
+                    </p>
+                  </div>
+                ) : null}
 
                 {draft.category === "wall" ? (
                   <div className="pm-row2">

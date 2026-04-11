@@ -11,6 +11,7 @@ const baseApp = {
   profilesModalOpen: false,
   addWallModalOpen: false,
   addFloorBeamModalOpen: false,
+  floorBeamSplitModalOpen: false,
   addFoundationStripModalOpen: false,
   addFoundationPileModalOpen: false,
   addSlabModalOpen: false,

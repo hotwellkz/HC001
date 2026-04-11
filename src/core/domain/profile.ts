@@ -48,6 +48,11 @@ export interface Profile {
   readonly defaultWidthMm?: number;
   /** Для solid — габарит по глубине/толщине сечения, мм */
   readonly defaultThicknessMm?: number;
+  /**
+   * Максимальная длина заготовки/сегмента для линейных элементов (балка, доска, труба и т.д.), мм.
+   * Используется инструментом «Разделить» в перекрытии; при отсутствии — см. resolveLinearStockMaxLengthMm.
+   */
+  readonly linearStockMaxLengthMm?: number;
   /** SIP / производственный расчёт (категория wall). */
   /** Частичные переопределения; полный снимок даёт `resolveEffectiveWallManufacturing`. */
   readonly wallManufacturing?: Partial<WallManufacturingSettings>;

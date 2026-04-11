@@ -430,6 +430,7 @@
         "defaultHeightMm": { "type": "number" },
         "defaultWidthMm": { "type": "number" },
         "defaultThicknessMm": { "type": "number" },
+        "linearStockMaxLengthMm": { "type": "number", "exclusiveMinimum": 0 },
         "notes": { "type": "string" },
         "markPrefix": { "type": "string" },
         "wallManufacturing": { "$ref": "#/$defs/wallManufacturingSettings" },

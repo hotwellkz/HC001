@@ -16,6 +16,7 @@ function appSnapshotFromStore(): Parameters<typeof shouldIgnoreEditorToolHotkeys
     profilesModalOpen: s.profilesModalOpen,
     addWallModalOpen: s.addWallModalOpen,
     addFloorBeamModalOpen: s.addFloorBeamModalOpen,
+    floorBeamSplitModalOpen: s.floorBeamSplitModalOpen,
     addFoundationStripModalOpen: s.addFoundationStripModalOpen,
     addFoundationPileModalOpen: s.addFoundationPileModalOpen,
     addSlabModalOpen: s.addSlabModalOpen,

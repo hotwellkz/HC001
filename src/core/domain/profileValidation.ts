@@ -49,6 +49,11 @@ export function validateProfile(p: Profile): string[] {
   if (p.defaultThicknessMm != null && !Number.isFinite(p.defaultThicknessMm)) {
     errors.push("Некорректная толщина по умолчанию.");
   }
+  if (p.linearStockMaxLengthMm != null) {
+    if (!Number.isFinite(p.linearStockMaxLengthMm) || !(p.linearStockMaxLengthMm > 0)) {
+      errors.push("Максимальная длина сегмента (мм) должна быть числом больше 0.");
+    }
+  }
 
   if (p.category === "wall") {
     const mp = String(p.markPrefix ?? "").trim();

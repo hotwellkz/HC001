@@ -11,6 +11,7 @@ import { AddSlabModal } from "@/features/ui/AddSlabModal";
 import { AddFoundationStripModal } from "@/features/ui/AddFoundationStripModal";
 import { AddWallModal } from "@/features/ui/AddWallModal";
 import { AddFloorBeamModal } from "@/features/ui/AddFloorBeamModal";
+import { FloorBeamSplitModal } from "@/features/ui/FloorBeamSplitModal";
 import { WallJointParamsModal } from "@/features/ui/WallJointParamsModal";
 import { WallCalculationModal } from "@/features/ui/WallCalculationModal";
 import { WindowParamsModal } from "@/features/ui/window-modal/WindowParamsModal";
@@ -101,6 +102,7 @@ export function AppShell() {
       <ProfilesHost />
       <AddWallModal />
       <AddFloorBeamModal />
+      <FloorBeamSplitModal />
       <AddFoundationStripModal />
       <AddSlabModal />
       <SlabEditModal />
