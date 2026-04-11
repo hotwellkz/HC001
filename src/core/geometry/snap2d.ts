@@ -1,4 +1,5 @@
 import { snapWorldToGridAlignedToOrigin } from "../domain/projectOriginPlan";
+import { floorBeamCenterlineEndpointsMm, floorBeamPlanQuadCornersMm } from "../domain/floorBeamGeometry";
 import type { Project } from "../domain/project";
 import { getProfileById } from "../domain/profileOps";
 import {
@@ -203,6 +204,31 @@ export function collectFoundationPlanVertexSnapCandidatesMm(
   return dedupeVerticesMm(raw, SNAP_VERTEX_MERGE_EPS_MM);
 }
 
+function collectFloorBeamPlanVertexSnapCandidatesMm(
+  project: Project,
+  layerIds: ReadonlySet<string>,
+  excludeFloorBeamId?: string,
+): Point2D[] {
+  const raw: Point2D[] = [];
+  for (const b of project.floorBeams) {
+    if (!layerIds.has(b.layerId)) {
+      continue;
+    }
+    if (excludeFloorBeamId != null && b.id === excludeFloorBeamId) {
+      continue;
+    }
+    const q = floorBeamPlanQuadCornersMm(project, b);
+    if (q) {
+      raw.push(...q);
+    }
+    const cl = floorBeamCenterlineEndpointsMm(project, b);
+    if (cl) {
+      raw.push({ x: cl.cs.x, y: cl.cs.y }, { x: cl.ce.x, y: cl.ce.y });
+    }
+  }
+  return dedupeVerticesMm(raw, SNAP_VERTEX_MERGE_EPS_MM);
+}
+
 /**
  * Унифицированная привязка: приоритет vertex → edge → grid; пороги в px.
  * Без viewport vertex/edge/grid по пикселям не считаются — возвращается raw.
@@ -215,8 +241,11 @@ export function resolveSnap2d(input: {
   readonly gridStepMm: number;
   /** Исключить сваю из кандидатов привязки (перенос/копия этой сваи). */
   readonly excludeFoundationPileId?: string;
+  /** Исключить балку из кандидатов привязки (перенос этой балки). */
+  readonly excludeFloorBeamId?: string;
 }): SnapResult2d {
-  const { rawWorldMm, viewport, project, snapSettings, gridStepMm, excludeFoundationPileId } = input;
+  const { rawWorldMm, viewport, project, snapSettings, gridStepMm, excludeFoundationPileId, excludeFloorBeamId } =
+    input;
   const raw = rawWorldMm;
 
   if (!viewport) {
@@ -235,6 +264,7 @@ export function resolveSnap2d(input: {
       [
         ...collectWallPlanVertexSnapCandidatesMm(project, layerIds),
         ...collectFoundationPlanVertexSnapCandidatesMm(project, layerIds, excludeFoundationPileId),
+        ...collectFloorBeamPlanVertexSnapCandidatesMm(project, layerIds, excludeFloorBeamId),
       ],
       SNAP_VERTEX_MERGE_EPS_MM,
     );
@@ -347,6 +377,30 @@ export function resolveSnap2d(input: {
         const d = screenDistancePx(raw, q, viewport);
         if (d <= SNAP_EDGE_PX && (!bestEdge || d < bestEdge.dist)) {
           bestEdge = { point: { x: q.x, y: q.y }, dist: d };
+        }
+      }
+    }
+    for (const beam of project.floorBeams) {
+      if (!layerIds.has(beam.layerId)) {
+        continue;
+      }
+      if (excludeFloorBeamId != null && beam.id === excludeFloorBeamId) {
+        continue;
+      }
+      const q = floorBeamPlanQuadCornersMm(project, beam);
+      if (!q || q.length < 4) {
+        continue;
+      }
+      for (let i = 0; i < 4; i += 1) {
+        const a = q[i]!;
+        const b = q[(i + 1) % 4]!;
+        const { point: qq, t } = closestPointOnSegment(raw, a, b);
+        if (t <= ENDPOINT_EPS || t >= 1 - ENDPOINT_EPS) {
+          continue;
+        }
+        const d = screenDistancePx(raw, qq, viewport);
+        if (d <= SNAP_EDGE_PX && (!bestEdge || d < bestEdge.dist)) {
+          bestEdge = { point: { x: qq.x, y: qq.y }, dist: d };
         }
       }
     }

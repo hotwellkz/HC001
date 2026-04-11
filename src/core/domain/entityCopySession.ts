@@ -5,6 +5,7 @@ import type { SnapKind } from "../geometry/snap2d";
 export type EntityCopyTarget =
   | { readonly kind: "wall"; readonly id: string }
   | { readonly kind: "foundationPile"; readonly id: string }
+  | { readonly kind: "floorBeam"; readonly id: string }
   | { readonly kind: "planLine"; readonly id: string }
   | { readonly kind: "foundationStrip"; readonly id: string }
   | { readonly kind: "slab"; readonly id: string }

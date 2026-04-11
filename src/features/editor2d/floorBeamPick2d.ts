@@ -1,7 +1,10 @@
+import { snapTaggedPointsForFloorBeamEntity } from "@/core/domain/entityCopySnapSystem";
 import type { Project } from "@/core/domain/project";
 import type { FloorBeamEntity } from "@/core/domain/floorBeam";
 import { floorBeamPlanQuadCornersMm } from "@/core/domain/floorBeamGeometry";
 import type { Point2D } from "@/core/geometry/types";
+import type { ViewportTransform } from "@/core/geometry/viewportTransform";
+import { worldToScreen } from "@/core/geometry/viewportTransform";
 
 /** Точка в многоугольнике (мм), ось Y вверх. */
 function pointInPolygonMm(px: number, py: number, poly: readonly Point2D[]): boolean {
@@ -71,6 +74,32 @@ export function pickFloorBeamAtPlanPoint(
     }
   }
   return edgeBest?.beam ?? null;
+}
+
+/**
+ * Ближайшая опорная точка балки (как при копировании) к курсору в экранных пикселях.
+ */
+export function pickClosestFloorBeamHandle(
+  worldMm: Point2D,
+  project: Project,
+  beam: FloorBeamEntity,
+  viewport: ViewportTransform,
+  tolPx: number,
+): { readonly pointMm: Point2D } | null {
+  const tagged = snapTaggedPointsForFloorBeamEntity(project, beam);
+  if (tagged.length === 0) {
+    return null;
+  }
+  const s0 = worldToScreen(worldMm.x, worldMm.y, viewport);
+  let best: { pointMm: Point2D; d: number } | null = null;
+  for (const p of tagged) {
+    const s = worldToScreen(p.world.x, p.world.y, viewport);
+    const d = Math.hypot(s.x - s0.x, s.y - s0.y);
+    if (d <= tolPx && (!best || d < best.d)) {
+      best = { pointMm: { x: p.world.x, y: p.world.y }, d };
+    }
+  }
+  return best ? { pointMm: best.pointMm } : null;
 }
 
 function distancePointToSegmentMm(p: Point2D, a: Point2D, b: Point2D): number {

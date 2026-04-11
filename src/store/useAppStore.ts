@@ -142,7 +142,9 @@ import {
 import { rectangleCornersFromDiagonalMm } from "@/core/domain/slabPolygon";
 import type { FoundationPileEntity, FoundationPileKind } from "@/core/domain/foundationPile";
 import type { FoundationPileMoveCopySession } from "@/core/domain/foundationPileMoveCopySession";
+import type { FloorBeamMoveCopySession } from "@/core/domain/floorBeamMoveCopySession";
 import { translateFoundationPilesInProject } from "@/core/domain/foundationPileOps";
+import { translateFloorBeamsInProject } from "@/core/domain/floorBeamOps";
 import type { FoundationStripAutoPileSettings, FoundationStripSegmentEntity } from "@/core/domain/foundationStrip";
 import {
   applyAutoPilePersistToStripGroup,
@@ -165,6 +167,7 @@ import {
   referenceWallIdFromSnapForFoundationStrip,
 } from "@/features/editor2d/foundationStripNormals2d";
 import { pickClosestFoundationPileHandle } from "@/features/editor2d/foundationPilePick2d";
+import { pickClosestFloorBeamHandle } from "@/features/editor2d/floorBeamPick2d";
 import { buildWallCalculationForWall, SipWallLayoutError } from "@/core/domain/sipWallLayout";
 import type { WallShapeMode } from "@/core/domain/wallShapeMode";
 import {
@@ -345,6 +348,8 @@ interface AppState {
   readonly wallContextMenu: { readonly wallId: string; readonly clientX: number; readonly clientY: number } | null;
   /** Контекстное меню сваи на 2D (экранные координаты, position: fixed). */
   readonly foundationPileContextMenu: { readonly pileId: string; readonly clientX: number; readonly clientY: number } | null;
+  /** Контекстное меню балки перекрытия на 2D. */
+  readonly floorBeamContextMenu: { readonly beamId: string; readonly clientX: number; readonly clientY: number } | null;
   /** Линия / лента / проём: только действия вроде «Копировать». */
   readonly editor2dSecondaryContextMenu:
     | { readonly scope: "planLine"; readonly id: string; readonly clientX: number; readonly clientY: number }
@@ -356,6 +361,8 @@ interface AppState {
   readonly wallMoveCopySession: WallMoveCopySession | null;
   /** Перенос или копия сваи: базовая точка → цель с привязкой. */
   readonly foundationPileMoveCopySession: FoundationPileMoveCopySession | null;
+  /** Перенос балки перекрытия: базовая точка → цель с привязкой. */
+  readonly floorBeamMoveCopySession: FloorBeamMoveCopySession | null;
   /** Пробел: смещение второй точки переноса/копии. */
   readonly wallMoveCopyCoordinateModalOpen: boolean;
   readonly wallCalculationModalOpen: boolean;
@@ -370,6 +377,8 @@ interface AppState {
   readonly wallMoveCopyHistoryBaseline: Project | null;
   /** Снимок до переноса/копии сваи. */
   readonly foundationPileMoveCopyHistoryBaseline: Project | null;
+  /** Снимок до переноса балки. */
+  readonly floorBeamMoveCopyHistoryBaseline: Project | null;
   /** Универсальное копирование по двум точкам (House Creator): привязка → конец отрезка → параметры. */
   readonly entityCopySession: EntityCopySession | null;
   readonly entityCopyParamsModal: EntityCopyParamsModalState | null;
@@ -685,6 +694,18 @@ interface AppActions {
   cancelFoundationPileMoveCopy: () => void;
   foundationPileMoveCopyPreviewMove: (worldMm: Point2D, viewport: ViewportTransform) => void;
   foundationPileMoveCopyPrimaryClick: (worldMm: Point2D, viewport: ViewportTransform) => void;
+  openFloorBeamContextMenu: (input: {
+    readonly beamId: string;
+    readonly clientX: number;
+    readonly clientY: number;
+  }) => void;
+  closeFloorBeamContextMenu: () => void;
+  deleteFloorBeamFromContextMenu: (beamId: string) => void;
+  startFloorBeamMoveFromContextMenu: (beamId: string) => void;
+  startFloorBeamCopyFromContextMenu: (beamId: string) => void;
+  cancelFloorBeamMoveCopy: () => void;
+  floorBeamMoveCopyPreviewMove: (worldMm: Point2D, viewport: ViewportTransform) => void;
+  floorBeamMoveCopyPrimaryClick: (worldMm: Point2D, viewport: ViewportTransform) => void;
   cancelWallMoveCopy: () => void;
   wallMoveCopyPreviewMove: (
     worldMm: Point2D,
@@ -854,9 +875,12 @@ function historyJumpClearTransientUi(s: AppStore, restored: Project): Partial<Ap
     wallPlacementAnchorAngleSnapLockedDeg: null,
     wallContextMenu: null,
     foundationPileContextMenu: null,
+    floorBeamContextMenu: null,
     editor2dSecondaryContextMenu: null,
     foundationPileMoveCopySession: null,
     foundationPileMoveCopyHistoryBaseline: null,
+    floorBeamMoveCopySession: null,
+    floorBeamMoveCopyHistoryBaseline: null,
     entityCopySession: null,
     entityCopyParamsModal: null,
     entityCopyHistoryBaseline: null,
@@ -927,6 +951,7 @@ function resolvePlacementSnap(
   rawWorldMm: { readonly x: number; readonly y: number },
   viewport: ViewportTransform | null,
   excludeFoundationPileId?: string,
+  excludeFloorBeamId?: string,
 ) {
   const p0 = get().currentProject;
   const e2 = p0.settings.editor2d;
@@ -941,6 +966,7 @@ function resolvePlacementSnap(
     },
     gridStepMm: p0.settings.gridStepMm,
     excludeFoundationPileId,
+    excludeFloorBeamId,
   });
 }
 
@@ -1171,9 +1197,11 @@ export const useAppStore = create<AppStore>((set, get) => {
     wallPlacementAnchorAngleSnapLockedDeg: null,
     wallContextMenu: null,
     foundationPileContextMenu: null,
+    floorBeamContextMenu: null,
     editor2dSecondaryContextMenu: null,
     wallMoveCopySession: null,
     foundationPileMoveCopySession: null,
+    floorBeamMoveCopySession: null,
     wallMoveCopyCoordinateModalOpen: false,
     wallCalculationModalOpen: false,
     dirty: false,
@@ -1183,6 +1211,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     pendingOpeningPlacementHistoryBaseline: null,
     wallMoveCopyHistoryBaseline: null,
     foundationPileMoveCopyHistoryBaseline: null,
+    floorBeamMoveCopyHistoryBaseline: null,
     entityCopySession: null,
     entityCopyParamsModal: null,
     entityCopyHistoryBaseline: null,
@@ -1282,6 +1311,8 @@ export const useAppStore = create<AppStore>((set, get) => {
         const wallContextMenu = tool === "select" ? s.wallContextMenu : null;
         const foundationPileMoveCopySession = tool === "select" ? s.foundationPileMoveCopySession : null;
         const foundationPileContextMenu = tool === "select" ? s.foundationPileContextMenu : null;
+        const floorBeamMoveCopySession = tool === "select" ? s.floorBeamMoveCopySession : null;
+        const floorBeamContextMenu = tool === "select" ? s.floorBeamContextMenu : null;
         const editor2dSecondaryContextMenu = tool === "select" ? s.editor2dSecondaryContextMenu : null;
         const entityCopySession = tool === "select" ? s.entityCopySession : null;
         const entityCopyParamsModal = tool === "select" ? s.entityCopyParamsModal : null;
@@ -1291,11 +1322,14 @@ export const useAppStore = create<AppStore>((set, get) => {
           dirty,
           wallMoveCopyHistoryBaseline: projectMutated ? null : s.wallMoveCopyHistoryBaseline,
           foundationPileMoveCopyHistoryBaseline: projectMutated ? null : s.foundationPileMoveCopyHistoryBaseline,
+          floorBeamMoveCopyHistoryBaseline: projectMutated ? null : s.floorBeamMoveCopyHistoryBaseline,
           wallMoveCopySession,
           wallMoveCopyCoordinateModalOpen,
           wallContextMenu,
           foundationPileMoveCopySession,
           foundationPileContextMenu,
+          floorBeamMoveCopySession,
+          floorBeamContextMenu,
           editor2dSecondaryContextMenu,
           entityCopySession,
           entityCopyParamsModal,
@@ -1468,9 +1502,11 @@ export const useAppStore = create<AppStore>((set, get) => {
           wallPlacementAnchorAngleSnapLockedDeg: tab === "2d" ? s.wallPlacementAnchorAngleSnapLockedDeg : null,
           wallContextMenu: tab === "2d" ? s.wallContextMenu : null,
           foundationPileContextMenu: tab === "2d" ? s.foundationPileContextMenu : null,
+          floorBeamContextMenu: tab === "2d" ? s.floorBeamContextMenu : null,
           editor2dSecondaryContextMenu: tab === "2d" ? s.editor2dSecondaryContextMenu : null,
           wallMoveCopySession: tab === "2d" ? s.wallMoveCopySession : null,
           foundationPileMoveCopySession: tab === "2d" ? s.foundationPileMoveCopySession : null,
+          floorBeamMoveCopySession: tab === "2d" ? s.floorBeamMoveCopySession : null,
           wallMoveCopyCoordinateModalOpen: tab === "2d" ? s.wallMoveCopyCoordinateModalOpen : false,
           entityCopySession: tab === "2d" ? s.entityCopySession : null,
           entityCopyParamsModal: tab === "2d" ? s.entityCopyParamsModal : null,
@@ -4458,6 +4494,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({
         wallContextMenu: { wallId: input.wallId, clientX: input.clientX, clientY: input.clientY },
         foundationPileContextMenu: null,
+        floorBeamContextMenu: null,
         editor2dSecondaryContextMenu: null,
         lastError: null,
       }),
@@ -4471,10 +4508,13 @@ export const useAppStore = create<AppStore>((set, get) => {
         buildProjectMutationState(s, next, {
           wallContextMenu: null,
           foundationPileContextMenu: null,
+          floorBeamContextMenu: null,
           editor2dSecondaryContextMenu: null,
           wallMoveCopySession: null,
           foundationPileMoveCopySession: null,
           foundationPileMoveCopyHistoryBaseline: null,
+          floorBeamMoveCopySession: null,
+          floorBeamMoveCopyHistoryBaseline: null,
           wallMoveCopyCoordinateModalOpen: false,
           wallMoveCopyHistoryBaseline: null,
           entityCopySession: null,
@@ -4496,17 +4536,34 @@ export const useAppStore = create<AppStore>((set, get) => {
           clientY: input.clientY,
         },
         wallContextMenu: null,
+        floorBeamContextMenu: null,
         editor2dSecondaryContextMenu: null,
         lastError: null,
       }),
 
     closeFoundationPileContextMenu: () => set({ foundationPileContextMenu: null }),
 
+    openFloorBeamContextMenu: (input) =>
+      set({
+        floorBeamContextMenu: {
+          beamId: input.beamId,
+          clientX: input.clientX,
+          clientY: input.clientY,
+        },
+        wallContextMenu: null,
+        foundationPileContextMenu: null,
+        editor2dSecondaryContextMenu: null,
+        lastError: null,
+      }),
+
+    closeFloorBeamContextMenu: () => set({ floorBeamContextMenu: null }),
+
     openEditor2dSecondaryContextMenu: (input) =>
       set({
         editor2dSecondaryContextMenu: input,
         wallContextMenu: null,
         foundationPileContextMenu: null,
+        floorBeamContextMenu: null,
         lastError: null,
       }),
 
@@ -4528,6 +4585,22 @@ export const useAppStore = create<AppStore>((set, get) => {
       );
     },
 
+    deleteFloorBeamFromContextMenu: (beamId) => {
+      const { currentProject, selectedEntityIds } = get();
+      const next = deleteEntitiesFromProject(currentProject, new Set([beamId]));
+      set((s) =>
+        buildProjectMutationState(s, next, {
+          floorBeamContextMenu: null,
+          editor2dSecondaryContextMenu: null,
+          floorBeamMoveCopySession: null,
+          floorBeamMoveCopyHistoryBaseline: null,
+          selectedEntityIds: selectedEntityIds.filter((id) => id !== beamId),
+          dirty: true,
+          lastError: null,
+        }),
+      );
+    },
+
     startFoundationPileMoveFromContextMenu: (pileId) => {
       const pile = get().currentProject.foundationPiles.find((p) => p.id === pileId);
       if (!pile) {
@@ -4538,6 +4611,7 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({
         foundationPileMoveCopyHistoryBaseline: baseline,
         foundationPileContextMenu: null,
+        floorBeamContextMenu: null,
         editor2dSecondaryContextMenu: null,
         wallContextMenu: null,
         wallMoveCopySession: null,
@@ -4546,6 +4620,8 @@ export const useAppStore = create<AppStore>((set, get) => {
         entityCopySession: null,
         entityCopyParamsModal: null,
         entityCopyHistoryBaseline: null,
+        floorBeamMoveCopySession: null,
+        floorBeamMoveCopyHistoryBaseline: null,
         foundationPileMoveCopySession: {
           mode: "move",
           sourcePileId: pileId,
@@ -4673,6 +4749,142 @@ export const useAppStore = create<AppStore>((set, get) => {
       );
     },
 
+    startFloorBeamMoveFromContextMenu: (beamId) => {
+      const beam = get().currentProject.floorBeams.find((b) => b.id === beamId);
+      if (!beam) {
+        set({ lastError: "Балка не найдена.", floorBeamContextMenu: null });
+        return;
+      }
+      const baseline = cloneProjectSnapshot(get().currentProject);
+      set({
+        floorBeamMoveCopyHistoryBaseline: baseline,
+        floorBeamContextMenu: null,
+        foundationPileContextMenu: null,
+        editor2dSecondaryContextMenu: null,
+        wallContextMenu: null,
+        wallMoveCopySession: null,
+        wallMoveCopyCoordinateModalOpen: false,
+        wallMoveCopyHistoryBaseline: null,
+        foundationPileMoveCopySession: null,
+        foundationPileMoveCopyHistoryBaseline: null,
+        entityCopySession: null,
+        entityCopyParamsModal: null,
+        entityCopyHistoryBaseline: null,
+        floorBeamMoveCopySession: {
+          sourceBeamId: beamId,
+          workingBeamId: beamId,
+          phase: "pickBase",
+          baseAnchorWorldMm: null,
+          dragDeltaMm: null,
+          lastSnapKind: null,
+        },
+        selectedEntityIds: [beamId],
+        lastError: null,
+      });
+    },
+
+    startFloorBeamCopyFromContextMenu: (beamId) => {
+      get().startEntityCopyMode({ kind: "floorBeam", id: beamId });
+    },
+
+    cancelFloorBeamMoveCopy: () => {
+      const s = get().floorBeamMoveCopySession;
+      if (!s) {
+        return;
+      }
+      set({
+        floorBeamMoveCopySession: null,
+        floorBeamMoveCopyHistoryBaseline: null,
+        selectedEntityIds: get().currentProject.floorBeams.some((b) => b.id === s.sourceBeamId)
+          ? [s.sourceBeamId]
+          : [],
+        lastError: null,
+      });
+    },
+
+    floorBeamMoveCopyPreviewMove: (worldMm, viewport) => {
+      const s = get().floorBeamMoveCopySession;
+      if (!s || s.phase !== "pickTarget" || !s.baseAnchorWorldMm) {
+        return;
+      }
+      if (isSceneCoordinateModalBlocking(get())) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport, undefined, s.workingBeamId);
+      const a = s.baseAnchorWorldMm;
+      const dragDeltaMm = { x: snap.point.x - a.x, y: snap.point.y - a.y };
+      set({
+        floorBeamMoveCopySession: {
+          ...s,
+          dragDeltaMm,
+          lastSnapKind: snap.kind,
+        },
+      });
+    },
+
+    floorBeamMoveCopyPrimaryClick: (worldMm, viewport) => {
+      if (isSceneCoordinateModalBlocking(get())) {
+        return;
+      }
+      const s = get().floorBeamMoveCopySession;
+      if (!s) {
+        return;
+      }
+      const p0 = get().currentProject;
+      const beam = p0.floorBeams.find((b) => b.id === s.workingBeamId);
+      if (!beam) {
+        get().cancelFloorBeamMoveCopy();
+        return;
+      }
+      if (s.phase === "pickBase") {
+        const tolPx = 18;
+        const hit = pickClosestFloorBeamHandle(worldMm, p0, beam, viewport, tolPx);
+        if (!hit) {
+          set({ lastError: "Выберите точку на балке (угол, середина ребра, торец или центр)." });
+          return;
+        }
+        set({
+          floorBeamMoveCopySession: {
+            ...s,
+            phase: "pickTarget",
+            baseAnchorWorldMm: { x: hit.pointMm.x, y: hit.pointMm.y },
+            dragDeltaMm: { x: 0, y: 0 },
+            lastSnapKind: null,
+          },
+          lastError: null,
+        });
+        return;
+      }
+      const anchor = s.baseAnchorWorldMm;
+      if (!anchor) {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport, undefined, s.workingBeamId);
+      const dx = snap.point.x - anchor.x;
+      const dy = snap.point.y - anchor.y;
+      if (Math.hypot(dx, dy) < MIN_WALL_SEGMENT_LENGTH_MM) {
+        set({ lastError: "Смещение слишком мало." });
+        return;
+      }
+      const proj = translateFloorBeamsInProject(get().currentProject, new Set([s.workingBeamId]), dx, dy);
+      set((st) =>
+        buildProjectMutationState(
+          st,
+          touchProjectMeta(proj),
+          {
+            floorBeamMoveCopySession: null,
+            floorBeamMoveCopyHistoryBaseline: null,
+            selectedEntityIds: [s.workingBeamId],
+            dirty: true,
+            lastError: null,
+          },
+          {
+            historyBefore: st.floorBeamMoveCopyHistoryBaseline ?? st.currentProject,
+          },
+        ),
+      );
+    },
+
     startWallMoveFromContextMenu: (wallId) => {
       const w = get().currentProject.walls.find((x) => x.id === wallId);
       if (!w) {
@@ -4684,9 +4896,12 @@ export const useAppStore = create<AppStore>((set, get) => {
         wallMoveCopyHistoryBaseline: baseline,
         wallContextMenu: null,
         foundationPileContextMenu: null,
+        floorBeamContextMenu: null,
         editor2dSecondaryContextMenu: null,
         foundationPileMoveCopySession: null,
         foundationPileMoveCopyHistoryBaseline: null,
+        floorBeamMoveCopySession: null,
+        floorBeamMoveCopyHistoryBaseline: null,
         entityCopySession: null,
         entityCopyParamsModal: null,
         entityCopyHistoryBaseline: null,
@@ -4907,12 +5122,15 @@ export const useAppStore = create<AppStore>((set, get) => {
             o.offsetFromStartMm != null &&
             (o.kind === "window" || o.kind === "door"),
         );
+      } else if (target.kind === "floorBeam") {
+        ok = layer.floorBeams.some((x) => x.id === target.id);
       }
       if (!ok) {
         set({
           lastError: "Объект не найден на активном слое или для него копирование недоступно.",
           wallContextMenu: null,
           foundationPileContextMenu: null,
+          floorBeamContextMenu: null,
         });
         return;
       }
@@ -4936,12 +5154,15 @@ export const useAppStore = create<AppStore>((set, get) => {
         entityCopyParamsModal: null,
         wallContextMenu: null,
         foundationPileContextMenu: null,
+        floorBeamContextMenu: null,
         editor2dSecondaryContextMenu: null,
         wallMoveCopySession: null,
         wallMoveCopyCoordinateModalOpen: false,
         wallMoveCopyHistoryBaseline: null,
         foundationPileMoveCopySession: null,
         foundationPileMoveCopyHistoryBaseline: null,
+        floorBeamMoveCopySession: null,
+        floorBeamMoveCopyHistoryBaseline: null,
         selectedEntityIds: [target.id],
         lastError: null,
       });

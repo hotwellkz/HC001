@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Keyboard, List, MoreHorizontal, Redo2, Undo2 } from "lucide-react";
 
 import { Editor2DPlanToolbar } from "@/features/ui/Editor2DPlanToolbar";
 import { Editor2DFloorStructureToolbar } from "@/features/ui/Editor2DFloorStructureToolbar";
@@ -9,6 +10,7 @@ import { ThemeMenu } from "@/features/ui/ThemeMenu";
 import { projectCommands } from "@/features/project/commands";
 import { APP_NAME } from "@/shared/constants";
 import { computeAnchoredPopoverPosition } from "@/shared/ui/computeAnchoredPopoverPosition";
+import { LucideToolIcon } from "@/shared/ui/LucideToolIcon";
 import { useAppStore } from "@/store/useAppStore";
 import { useEditorShortcutsStore } from "@/store/useEditorShortcutsStore";
 
@@ -30,62 +32,6 @@ function getTopBarMode(width: number): TopBarMode {
     return "medium";
   }
   return "wide";
-}
-
-function IconProfiles() {
-  return (
-    <svg className="tb-prof-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z"
-        opacity="0.45"
-      />
-      <path fill="currentColor" d="M4 4h16v3H4V4zm0 6.5h16v3H4v-3zm0 6.5h16v3H4v-3z" />
-    </svg>
-  );
-}
-
-function IconMore() {
-  return (
-    <svg className="tb-overflow-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <circle cx="6" cy="12" r="1.8" fill="currentColor" />
-      <circle cx="12" cy="12" r="1.8" fill="currentColor" />
-      <circle cx="18" cy="12" r="1.8" fill="currentColor" />
-    </svg>
-  );
-}
-
-function IconKeyboard() {
-  return (
-    <svg className="tb-keys-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M4 6h16a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2zm0 2v8h16V8H4zm2 2h2v2H6v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zm4 0h2v2h-2v-2zM6 14h12v2H6v-2z"
-      />
-    </svg>
-  );
-}
-
-function IconUndo() {
-  return (
-    <svg className="tb-keys-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M12 5v3.5l-4-4 4-4V4a8 8 0 11-8 8h2a6 6 0 106-6V5z"
-      />
-    </svg>
-  );
-}
-
-function IconRedo() {
-  return (
-    <svg className="tb-keys-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M12 5v3.5l4-4-4-4V4a8 8 0 108 8h-2a6 6 0 10-6-6V5z"
-      />
-    </svg>
-  );
 }
 
 function TopBarOverflowMenu({
@@ -175,7 +121,7 @@ function TopBarOverflowMenu({
           aria-expanded={open}
           onClick={() => onOpenChange(!open)}
         >
-          <IconMore />
+          <LucideToolIcon icon={MoreHorizontal} className="tb-overflow-icon" />
         </button>
       </div>
       {open
@@ -301,7 +247,7 @@ export function TopBar() {
           disabled={!canUndo}
           onClick={() => undo()}
         >
-          <IconUndo />
+          <LucideToolIcon icon={Undo2} className="tb-keys-icon" />
         </button>
         <button
           type="button"
@@ -311,7 +257,7 @@ export function TopBar() {
           disabled={!canRedo}
           onClick={() => redo()}
         >
-          <IconRedo />
+          <LucideToolIcon icon={Redo2} className="tb-keys-icon" />
         </button>
         <button
           type="button"
@@ -320,7 +266,7 @@ export function TopBar() {
           aria-label="Горячие клавиши"
           onClick={() => openHotkeys()}
         >
-          <IconKeyboard />
+          <LucideToolIcon icon={Keyboard} className="tb-keys-icon" />
         </button>
         <ThemeMenu />
         <button
@@ -330,7 +276,7 @@ export function TopBar() {
           aria-label="Профили"
           onClick={() => openProfiles()}
         >
-          <IconProfiles />
+          <LucideToolIcon icon={List} className="tb-prof-icon" />
         </button>
         {mode === "wide" ? (
           <>

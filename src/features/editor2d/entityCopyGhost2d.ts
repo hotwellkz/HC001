@@ -9,6 +9,7 @@ import {
   foundationStripOrthoRingFootprintContoursFromEntityMm,
   foundationStripSegmentFootprintQuadMm,
 } from "@/core/domain/foundationStripGeometry";
+import { floorBeamPlanQuadCornersMm } from "@/core/domain/floorBeamGeometry";
 import type { Project } from "@/core/domain/project";
 import { getProfileById } from "@/core/domain/profileOps";
 import { isOpeningPlacedOnWall } from "@/core/domain/opening";
@@ -149,6 +150,20 @@ export function drawEntityCopyGhost2d(
       { x: cx - h, y: cy + h },
     ];
     strokeQuad(g, q, t, 0, 0);
+    return;
+  }
+
+  if (target.kind === "floorBeam") {
+    const beam = project.floorBeams.find((x) => x.id === target.id);
+    if (!beam) {
+      return;
+    }
+    const q = floorBeamPlanQuadCornersMm(project, beam);
+    if (!q || q.length < 4) {
+      return;
+    }
+    const shifted = q.map((p) => shift(p, dxMm, dyMm));
+    strokeQuad(g, shifted, t, 0, 0);
     return;
   }
 

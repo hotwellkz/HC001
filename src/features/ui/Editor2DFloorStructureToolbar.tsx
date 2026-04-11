@@ -1,19 +1,9 @@
+import { GripHorizontal } from "lucide-react";
+
+import { LucideToolIcon } from "@/shared/ui/LucideToolIcon";
 import { useAppStore } from "@/store/useAppStore";
 
 import "./editor2d-plan-toolbar.css";
-
-function IconFloorBeam() {
-  return (
-    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M3 10h18v4H3v-4zm2-2h14v2H5V8zm0 8h14v2H5v-2z"
-        opacity="0.85"
-      />
-      <path fill="currentColor" d="M4 11h16v2H4v-2z" opacity="0.35" />
-    </svg>
-  );
-}
 
 /** Инструменты режима «Перекрытие» на 2D-плане. */
 export function Editor2DFloorStructureToolbar() {
@@ -31,7 +21,7 @@ export function Editor2DFloorStructureToolbar() {
         data-active={beamToolActive}
         onClick={() => openBeam()}
       >
-        <IconFloorBeam />
+        <LucideToolIcon icon={GripHorizontal} className="e2dpt-icon" />
       </button>
     </div>
   );

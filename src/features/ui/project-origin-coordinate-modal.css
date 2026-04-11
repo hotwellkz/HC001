@@ -5,18 +5,55 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
+  padding: var(--space-lg);
+  background: var(--color-overlay);
+  animation: pocm-backdrop-in var(--t-normal) var(--ease-out-soft) both;
+}
+
+@supports (backdrop-filter: blur(8px)) {
+  .pocm-backdrop {
+    backdrop-filter: blur(var(--blur-overlay)) saturate(var(--saturation-glass));
+    -webkit-backdrop-filter: blur(var(--blur-overlay)) saturate(var(--saturation-glass));
+  }
+}
+
+@keyframes pocm-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .pocm-dialog {
   min-width: 320px;
   max-width: 92vw;
-  padding: 16px 18px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border-subtle);
-  background: var(--color-surface-raised);
+  padding: var(--space-lg) var(--space-xl);
+  border-radius: var(--radius-modal);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-glass-modal-fill, var(--color-glass-fill-strong));
   color: var(--color-text-primary);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-modal);
+  animation: pocm-dialog-in var(--t-normal) var(--ease-out-soft) both;
+}
+
+@supports (backdrop-filter: blur(8px)) {
+  .pocm-dialog {
+    backdrop-filter: blur(var(--blur-modal)) saturate(var(--saturation-glass));
+    -webkit-backdrop-filter: blur(var(--blur-modal)) saturate(var(--saturation-glass));
+  }
+}
+
+@keyframes pocm-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .pocm-title {
@@ -48,19 +85,28 @@
 }
 
 .pocm-input {
-  height: 32px;
-  padding: 0 8px;
-  border-radius: 6px;
+  min-height: 40px;
+  padding: 0 var(--space-sm);
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-border-subtle);
-  background: var(--color-surface-default);
+  background: var(--color-input-bg);
   color: var(--color-text-primary);
-  font-size: 14px;
+  font-size: var(--text-body-sm);
+  transition:
+    border-color var(--t-fast) var(--ease-standard),
+    box-shadow var(--t-fast) var(--ease-standard);
+}
+
+.pocm-input:focus {
+  outline: none;
+  border-color: var(--color-accent-outline);
+  box-shadow: var(--shadow-focus-glow);
 }
 
 .pocm-err {
-  color: #ef4444;
-  font-size: 12px;
-  margin-bottom: 10px;
+  color: var(--color-danger);
+  font-size: var(--text-label);
+  margin-bottom: var(--space-sm);
 }
 
 .pocm-actions {
@@ -70,11 +116,26 @@
 }
 
 .pocm-btn {
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-size: 13px;
+  min-height: 36px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-md);
+  font-size: var(--text-body-sm);
+  font-weight: 500;
   cursor: pointer;
   border: 1px solid transparent;
+  transition:
+    background var(--t-fast) var(--ease-standard),
+    border-color var(--t-fast) var(--ease-standard),
+    transform var(--t-fast) var(--ease-standard);
+}
+
+.pocm-btn:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+
+.pocm-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus-glow);
 }
 
 .pocm-btn--ghost {
@@ -83,8 +144,17 @@
   color: var(--color-text-primary);
 }
 
+.pocm-btn--ghost:hover:not(:disabled) {
+  background: var(--color-surface-hover);
+}
+
 .pocm-btn--primary {
-  background: var(--color-accent-soft);
-  border-color: var(--color-accent-outline);
-  color: var(--color-text-primary);
+  background: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 88%, #000 12%);
+  color: var(--color-text-on-accent);
+}
+
+.pocm-btn--primary:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
 }

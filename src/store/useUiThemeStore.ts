@@ -8,12 +8,12 @@ const STORAGE_KEY = "sip-hd-ui-v1";
 
 function readStoredColorScheme(): UiColorScheme {
   if (typeof window === "undefined") {
-    return "dark";
+    return "light";
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return "dark";
+      return "light";
     }
     const parsed = JSON.parse(raw) as { state?: { colorScheme?: string } };
     const s = parsed?.state?.colorScheme;
@@ -23,7 +23,7 @@ function readStoredColorScheme(): UiColorScheme {
   } catch {
     /* ignore */
   }
-  return "dark";
+  return "light";
 }
 
 interface UiThemeState {
@@ -47,6 +47,13 @@ export const useUiThemeStore = create<UiThemeState>()(
     {
       name: STORAGE_KEY,
       partialize: (s) => ({ colorScheme: s.colorScheme }),
+      /** После async rehydrate синхронизируем <html data-theme> (bootstrap уже выставил то же значение). */
+      onRehydrateStorage: () => (state) => {
+        const s = state?.colorScheme;
+        if (s === "light" || s === "dark") {
+          applyColorSchemeToDocument(s);
+        }
+      },
     },
   ),
 );

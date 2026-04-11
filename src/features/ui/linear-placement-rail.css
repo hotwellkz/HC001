@@ -6,8 +6,8 @@
   align-items: center;
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-xs);
-  border-left: 1px solid var(--color-border-subtle);
-  background: var(--color-surface-base);
+  border-left: 1px solid color-mix(in srgb, var(--color-border-subtle) 85%, transparent);
+  background: color-mix(in srgb, var(--color-chrome) 92%, var(--color-app-bg) 8%);
   flex-shrink: 0;
   min-height: 0;
 }
@@ -34,21 +34,27 @@
   width: 44px;
   height: 44px;
   padding: 0;
-  border: 1px solid var(--color-border-subtle);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 75%, transparent);
   border-radius: var(--radius-md);
   background: var(--color-surface-raised);
   color: var(--color-text-secondary);
   cursor: pointer;
+  box-shadow: 0 1px 0 var(--color-glass-border-inner);
   transition:
     background var(--t-fast) var(--ease-standard),
     border-color var(--t-fast) var(--ease-standard),
     color var(--t-fast) var(--ease-standard),
-    box-shadow var(--t-fast) var(--ease-standard);
+    box-shadow var(--t-fast) var(--ease-standard),
+    transform var(--t-fast) var(--ease-standard);
 }
 
 .lpr-btn:hover {
   background: var(--color-surface-hover);
   color: var(--color-text-primary);
+}
+
+.lpr-btn:active {
+  transform: scale(0.97);
 }
 
 .lpr-btn:focus-visible {
@@ -61,6 +67,22 @@
   border-color: var(--color-accent-outline);
   color: var(--color-accent);
   box-shadow: var(--shadow-accent-glow);
+}
+
+html[data-theme="dark"] .lpr {
+  background: rgba(255, 255, 255, 0.02);
+  border-left-color: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme="dark"] .lpr-btn {
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+html[data-theme="dark"] .lpr-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.14);
 }
 
 .lpr-icon {

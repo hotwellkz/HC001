@@ -1,6 +1,6 @@
 import { Container, Graphics, Text } from "pixi.js";
 
-import { cssHexToPixiNumber } from "@/shared/cssColor";
+import { cssColorToPixiNumber } from "@/shared/cssColor";
 
 import type { ViewportTransform } from "./viewportTransforms";
 import { worldToScreen } from "./viewportTransforms";
@@ -25,7 +25,7 @@ export function drawProjectOriginMarker2d(
   const root = document.documentElement;
   const cs = getComputedStyle(root);
   const muted = cs.getPropertyValue("--color-text-muted").trim() || "#8b96a8";
-  const mutedPixi = cssHexToPixiNumber(muted);
+  const mutedPixi = cssColorToPixiNumber(muted);
 
   const p0 = worldToScreen(originMm.x, originMm.y, t);
   const half = opts.toolActive ? 6 : 5;

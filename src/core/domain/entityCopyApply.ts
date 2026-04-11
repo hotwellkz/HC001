@@ -1,3 +1,4 @@
+import { duplicateFloorBeamInProject, translateFloorBeamsInProject } from "./floorBeamOps";
 import { duplicateFoundationPileInProject, translateFoundationPilesInProject } from "./foundationPileOps";
 import type { EntityCopyTarget } from "./entityCopySession";
 import { duplicatePlanLineInProject } from "./planLine";
@@ -71,6 +72,20 @@ export function applyEntityCopyWithAnchorTargets(
       }
       proj = translateFoundationPilesInProject(r.project, new Set([r.newPileId]), dx, dy);
       newIds.push(r.newPileId);
+    }
+    return { project: touchProjectMeta(proj), newEntityIds: newIds };
+  }
+
+  if (target.kind === "floorBeam") {
+    for (const pt of anchorTargetWorldPoints) {
+      const dx = pt.x - worldAnchorStart.x;
+      const dy = pt.y - worldAnchorStart.y;
+      const r = duplicateFloorBeamInProject(proj, target.id);
+      if ("error" in r) {
+        return { error: r.error };
+      }
+      proj = translateFloorBeamsInProject(r.project, new Set([r.newBeamId]), dx, dy);
+      newIds.push(r.newBeamId);
     }
     return { project: touchProjectMeta(proj), newEntityIds: newIds };
   }

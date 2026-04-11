@@ -2,15 +2,35 @@
 .ed2d-fpile-ctx {
   position: fixed;
   z-index: 50;
-  min-width: 148px;
-  padding: 4px 0;
-  border-radius: var(--radius-sm, 6px);
-  border: 1px solid var(--color-border-subtle);
-  background: var(--color-surface-raised);
+  min-width: 160px;
+  padding: var(--space-xs) 0;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
+  background: var(--color-glass-fill-strong);
   color: var(--color-text-primary);
-  box-shadow: var(--shadow-panel);
-  font-size: var(--text-body-sm, 13px);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--text-body-sm);
   font-weight: 500;
+  animation: ed2d-ctx-in var(--t-fast) var(--ease-out-soft) both;
+}
+
+@supports (backdrop-filter: blur(8px)) {
+  .ed2d-wall-ctx,
+  .ed2d-fpile-ctx {
+    backdrop-filter: blur(var(--blur-popover)) saturate(var(--saturation-glass));
+    -webkit-backdrop-filter: blur(var(--blur-popover)) saturate(var(--saturation-glass));
+  }
+}
+
+@keyframes ed2d-ctx-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .ed2d-wall-ctx__item {
@@ -26,10 +46,10 @@
 }
 
 .ed2d-wall-ctx__item:hover {
-  background: var(--color-surface-overlay, rgba(255, 255, 255, 0.06));
+  background: var(--color-surface-overlay);
 }
 
 .ed2d-wall-ctx__item:focus-visible {
-  outline: 2px solid var(--color-focus-ring, #5aa7ff);
-  outline-offset: -2px;
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--color-focus-ring);
 }

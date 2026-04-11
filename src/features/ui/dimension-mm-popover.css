@@ -9,13 +9,32 @@
   min-width: 208px;
   padding: var(--space-md) var(--space-lg);
   border-radius: var(--radius-md);
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border-strong);
-  box-shadow: var(--shadow-panel);
+  background: var(--color-glass-fill-strong);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
+  box-shadow: var(--shadow-popover);
   font-family: var(--font-sans);
   font-size: var(--text-body-sm);
   line-height: var(--lh-body-sm);
   color: var(--color-text-primary);
+  animation: dim-mm-in var(--t-fast) var(--ease-out-soft) both;
+}
+
+@supports (backdrop-filter: blur(8px)) {
+  .dim-mm-popover {
+    backdrop-filter: blur(var(--blur-popover)) saturate(var(--saturation-glass));
+    -webkit-backdrop-filter: blur(var(--blur-popover)) saturate(var(--saturation-glass));
+  }
+}
+
+@keyframes dim-mm-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .dim-mm-popover__title {
@@ -119,12 +138,12 @@
 }
 
 .dim-mm-popover__btn--primary {
-  background: var(--color-accent-soft);
-  border-color: var(--color-accent-outline);
-  color: var(--color-text-on-accent-soft);
+  background: var(--color-accent);
+  border-color: color-mix(in srgb, var(--color-accent) 88%, #000 12%);
+  color: var(--color-text-on-accent);
 }
 
 .dim-mm-popover__btn--primary:hover:not(:disabled) {
-  background: var(--color-surface-active);
-  border-color: var(--color-accent);
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
 }

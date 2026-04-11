@@ -1,23 +1,10 @@
+import { ChevronLeft, ChevronRight } from "lucide-react";
+
 import { projectCommands } from "@/features/project/commands";
+import { LucideToolIcon } from "@/shared/ui/LucideToolIcon";
 import { useAppStore } from "@/store/useAppStore";
 
 import "./right-properties-panel.css";
-
-function IconChevronRight() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M9 6l6 6-6 6V6z" />
-    </svg>
-  );
-}
-
-function IconChevronLeft() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M15 6l-6 6 6 6V6z" />
-    </svg>
-  );
-}
 
 export function RightPropertiesPanel() {
   const open = useAppStore((s) => s.uiPanels.rightPropertiesOpen);
@@ -48,7 +35,7 @@ export function RightPropertiesPanel() {
           aria-label="Развернуть свойства"
           onClick={() => setCollapsed(false)}
         >
-          <IconChevronLeft />
+          <LucideToolIcon icon={ChevronLeft} />
         </button>
       </aside>
     );
@@ -65,7 +52,7 @@ export function RightPropertiesPanel() {
           aria-label="Свернуть свойства"
           onClick={() => setCollapsed(true)}
         >
-          <IconChevronRight />
+          <LucideToolIcon icon={ChevronRight} />
         </button>
       </header>
       <div className="rpp-body">

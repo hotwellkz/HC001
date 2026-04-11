@@ -3,7 +3,7 @@
  * Логика геометрии размеров в домене не задаётся здесь — только токены оформления.
  */
 
-import { cssHexToPixiNumber } from "@/shared/cssColor";
+import { cssColorToPixiNumber } from "@/shared/cssColor";
 
 /** Совпадает с подписью в measureDimensionLabelTextWidthPx и с Pixi Text. */
 export const DIMENSION_TEXT_FONT_STACK = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
@@ -82,5 +82,5 @@ export function readDimensionStyleColors(): { readonly line: number; readonly te
   const cs = getComputedStyle(root);
   const line = cs.getPropertyValue("--color-dimension-line").trim() || "#64748b";
   const text = cs.getPropertyValue("--color-dimension-text").trim() || "#1f2937";
-  return { line: cssHexToPixiNumber(line), text: cssHexToPixiNumber(text) };
+  return { line: cssColorToPixiNumber(line), text: cssColorToPixiNumber(text) };
 }

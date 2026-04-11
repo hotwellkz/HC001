@@ -88,16 +88,28 @@
   color: var(--color-accent);
   cursor: pointer;
   flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition:
     background var(--t-fast) var(--ease-standard),
     border-color var(--t-fast) var(--ease-standard),
     box-shadow var(--t-fast) var(--ease-standard);
 }
 
+html[data-theme="dark"] .tb-prof-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
 .tb-prof-btn:hover {
   border-color: var(--color-accent-outline);
   background: var(--color-surface-hover);
   box-shadow: var(--shadow-accent-glow);
+}
+
+html[data-theme="dark"] .tb-prof-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(94, 169, 255, 0.45);
 }
 
 .tb-prof-btn:focus-visible {
@@ -140,15 +152,25 @@
   background: var(--color-surface-raised);
   color: var(--color-text-secondary);
   cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition:
     background var(--t-fast) var(--ease-standard),
     border-color var(--t-fast) var(--ease-standard),
     color var(--t-fast) var(--ease-standard);
 }
 
+html[data-theme="dark"] .tb-overflow-trigger {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.11);
+}
+
 .tb-overflow-trigger:hover {
   background: var(--color-surface-hover);
   color: var(--color-text-primary);
+}
+
+html[data-theme="dark"] .tb-overflow-trigger:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .tb-overflow-trigger:focus-visible {
@@ -165,9 +187,28 @@
   min-width: 180px;
   padding: var(--space-xs);
   border-radius: var(--radius-md);
-  border: 1px solid var(--color-border-subtle);
-  background: var(--color-surface-raised);
-  box-shadow: var(--shadow-panel);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
+  background: var(--color-glass-fill-strong);
+  box-shadow: var(--shadow-popover);
+  animation: tb-pop-in var(--t-fast) var(--ease-out-soft) both;
+}
+
+@supports (backdrop-filter: blur(8px)) {
+  .tb-overflow-popover {
+    backdrop-filter: blur(var(--blur-popover)) saturate(var(--saturation-glass));
+    -webkit-backdrop-filter: blur(var(--blur-popover)) saturate(var(--saturation-glass));
+  }
+}
+
+@keyframes tb-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* Портал в document.body: не режется overflow шапки (.shell-top { overflow: hidden }) */

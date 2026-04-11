@@ -13,7 +13,7 @@ import { wallJointHintRu } from "@/core/domain/wallJointSession";
 import { pickNearestLinearProfileLengthEnd } from "@/core/domain/linearLengthChangePick";
 import { pickNearestWallEnd, pickWallSegmentInterior } from "@/core/domain/wallJointPick";
 import { getProfileById } from "@/core/domain/profileOps";
-import { cssHexToPixiNumber } from "@/shared/cssColor";
+import { cssColorToPixiNumber } from "@/shared/cssColor";
 import {
   DIMENSION_FONT_SIZE_PX,
   DIMENSION_TEXT_FONT_STACK,
@@ -171,12 +171,32 @@ function drawFoundationStripPreviewRing(
   g.stroke({ width: 1.2, color: 0x5c4a38, alpha: 0.72 });
 }
 
-function readCanvasColorsFromTheme(): { readonly bg: number; readonly grid: number } {
+function readCanvasColorsFromTheme(): { readonly bg: number } {
   const root = document.documentElement;
   const cs = getComputedStyle(root);
   const bg = cs.getPropertyValue("--color-canvas-bg").trim() || "#14171b";
-  const grid = cs.getPropertyValue("--color-grid-line").trim() || "#2a2f36";
-  return { bg: cssHexToPixiNumber(bg), grid: cssHexToPixiNumber(grid) };
+  return { bg: cssColorToPixiNumber(bg) };
+}
+
+function readGridPaintFromTheme(): {
+  readonly minorColor: number;
+  readonly majorColor: number;
+  readonly minorAlpha: number;
+  readonly majorAlpha: number;
+} {
+  const cs = getComputedStyle(document.documentElement);
+  const parseAlpha = (prop: string, fallback: number): number => {
+    const v = parseFloat(cs.getPropertyValue(prop).trim());
+    return Number.isFinite(v) && v >= 0 && v <= 1 ? v : fallback;
+  };
+  const minorHex = cs.getPropertyValue("--color-grid-line-pixi-minor").trim() || "#4a5566";
+  const majorHex = cs.getPropertyValue("--color-grid-line-pixi-major").trim() || "#5a6578";
+  return {
+    minorColor: cssColorToPixiNumber(minorHex),
+    majorColor: cssColorToPixiNumber(majorHex),
+    minorAlpha: parseAlpha("--grid-line-alpha-minor", 0.07),
+    majorAlpha: parseAlpha("--grid-line-alpha-major", 0.13),
+  };
 }
 
 const MARQUEE_MIN_DRAG_PX = 5;
@@ -360,6 +380,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   const wallContextMenu = useAppStore((s) => s.wallContextMenu);
   const foundationPileContextMenu = useAppStore((s) => s.foundationPileContextMenu);
   const foundationPileMoveCopySession = useAppStore((s) => s.foundationPileMoveCopySession);
+  const floorBeamContextMenu = useAppStore((s) => s.floorBeamContextMenu);
+  const floorBeamMoveCopySession = useAppStore((s) => s.floorBeamMoveCopySession);
   const entityCopySession = useAppStore((s) => s.entityCopySession);
   const editor2dSecondaryContextMenu = useAppStore((s) => s.editor2dSecondaryContextMenu);
   const jointHoverRef = useRef<JointHoverState>(null);
@@ -463,6 +485,12 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   }, [foundationPileMoveCopySession]);
 
   useEffect(() => {
+    if (!floorBeamMoveCopySession) {
+      setCoordHud(null);
+    }
+  }, [floorBeamMoveCopySession]);
+
+  useEffect(() => {
     if (!entityCopySession) {
       setCoordHud(null);
     }
@@ -474,12 +502,14 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       if (
         t?.closest?.(".ed2d-wall-ctx") ||
         t?.closest?.(".ed2d-fpile-ctx") ||
+        t?.closest?.(".ed2d-fbeam-ctx") ||
         t?.closest?.(".ed2d-secondary-ctx")
       ) {
         return;
       }
       useAppStore.getState().closeWallContextMenu();
       useAppStore.getState().closeFoundationPileContextMenu();
+      useAppStore.getState().closeFloorBeamContextMenu();
       useAppStore.getState().closeEditor2dSecondaryContextMenu();
     };
     window.addEventListener("mousedown", onDown, true);
@@ -626,6 +656,13 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         if (useAppStore.getState().foundationPileMoveCopySession) {
           e.preventDefault();
           useAppStore.getState().cancelFoundationPileMoveCopy();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          return;
+        }
+        if (useAppStore.getState().floorBeamMoveCopySession) {
+          e.preventDefault();
+          useAppStore.getState().cancelFloorBeamMoveCopy();
           setWallHintRef.current(null);
           setCoordHudRef.current(null);
           return;
@@ -1067,15 +1104,17 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const slabSessCross = st.slabPlacementSession;
       const ecSessCross = st.entityCopySession;
       const fpMc = st.foundationPileMoveCopySession;
+      const fbMc = st.floorBeamMoveCopySession;
       const firstPh =
         ws && (ws.phase === "waitingFirstWallPoint" || ws.phase === "waitingOriginAndFirst");
       const foundationPickCrosshair =
         (fsSess != null || fpSess != null) &&
         fpMc == null &&
+        fbMc == null &&
         !st.openingMoveModeActive &&
         !st.projectOriginMoveToolActive;
       const pileMovePickCrosshair =
-        fpMc != null && !st.openingMoveModeActive && !st.projectOriginMoveToolActive;
+        (fpMc != null || fbMc != null) && !st.openingMoveModeActive && !st.projectOriginMoveToolActive;
       const wallPickCrosshair =
         ws != null &&
         !st.wallCoordinateModalOpen &&
@@ -1207,6 +1246,30 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               snapToGrid: e2.snapToGrid,
             },
             gridStepMm: proj.settings.gridStepMm,
+          });
+          const sc = worldToScreen(snap.point.x, snap.point.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        }
+      } else if (fbMc) {
+        if (fbMc.phase === "pickTarget" && fbMc.baseAnchorWorldMm) {
+          const d = fbMc.dragDeltaMm ?? { x: 0, y: 0 };
+          const basePt = { x: fbMc.baseAnchorWorldMm.x + d.x, y: fbMc.baseAnchorWorldMm.y + d.y };
+          const sc = worldToScreen(basePt.x, basePt.y, t);
+          centerRx = sc.x;
+          centerRy = sc.y;
+        } else {
+          const snap = resolveSnap2d({
+            rawWorldMm: { x: last.worldX, y: last.worldY },
+            viewport: t,
+            project: proj,
+            snapSettings: {
+              snapToVertex: e2.snapToVertex,
+              snapToEdge: e2.snapToEdge,
+              snapToGrid: e2.snapToGrid,
+            },
+            gridStepMm: proj.settings.gridStepMm,
+            excludeFloorBeamId: fbMc.workingBeamId,
           });
           const sc = worldToScreen(snap.point.x, snap.point.y, t);
           centerRx = sc.x;
@@ -1517,7 +1580,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       const w = app.renderer.width;
       const h = app.renderer.height;
       const t = buildViewportTransform(w, h, viewport2d.panXMm, viewport2d.panYMm, viewport2d.zoomPixelsPerMm);
-      const { bg: canvasBg, grid: GRID_COLOR } = readCanvasColorsFromTheme();
+      const { bg: canvasBg } = readCanvasColorsFromTheme();
+      const gridPaint = readGridPaintFromTheme();
       if (app.renderer.background) {
         app.renderer.background.color = canvasBg;
       }
@@ -1537,7 +1601,12 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         for (const ln of lines) {
           gridG.moveTo(ln.x0, ln.y0);
           gridG.lineTo(ln.x1, ln.y1);
-          gridG.stroke({ width: 1, color: GRID_COLOR, alpha: 0.65 });
+          const major = ln.kind === "major";
+          gridG.stroke({
+            width: 1,
+            color: major ? gridPaint.majorColor : gridPaint.minorColor,
+            alpha: major ? gridPaint.majorAlpha : gridPaint.minorAlpha,
+          });
         }
       }
 
@@ -2083,6 +2152,23 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           };
           drawFoundationPiles2d(previewG, [ghost], t, new Set(), {
             appearance: "ghost",
+            clear: false,
+          });
+        }
+      }
+
+      const fbMcPaint = useAppStore.getState().floorBeamMoveCopySession;
+      if (fbMcPaint?.phase === "pickTarget" && fbMcPaint.baseAnchorWorldMm) {
+        const bEnt = currentProject.floorBeams.find((b0) => b0.id === fbMcPaint.workingBeamId);
+        if (bEnt) {
+          const d = fbMcPaint.dragDeltaMm ?? { x: 0, y: 0 };
+          const ghostBeam = {
+            ...bEnt,
+            refStartMm: { x: bEnt.refStartMm.x + d.x, y: bEnt.refStartMm.y + d.y },
+            refEndMm: { x: bEnt.refEndMm.x + d.x, y: bEnt.refEndMm.y + d.y },
+          };
+          drawFloorBeams2d(previewG, currentProject, [ghostBeam], t, new Set(), {
+            appearance: "context",
             clear: false,
           });
         }
@@ -2894,6 +2980,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           floorBeamPlacementSession,
           wallMoveCopySession,
           foundationPileMoveCopySession,
+          floorBeamMoveCopySession,
           currentProject,
           wallJointSession,
           wallCoordinateModalOpen,
@@ -3764,6 +3851,67 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               setCoordHudRef.current(null);
             }
             paint();
+          } else if (floorBeamMoveCopySession) {
+            const fbM0 = useAppStore.getState().floorBeamMoveCopySession;
+            const titleFb = "Перенос балки";
+            if (fbM0?.phase === "pickTarget") {
+              useAppStore.getState().floorBeamMoveCopyPreviewMove(p, t);
+              const fbM2 = useAppStore.getState().floorBeamMoveCopySession;
+              let snapFb = "";
+              if (fbM2?.lastSnapKind && fbM2.lastSnapKind !== "none") {
+                snapFb =
+                  fbM2.lastSnapKind === "vertex"
+                    ? "\nПривязка: угол / узел"
+                    : fbM2.lastSnapKind === "edge"
+                      ? "\nПривязка: кромка / ребро"
+                      : "\nПривязка: сетка";
+              }
+              const hudFb = computePlacementHudScreenPosition({
+                canvasRect: rect,
+                cursorCanvasX: ev.global.x,
+                cursorCanvasY: ev.global.y,
+                wallCoordinateModalOpen: false,
+                showCoordHud: false,
+              });
+              setWallHintRef.current({
+                left: hudFb.hintLeft,
+                top: hudFb.hintTop,
+                text: `${titleFb}\nУкажите новое положение\nЛКМ — зафиксировать · ПКМ / Esc — отмена${snapFb}`,
+              });
+              const beamRef = currentProject.floorBeams.find((b) => b.id === fbM2?.workingBeamId);
+              if (fbM2?.baseAnchorWorldMm && fbM2.dragDeltaMm != null && beamRef && hudFb.coordHudLeft != null && hudFb.coordHudTop != null) {
+                const dx = fbM2.dragDeltaMm.x;
+                const dy = fbM2.dragDeltaMm.y;
+                const d = Math.hypot(dx, dy);
+                setCoordHudRef.current({
+                  left: hudFb.coordHudLeft,
+                  top: hudFb.coordHudTop,
+                  dx,
+                  dy,
+                  d,
+                  angleDeg: undefined,
+                  angleSnapLockedDeg: null,
+                  axisHint: null,
+                });
+              } else {
+                setCoordHudRef.current(null);
+              }
+            } else {
+              const hudFbb = computePlacementHudScreenPosition({
+                canvasRect: rect,
+                cursorCanvasX: ev.global.x,
+                cursorCanvasY: ev.global.y,
+                wallCoordinateModalOpen: false,
+                showCoordHud: false,
+              });
+              setWallHintRef.current({
+                left: hudFbb.hintLeft,
+                top: hudFbb.hintTop,
+                text: `${titleFb}\nВыберите точку на балке (угол, ребро, торец) · ЛКМ\nПКМ / Esc — отмена`,
+              });
+              setCoordHudRef.current(null);
+            }
+            paint();
           } else if (wallMoveCopySession) {
             const stMc = useAppStore.getState();
             const wm = stMc.wallMoveCopySession;
@@ -4139,6 +4287,26 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           return;
         }
 
+        const floorBeamMoveCopySessionPtr = useAppStore.getState().floorBeamMoveCopySession;
+        if (floorBeamMoveCopySessionPtr && ev.button === 2) {
+          ev.preventDefault();
+          useAppStore.getState().cancelFloorBeamMoveCopy();
+          setWallHintRef.current(null);
+          setCoordHudRef.current(null);
+          paint();
+          return;
+        }
+
+        if (floorBeamMoveCopySessionPtr && ev.button === 0) {
+          useAppStore.getState().floorBeamMoveCopyPrimaryClick(worldMm, t);
+          paint();
+          if (!useAppStore.getState().floorBeamMoveCopySession) {
+            setWallHintRef.current(null);
+            setCoordHudRef.current(null);
+          }
+          return;
+        }
+
         const wallMoveCopySessionPtr = useAppStore.getState().wallMoveCopySession;
         if (wallMoveCopySessionPtr && ev.button === 2) {
           ev.preventDefault();
@@ -4250,6 +4418,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           !useAppStore.getState().pendingDoorPlacement &&
           !useAppStore.getState().wallMoveCopySession &&
           !useAppStore.getState().foundationPileMoveCopySession &&
+          !useAppStore.getState().floorBeamMoveCopySession &&
           !useAppStore.getState().entityCopySession &&
           !useAppStore.getState().entityCopyParamsModal
         ) {
@@ -4341,6 +4510,21 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             return;
           }
 
+          const beamHitRm = pickFloorBeamAtPlanPoint(cpRm, layerRm.floorBeams, worldMm, segTolRm);
+          if (activeTool === "select" && beamHitRm) {
+            const canvasBm = app.canvas as HTMLCanvasElement;
+            const rectBm = canvasBm.getBoundingClientRect();
+            const sxBm = rectBm.left + (ev.global.x / w) * rectBm.width;
+            const syBm = rectBm.top + (ev.global.y / h) * rectBm.height;
+            useAppStore.getState().openFloorBeamContextMenu({
+              beamId: beamHitRm.id,
+              clientX: sxBm,
+              clientY: syBm,
+            });
+            paint();
+            return;
+          }
+
           const wallHitRm = pickClosestWallAlongPoint(worldMm, layerRm.walls, wallTolRm);
           if (activeTool === "select" && wallHitRm) {
             const canvasRm = app.canvas as HTMLCanvasElement;
@@ -4384,6 +4568,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           !useAppStore.getState().pendingDoorPlacement &&
           !useAppStore.getState().wallMoveCopySession &&
           !useAppStore.getState().foundationPileMoveCopySession &&
+          !useAppStore.getState().floorBeamMoveCopySession &&
           !useAppStore.getState().entityCopySession &&
           !useAppStore.getState().entityCopyParamsModal
         ) {
@@ -4491,7 +4676,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             const stAfter = useAppStore.getState();
             const pileIdSet = new Set(stAfter.currentProject.foundationPiles.map((p) => p.id));
             const pileIds = stAfter.selectedEntityIds.filter((id) => pileIdSet.has(id));
-            if (!stAfter.foundationPileMoveCopySession) {
+            if (!stAfter.foundationPileMoveCopySession && !stAfter.floorBeamMoveCopySession) {
               foundationPilePointerRef.current = {
                 pointerId: ev.pointerId,
                 sx: ev.global.x,
@@ -4803,6 +4988,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           !st.pendingDoorPlacement &&
           !st.wallMoveCopySession &&
           !st.foundationPileMoveCopySession &&
+          !st.floorBeamMoveCopySession &&
           !st.entityCopySession &&
           !st.foundationStripPlacementSession &&
           !st.foundationPilePlacementSession &&
@@ -4819,6 +5005,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           st.pendingDoorPlacement ||
           st.wallMoveCopySession ||
           st.foundationPileMoveCopySession ||
+          st.floorBeamMoveCopySession ||
           st.entityCopySession ||
           st.foundationStripPlacementSession ||
           st.foundationPilePlacementSession ||
@@ -5033,6 +5220,44 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             className="ed2d-wall-ctx__item"
             role="menuitem"
             onClick={() => useAppStore.getState().deleteFoundationPileFromContextMenu(foundationPileContextMenu.pileId)}
+          >
+            Удалить
+          </button>
+        </div>
+      ) : null}
+      {floorBeamContextMenu ? (
+        <div
+          className="ed2d-fbeam-ctx ed2d-wall-ctx"
+          style={{
+            position: "fixed",
+            left: floorBeamContextMenu.clientX,
+            top: floorBeamContextMenu.clientY,
+            zIndex: 50,
+          }}
+          role="menu"
+          aria-label="Действия с балкой перекрытия"
+        >
+          <button
+            type="button"
+            className="ed2d-wall-ctx__item"
+            role="menuitem"
+            onClick={() => useAppStore.getState().startFloorBeamMoveFromContextMenu(floorBeamContextMenu.beamId)}
+          >
+            Переместить
+          </button>
+          <button
+            type="button"
+            className="ed2d-wall-ctx__item"
+            role="menuitem"
+            onClick={() => useAppStore.getState().startFloorBeamCopyFromContextMenu(floorBeamContextMenu.beamId)}
+          >
+            Копировать
+          </button>
+          <button
+            type="button"
+            className="ed2d-wall-ctx__item"
+            role="menuitem"
+            onClick={() => useAppStore.getState().deleteFloorBeamFromContextMenu(floorBeamContextMenu.beamId)}
           >
             Удалить
           </button>

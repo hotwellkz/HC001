@@ -1,5 +1,7 @@
 import { type CSSProperties, useEffect, useId, useRef, useState } from "react";
+import { Layers } from "lucide-react";
 
+import { LucideToolIcon } from "@/shared/ui/LucideToolIcon";
 import { useAppStore } from "@/store/useAppStore";
 
 import { hasDoorGeometry3d, hasWindowGeometry3d } from "./view3dVisibility";
@@ -52,17 +54,7 @@ export function Editor3dVisibilityPanel() {
         aria-controls={`${idBase}-panel`}
         onClick={() => setOpen((o) => !o)}
       >
-        <svg className="ed3-vis-icon" viewBox="0 0 24 24" fill="none" aria-hidden>
-          <path
-            d="M3 5h18M3 12h18M3 19h18"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <circle cx="8" cy="5" r="1.5" fill="currentColor" />
-          <circle cx="16" cy="12" r="1.5" fill="currentColor" />
-          <circle cx="10" cy="19" r="1.5" fill="currentColor" />
-        </svg>
+        <LucideToolIcon icon={Layers} className="ed3-vis-icon" />
         Видимость
       </button>
       {open ? (

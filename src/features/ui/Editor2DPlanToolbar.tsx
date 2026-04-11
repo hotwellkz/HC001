@@ -1,131 +1,21 @@
+import {
+  AppWindow,
+  Calculator,
+  Crosshair,
+  Cylinder,
+  DoorOpen,
+  GitBranch,
+  House,
+  LocateFixed,
+  Move,
+  PanelTop,
+  Rows3,
+} from "lucide-react";
+
+import { LucideToolIcon } from "@/shared/ui/LucideToolIcon";
 import { useAppStore } from "@/store/useAppStore";
 
 import "./editor2d-plan-toolbar.css";
-
-function IconWallAdd() {
-  return (
-    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M4 20V10l8-5 8 5v10h-2v-8.5l-6-3.75-6 3.75V20H4zm9 0v-4h-2v4h2zm4-7V6h2v7h-2zM4 8V4h2v4H4z"
-      />
-    </svg>
-  );
-}
-
-function IconAnchorPoint() {
-  return (
-    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M11 2h2v7h7v2h-7v7h-2v-7H4v-2h7V2z" opacity="0.45" />
-      <circle cx="12" cy="12" r="2.5" fill="currentColor" />
-    </svg>
-  );
-}
-
-function IconWindowAdd() {
-  return (
-    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M4 6h16v2H4V6zm0 5h10v2H4v-2zm0 5h8v2H4v-2z"
-        opacity="0.35"
-      />
-      <path
-        fill="currentColor"
-        d="M13 11h8v11h-2v-4h-4v4h-2V11zm2 2v5h4v-5h-4z"
-      />
-    </svg>
-  );
-}
-
-function IconDoorAdd() {
-  return (
-    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M5 4h12a1 1 0 0 1 1 1v15h-2V6H7v14H5V4zm4 7h2v2H9v-2z" />
-      <path fill="currentColor" d="M19 9h2v10h-2z" opacity="0.45" />
-    </svg>
-  );
-}
-
-function IconCalculate() {
-  return (
-    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14zM7 7h2v2H7V7zm4 0h6v2h-6V7zM7 11h2v2H7v-2zm4 0h6v2h-6v-2zm-4 4h2v2H7v-2zm4 0h6v2h-6v-2z"
-      />
-    </svg>
-  );
-}
-
-function IconMoveOpening() {
-  return (
-    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M12 3l3 3h-2v4h-2V6H9l3-3zm0 18l-3-3h2v-4h2v4h2l-3 3zM3 12l3-3v2h4v2H6v2l-3-3zm18 0l-3 3v-2h-4v-2h4V9l3 3z" />
-    </svg>
-  );
-}
-
-function IconProjectOrigin() {
-  return (
-    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M11 3h2v8h8v2h-8v8h-2v-8H3v-2h8V3z" opacity="0.35" />
-      <circle cx="12" cy="12" r="3" fill="currentColor" />
-    </svg>
-  );
-}
-
-function IconFoundationStrip() {
-  return (
-    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M4 18h16v2H4v-2zm2-3h12v2H6v-2zm2-3h8v2H8v-2zm2-3h4v2h-4V9z"
-        opacity="0.4"
-      />
-      <path
-        fill="currentColor"
-        d="M5 5h14a1 1 0 011 1v3H4V6a1 1 0 011-1zm1 2v1h12V7H6zm-1 5h14v2H5v-2z"
-      />
-    </svg>
-  );
-}
-
-function IconFoundationPile() {
-  return (
-    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M9 3h6v3H9V3zm-1 5h8v12a1 1 0 01-1 1H9a1 1 0 01-1-1V8z"
-        opacity="0.42"
-      />
-      <path fill="currentColor" d="M8 6h8v2H8V6zm1 8h6v1.5H9V14z" />
-    </svg>
-  );
-}
-
-/** Плита в плане: горизонтальная плита сверху + тонкая кромка. */
-function IconSlab() {
-  return (
-    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M4 9h16v8H4V9zm0-2h16v2H4V7z" opacity="0.38" />
-      <path fill="currentColor" d="M4 9h16v1.5H4V9z" />
-      <path fill="none" stroke="currentColor" strokeWidth="1.25" d="M4 17h16" opacity="0.55" />
-    </svg>
-  );
-}
-
-function IconWallJoint() {
-  return (
-    <svg className="e2dpt-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M4 20h16v-2H4v2zm0-8h10v-2H4v2zm0-6h6V4H4v2z" opacity="0.35" />
-      <path
-        fill="currentColor"
-        d="M18 4v10h-2V7.5L9.5 4H18zm-1.5 12c.8 0 1.5.7 1.5 1.5S17.3 19 16.5 19 15 18.3 15 17.5 15.7 16 16.5 16z"
-      />
-    </svg>
-  );
-}
 
 export function Editor2DPlanToolbar() {
   const open = useAppStore((s) => s.openAddWallModal);
@@ -170,7 +60,7 @@ export function Editor2DPlanToolbar() {
         data-active={foundationStripToolActive}
         onClick={() => openFoundationStrip()}
       >
-        <IconFoundationStrip />
+        <LucideToolIcon icon={Rows3} className="e2dpt-icon" />
       </button>
       <button
         type="button"
@@ -183,7 +73,7 @@ export function Editor2DPlanToolbar() {
         data-active={foundationPileToolActive}
         onClick={() => openFoundationPile()}
       >
-        <IconFoundationPile />
+        <LucideToolIcon icon={Cylinder} className="e2dpt-icon" />
       </button>
       <button
         type="button"
@@ -194,7 +84,7 @@ export function Editor2DPlanToolbar() {
         data-active={slabToolActive}
         onClick={() => openSlab()}
       >
-        <IconSlab />
+        <LucideToolIcon icon={PanelTop} className="e2dpt-icon" />
       </button>
       <button
         type="button"
@@ -205,7 +95,7 @@ export function Editor2DPlanToolbar() {
         data-active={wallToolActive}
         onClick={() => open()}
       >
-        <IconWallAdd />
+        <LucideToolIcon icon={House} className="e2dpt-icon" />
       </button>
       <button
         type="button"
@@ -223,7 +113,7 @@ export function Editor2DPlanToolbar() {
         disabled={!wallToolActive}
         onClick={() => toggleAnchorMode()}
       >
-        <IconAnchorPoint />
+        <LucideToolIcon icon={Crosshair} className="e2dpt-icon" />
       </button>
       <button
         type="button"
@@ -232,7 +122,7 @@ export function Editor2DPlanToolbar() {
         aria-label="Добавить окно"
         onClick={() => openWindow()}
       >
-        <IconWindowAdd />
+        <LucideToolIcon icon={AppWindow} className="e2dpt-icon" />
       </button>
       <button
         type="button"
@@ -241,7 +131,7 @@ export function Editor2DPlanToolbar() {
         aria-label="Добавить дверь"
         onClick={() => openDoor()}
       >
-        <IconDoorAdd />
+        <LucideToolIcon icon={DoorOpen} className="e2dpt-icon" />
       </button>
       <button
         type="button"
@@ -252,7 +142,7 @@ export function Editor2DPlanToolbar() {
         data-active={jointModalOpen || jointSession != null}
         onClick={() => openJoint()}
       >
-        <IconWallJoint />
+        <LucideToolIcon icon={GitBranch} className="e2dpt-icon" />
       </button>
       <button
         type="button"
@@ -264,7 +154,7 @@ export function Editor2DPlanToolbar() {
         disabled={selectedOpeningCount !== 1}
         onClick={() => toggleOpeningMoveMode()}
       >
-        <IconMoveOpening />
+        <LucideToolIcon icon={Move} className="e2dpt-icon" />
       </button>
       <button
         type="button"
@@ -275,7 +165,7 @@ export function Editor2DPlanToolbar() {
         data-active={projectOriginMoveToolActive}
         onClick={() => toggleProjectOriginMoveTool()}
       >
-        <IconProjectOrigin />
+        <LucideToolIcon icon={LocateFixed} className="e2dpt-icon" />
       </button>
       <button
         type="button"
@@ -285,7 +175,7 @@ export function Editor2DPlanToolbar() {
         disabled={selectedWallCount === 0}
         onClick={() => openCalc()}
       >
-        <IconCalculate />
+        <LucideToolIcon icon={Calculator} className="e2dpt-icon" />
       </button>
     </div>
   );

@@ -12,7 +12,7 @@
     "status status status";
   height: 100vh;
   width: 100vw;
-  background: var(--color-app-bg);
+  background: var(--shell-root-bg, var(--color-app-bg));
 }
 
 .shell[data-right-props="collapsed"] {
@@ -30,7 +30,8 @@
   padding: 0 var(--space-md);
   min-height: var(--layout-top-toolbar);
   border-bottom: 1px solid var(--color-border-subtle);
-  background: var(--color-surface-base);
+  background: var(--shell-chrome-bg, var(--color-chrome));
+  box-shadow: var(--shadow-chrome-bar, var(--shadow-chrome));
   gap: var(--content-gap, var(--space-md));
   overflow: hidden;
 }
@@ -63,7 +64,7 @@
   flex-direction: column;
   min-height: 0;
   border-right: 1px solid var(--color-border-subtle);
-  background: var(--color-surface-base);
+  background: var(--shell-chrome-bg, var(--color-chrome));
 }
 
 .shell-center {
@@ -74,7 +75,7 @@
   min-height: 0;
   width: 100%;
   overflow: hidden;
-  background: var(--color-app-bg);
+  background: var(--shell-center-bg, var(--color-app-bg));
 }
 
 .workspace-2d-main {
@@ -86,7 +87,7 @@
 .shell-right {
   grid-area: right;
   border-left: 1px solid var(--color-border-subtle);
-  background: var(--color-surface-base);
+  background: var(--shell-chrome-bg, var(--color-chrome));
   min-width: 0;
   overflow: auto;
   padding: var(--space-md);
@@ -108,7 +109,7 @@
   padding: 0 var(--space-sm);
   min-height: var(--layout-status);
   border-top: 1px solid var(--color-border-subtle);
-  background: var(--color-surface-base);
+  background: var(--shell-chrome-bg, var(--color-chrome));
   font-size: var(--text-label);
   line-height: var(--lh-label);
   color: var(--color-text-muted);
@@ -120,21 +121,28 @@
   align-items: center;
   padding: var(--space-sm) var(--space-md);
   border-bottom: 1px solid var(--color-border-subtle);
-  background: var(--color-surface-base);
+  background: var(--shell-chrome-bg, var(--color-chrome));
   gap: var(--space-md);
 }
 
-/* Legacy .tabs — переход на ui-segmented в WorkspaceTabs; оставляем для совместимости */
+/* Вкладки 2D / 3D / … — segmented glass */
 .tabs {
   display: inline-flex;
   align-items: center;
-  height: 40px;
-  padding: 2px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-raised);
+  height: 38px;
+  padding: 3px;
+  border-radius: var(--radius-pill);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 80%, transparent);
+  background: color-mix(in srgb, var(--color-surface-raised) 88%, var(--color-app-bg) 12%);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.05);
   gap: 2px;
   overflow: visible;
+}
+
+html[data-theme="dark"] .tabs {
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 5px rgba(0, 0, 0, 0.4);
 }
 
 .tabs button {
@@ -142,14 +150,15 @@
   background: transparent;
   color: var(--color-text-secondary);
   padding: 0 var(--space-md);
-  height: 36px;
-  border-radius: var(--radius-sm);
+  height: 32px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
   font-size: var(--text-body-sm);
   font-weight: 500;
   transition:
     background var(--t-fast) var(--ease-standard),
-    color var(--t-fast) var(--ease-standard);
+    color var(--t-fast) var(--ease-standard),
+    box-shadow var(--t-fast) var(--ease-standard);
 }
 
 .tabs button:hover {
@@ -157,8 +166,24 @@
 }
 
 .tabs button[data-active="true"] {
-  background: var(--color-surface-hover);
+  background: var(--color-surface-raised);
   color: var(--color-text-primary);
+  box-shadow: var(--shadow-segment-active);
+  font-weight: 600;
+}
+
+html[data-theme="light"] .tabs button[data-active="true"] {
+  background: #ffffff;
+  color: var(--color-accent);
+}
+
+html[data-theme="dark"] .tabs button[data-active="true"] {
+  background: linear-gradient(180deg, rgba(44, 56, 84, 0.98) 0%, rgba(28, 36, 54, 0.96) 100%);
+  color: rgba(248, 250, 255, 0.98);
+  box-shadow:
+    0 0 0 1px rgba(94, 169, 255, 0.38),
+    0 4px 16px rgba(0, 0, 0, 0.38),
+    0 0 28px rgba(77, 163, 255, 0.14);
 }
 
 .muted {
@@ -181,9 +206,18 @@
   cursor: pointer;
   font-size: var(--text-body-sm);
   font-weight: 500;
+  box-shadow: var(--shadow-inset-highlight), 0 1px 3px rgba(0, 0, 0, 0.2);
   transition:
     background var(--t-fast) var(--ease-standard),
-    border-color var(--t-fast) var(--ease-standard);
+    border-color var(--t-fast) var(--ease-standard),
+    box-shadow var(--t-fast) var(--ease-standard),
+    transform var(--t-fast) var(--ease-standard);
+}
+
+html[data-theme="dark"] .btn {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 .btn:hover {
@@ -191,7 +225,37 @@
   border-color: var(--color-border-strong);
 }
 
+html[data-theme="dark"] .btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.btn:active {
+  transform: translateY(0.5px);
+}
+
 .btn:focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus-glow);
+}
+
+/* Стеклянный chrome поверх атмосферного body (dark / light). */
+@supports (backdrop-filter: blur(8px)) {
+  html[data-theme="dark"] .shell-top,
+  html[data-theme="dark"] .shell-nav-rail,
+  html[data-theme="dark"] .shell-right,
+  html[data-theme="dark"] .shell-status,
+  html[data-theme="dark"] .workspace-subbar {
+    backdrop-filter: blur(var(--blur-chrome, 14px)) saturate(var(--saturation-glass, 1.15));
+    -webkit-backdrop-filter: blur(var(--blur-chrome, 14px)) saturate(var(--saturation-glass, 1.15));
+  }
+
+  html[data-theme="light"] .shell-top,
+  html[data-theme="light"] .shell-nav-rail,
+  html[data-theme="light"] .shell-right,
+  html[data-theme="light"] .shell-status,
+  html[data-theme="light"] .workspace-subbar {
+    backdrop-filter: blur(var(--blur-chrome, 12px)) saturate(1.06);
+    -webkit-backdrop-filter: blur(var(--blur-chrome, 12px)) saturate(1.06);
+  }
 }

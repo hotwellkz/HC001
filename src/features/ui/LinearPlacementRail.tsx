@@ -1,119 +1,33 @@
 import type { ReactNode } from "react";
+import {
+  AlignLeft,
+  AlignRight,
+  Boxes,
+  CircleDot,
+  Grid3x3,
+  ScanEye,
+  SeparatorHorizontal,
+  Slash,
+  Square,
+} from "lucide-react";
 
 import type { LinearProfilePlacementMode } from "@/core/geometry/linearPlacementGeometry";
 import type { WallShapeMode } from "@/core/domain/wallShapeMode";
+import { LucideToolIcon } from "@/shared/ui/LucideToolIcon";
 import { useAppStore } from "@/store/useAppStore";
 
 import "./linear-placement-rail.css";
 
-function IconLine() {
-  return (
-    <svg className="lpr-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <line x1="5" y1="19" x2="19" y2="5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function IconRect() {
-  return (
-    <svg className="lpr-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="none" stroke="currentColor" strokeWidth="2" d="M6 7h12v10H6z" />
-    </svg>
-  );
-}
-
-function IconCenter() {
-  return (
-    <svg className="lpr-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M12 4c-4.42 0-8 3.58-8 8s3.58 8 8 8 8-3.58 8-8-3.58-8-8-8zm0 2a6 6 0 110 12 6 6 0 010-12zm0 2a4 4 0 100 8 4 4 0 000-8z"
-      />
-    </svg>
-  );
-}
-
-function IconAlignLeft() {
-  return (
-    <svg className="lpr-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M4 6h16v2H4V6zm0 5h10v2H4v-2zm0 5h14v2H4v-2z" />
-    </svg>
-  );
-}
-
-function IconAlignRight() {
-  return (
-    <svg className="lpr-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="currentColor" d="M4 6h16v2H4V6zm10 5h6v2h-6v-2zM6 16h14v2H6v-2z" />
-    </svg>
-  );
-}
-
 const SHAPES: readonly { mode: WallShapeMode; title: string; icon: ReactNode }[] = [
-  { mode: "line", title: "Линия", icon: <IconLine /> },
-  { mode: "rectangle", title: "Прямоугольник", icon: <IconRect /> },
+  { mode: "line", title: "Линия", icon: <LucideToolIcon icon={Slash} className="lpr-icon" /> },
+  { mode: "rectangle", title: "Прямоугольник", icon: <LucideToolIcon icon={Square} className="lpr-icon" /> },
 ];
 
 const MODES: readonly { mode: LinearProfilePlacementMode; title: string; icon: ReactNode }[] = [
-  { mode: "center", title: "По центру", icon: <IconCenter /> },
-  { mode: "leftEdge", title: "По левому краю", icon: <IconAlignLeft /> },
-  { mode: "rightEdge", title: "По правому краю", icon: <IconAlignRight /> },
+  { mode: "center", title: "По центру", icon: <LucideToolIcon icon={CircleDot} className="lpr-icon" /> },
+  { mode: "leftEdge", title: "По левому краю", icon: <LucideToolIcon icon={AlignLeft} className="lpr-icon" /> },
+  { mode: "rightEdge", title: "По правому краю", icon: <LucideToolIcon icon={AlignRight} className="lpr-icon" /> },
 ];
-
-function IconSnapVertex() {
-  return (
-    <svg className="lpr-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M6 6h4v4H6V6zm8 0h4v4h-4V6zM6 14h4v4H6v-4zm8 0h4v4h-4v-4z"
-        opacity="0.35"
-      />
-      <path fill="currentColor" d="M4 4h6v6H4V4zm10 0h6v6h-6V4zM4 14h6v6H4v-6zm10 0h6v6h-6v-6z" />
-    </svg>
-  );
-}
-
-function IconSnapEdge() {
-  return (
-    <svg className="lpr-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" d="M5 19L19 5" />
-    </svg>
-  );
-}
-
-function IconSnapGrid() {
-  return (
-    <svg className="lpr-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        d="M4 8h16M4 16h16M8 4v16M16 4v16"
-        opacity="0.85"
-      />
-    </svg>
-  );
-}
-
-/** Сетка на плане (видимость), отлично от привязки к сетке: линии + условный «глаз». */
-function IconGridVisibility() {
-  return (
-    <svg className="lpr-icon" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.35"
-        strokeLinecap="round"
-        d="M4.5 7.5h15M4.5 12h15M4.5 16.5h15M7.5 4.5v15M12 4.5v15M16.5 4.5v15"
-        opacity="0.55"
-      />
-      <path
-        fill="currentColor"
-        d="M12 9.25c-2.35 0-4.45 1.28-5.6 3.25 1.15 1.97 3.25 3.25 5.6 3.25s4.45-1.28 5.6-3.25c-1.15-1.97-3.25-3.25-5.6-3.25zm0 1.5a1.75 1.75 0 110 3.5 1.75 1.75 0 010-3.5z"
-      />
-    </svg>
-  );
-}
 
 export function LinearPlacementRail() {
   const planScope = useAppStore((s) => s.currentProject.viewState.editor2dPlanScope);
@@ -188,7 +102,7 @@ export function LinearPlacementRail() {
           data-active={gridVisible}
           onClick={() => setGridVisible(!gridVisible)}
         >
-          <IconGridVisibility />
+          <LucideToolIcon icon={ScanEye} className="lpr-icon" />
         </button>
       </div>
       <div className="lpr-divider" role="separator" aria-hidden="true" />
@@ -202,7 +116,7 @@ export function LinearPlacementRail() {
           data-active={snapV}
           onClick={() => setSnapV(!snapV)}
         >
-          <IconSnapVertex />
+          <LucideToolIcon icon={Boxes} className="lpr-icon" />
         </button>
         <button
           type="button"
@@ -213,7 +127,7 @@ export function LinearPlacementRail() {
           data-active={snapE}
           onClick={() => setSnapE(!snapE)}
         >
-          <IconSnapEdge />
+          <LucideToolIcon icon={SeparatorHorizontal} className="lpr-icon" />
         </button>
         <button
           type="button"
@@ -224,7 +138,7 @@ export function LinearPlacementRail() {
           data-active={snapG}
           onClick={() => setSnapG(!snapG)}
         >
-          <IconSnapGrid />
+          <LucideToolIcon icon={Grid3x3} className="lpr-icon" />
         </button>
       </div>
       <div className="lpr-divider" role="separator" aria-hidden="true" />

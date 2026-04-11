@@ -7,6 +7,23 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-lg);
+  animation: pm-backdrop-in var(--t-normal) var(--ease-out-soft) both;
+}
+
+@supports (backdrop-filter: blur(8px)) {
+  .pm-backdrop {
+    backdrop-filter: blur(var(--blur-overlay)) saturate(var(--saturation-glass));
+    -webkit-backdrop-filter: blur(var(--blur-overlay)) saturate(var(--saturation-glass));
+  }
+}
+
+@keyframes pm-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .pm-dialog {
@@ -16,9 +33,28 @@
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-modal);
-  border: 1px solid var(--color-border-subtle);
-  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-glass-modal-fill, var(--color-glass-fill-strong));
   box-shadow: var(--shadow-modal);
+  animation: pm-dialog-in var(--t-normal) var(--ease-out-soft) both;
+}
+
+@supports (backdrop-filter: blur(8px)) {
+  .pm-dialog {
+    backdrop-filter: blur(var(--blur-modal)) saturate(var(--saturation-glass));
+    -webkit-backdrop-filter: blur(var(--blur-modal)) saturate(var(--saturation-glass));
+  }
+}
+
+@keyframes pm-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .pm-head {

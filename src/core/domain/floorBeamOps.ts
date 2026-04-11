@@ -64,3 +64,49 @@ export function replaceFloorBeamInProject(project: Project, beamId: string, next
     ),
   });
 }
+
+export function translateFloorBeamsInProject(
+  project: Project,
+  beamIds: ReadonlySet<string>,
+  dxMm: number,
+  dyMm: number,
+): Project {
+  if (!Number.isFinite(dxMm) || !Number.isFinite(dyMm) || (Math.abs(dxMm) < 1e-9 && Math.abs(dyMm) < 1e-9)) {
+    return project;
+  }
+  const t = new Date().toISOString();
+  const floorBeams = project.floorBeams.map((b) =>
+    beamIds.has(b.id)
+      ? {
+          ...b,
+          refStartMm: { x: b.refStartMm.x + dxMm, y: b.refStartMm.y + dyMm },
+          refEndMm: { x: b.refEndMm.x + dxMm, y: b.refEndMm.y + dyMm },
+          updatedAt: t,
+        }
+      : b,
+  );
+  return touchProjectMeta({ ...project, floorBeams });
+}
+
+export function duplicateFloorBeamInProject(
+  project: Project,
+  sourceBeamId: string,
+): { readonly project: Project; readonly newBeamId: string } | { readonly error: string } {
+  const beam = project.floorBeams.find((b) => b.id === sourceBeamId);
+  if (!beam) {
+    return { error: "Балка не найдена." };
+  }
+  const t = new Date().toISOString();
+  const dup: FloorBeamEntity = {
+    ...beam,
+    id: newEntityId(),
+    refStartMm: { x: beam.refStartMm.x, y: beam.refStartMm.y },
+    refEndMm: { x: beam.refEndMm.x, y: beam.refEndMm.y },
+    createdAt: t,
+    updatedAt: t,
+  };
+  return {
+    project: touchProjectMeta({ ...project, floorBeams: [...project.floorBeams, dup] }),
+    newBeamId: dup.id,
+  };
+}

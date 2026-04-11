@@ -10,6 +10,8 @@ import {
   foundationStripOrthoRingFootprintContoursFromEntityMm,
   foundationStripSegmentFootprintQuadMm,
 } from "./foundationStripGeometry";
+import type { FloorBeamEntity } from "./floorBeam";
+import { floorBeamCenterlineEndpointsMm, floorBeamPlanQuadCornersMm } from "./floorBeamGeometry";
 import type { PlanLine } from "./planLine";
 import type { SlabEntity } from "./slab";
 import type { Project } from "./project";
@@ -240,6 +242,29 @@ function slabEdgeMidpoints(ring: readonly Point2D[]): Point2D[] {
   return mids;
 }
 
+/** Опорные точки балки перекрытия: углы контура, середины рёбер, центр, торцы и середина оси. */
+export function snapTaggedPointsForFloorBeamEntity(project: Project, beam: FloorBeamEntity): EntityCopySnapTaggedPoint[] {
+  const out: EntityCopySnapTaggedPoint[] = [];
+  const q = floorBeamPlanQuadCornersMm(project, beam);
+  if (q && q.length === 4) {
+    for (const p of q) {
+      pushDedupe(out, { world: { x: p.x, y: p.y }, visual: "vertex" });
+    }
+    for (const m of ringEdgeMidpoints(q)) {
+      pushDedupe(out, { world: m, visual: "edgeMid" });
+    }
+    pushDedupe(out, { world: ringCentroidMm(q), visual: "center" });
+  }
+  const cl = floorBeamCenterlineEndpointsMm(project, beam);
+  if (cl) {
+    pushDedupe(out, { world: { x: cl.cs.x, y: cl.cs.y }, visual: "key" });
+    pushDedupe(out, { world: { x: cl.ce.x, y: cl.ce.y }, visual: "key" });
+    const mid = { x: (cl.cs.x + cl.ce.x) / 2, y: (cl.cs.y + cl.ce.y) / 2 };
+    pushDedupe(out, { world: mid, visual: "key" });
+  }
+  return out;
+}
+
 function snapPointsForSlab(slab: SlabEntity): EntityCopySnapTaggedPoint[] {
   const out: EntityCopySnapTaggedPoint[] = [];
   const ring = slab.pointsMm;
@@ -331,6 +356,12 @@ function collectSegmentIntersectionsForLayer(project: Project, layerIds: Readonl
   for (const l of lines) {
     segs.push({ a: l.start, b: l.end });
   }
+  for (const b of project.floorBeams) {
+    if (!layerIds.has(b.layerId)) {
+      continue;
+    }
+    segs.push({ a: b.refStartMm, b: b.refEndMm });
+  }
   const pts: Point2D[] = [];
   for (let i = 0; i < segs.length; i += 1) {
     for (let j = i + 1; j < segs.length; j += 1) {
@@ -413,6 +444,13 @@ export function collectEntityCopySnapPointsForSourceTarget(
     }
     return snapPointsForSlab(slab);
   }
+  if (target.kind === "floorBeam") {
+    const beam = project.floorBeams.find((x) => x.id === target.id);
+    if (!beam || !layerIds.has(beam.layerId)) {
+      return [];
+    }
+    return snapTaggedPointsForFloorBeamEntity(project, beam);
+  }
   return [];
 }
 
@@ -474,6 +512,14 @@ export function collectEntityCopySnapPointsForFullScene(
       continue;
     }
     for (const p of snapPointsForSlab(slab)) {
+      pushDedupe(out, p);
+    }
+  }
+  for (const beam of project.floorBeams) {
+    if (!layerIds.has(beam.layerId)) {
+      continue;
+    }
+    for (const p of snapTaggedPointsForFloorBeamEntity(project, beam)) {
       pushDedupe(out, p);
     }
   }

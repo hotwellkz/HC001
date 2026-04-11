@@ -3,7 +3,7 @@ import { Container, Text } from "pixi.js";
 import type { Project } from "@/core/domain/project";
 import { MIN_WALL_MARK_SCREEN_LENGTH_PX, wallSegmentScreenLengthPx } from "@/core/domain/wallMarking";
 import { readableAlongSegmentRotationRad } from "@/core/geometry/readableAlongSegmentRotationRad";
-import { cssHexToPixiNumber } from "@/shared/cssColor";
+import { cssColorToPixiNumber } from "@/shared/cssColor";
 
 import {
   collectDimensionLabelCentersWorldMmForPlan,
@@ -47,7 +47,7 @@ function readWallMarkThemeColors(): { readonly fill: number; readonly outline: n
   const cs = getComputedStyle(root);
   const fill = cs.getPropertyValue("--color-wall-mark-text").trim() || "#e8ecf1";
   const outline = cs.getPropertyValue("--color-wall-mark-outline").trim() || "#14171b";
-  return { fill: cssHexToPixiNumber(fill), outline: cssHexToPixiNumber(outline) };
+  return { fill: cssColorToPixiNumber(fill), outline: cssColorToPixiNumber(outline) };
 }
 
 function screenDist(

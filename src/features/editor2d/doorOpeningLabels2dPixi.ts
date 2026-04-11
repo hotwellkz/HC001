@@ -1,7 +1,7 @@
 import { Container, Text } from "pixi.js";
 
 import type { Project } from "@/core/domain/project";
-import { cssHexToPixiNumber } from "@/shared/cssColor";
+import { cssColorToPixiNumber } from "@/shared/cssColor";
 
 import { collectDimensionLabelScreenPositions } from "./dimensions2dPixi";
 import { openingPlanLabelRotationRad } from "./openingPlanLabelOrientation2d";
@@ -14,7 +14,7 @@ function readOpeningLabelColors(): { readonly fill: number; readonly outline: nu
   const cs = getComputedStyle(root);
   const fill = cs.getPropertyValue("--color-wall-mark-text").trim() || "#e8ecf1";
   const outline = cs.getPropertyValue("--color-wall-mark-outline").trim() || "#14171b";
-  return { fill: cssHexToPixiNumber(fill), outline: cssHexToPixiNumber(outline) };
+  return { fill: cssColorToPixiNumber(fill), outline: cssColorToPixiNumber(outline) };
 }
 
 function doorOrderMap(project: Project): ReadonlyMap<string, number> {
