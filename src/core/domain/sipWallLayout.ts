@@ -268,7 +268,8 @@ export function collectGkLFrameStudCentersFromSheetRegionsMm(
       out.add(uR);
     }
   }
-  return [...out].sort((x, y) => x - y);
+  const mergedBoundary = [...out].sort((x, y) => x - y);
+  return fillGkLFrameStudLongGapsMm(mergedBoundary, step);
 }
 
 const OPENING_NODE_SHIFT_MM = 45;
@@ -291,6 +292,50 @@ function mergeCloseSortedStudCentersMm(sorted: readonly number[], minGapMm: numb
     }
   }
   return out;
+}
+
+/**
+ * Максимально допустимый пролёт между соседними линиями стоек после сетки `a + k·step`,
+ * относительно номинального шага (доля шага).
+ *
+ * Сетка намеренно не ставит внутреннюю стойку, если до правого края листа `b - u < step`
+ * (чтобы не получить «микро-хвост» у торца). Это оставляет слишком большой пролёт **слева**
+ * от этой позиции (баг вроде 778 мм при шаге 600). Добор ниже закрывает такие дыры.
+ *
+ * Порог 1.12: доборный лист 448 мм при шаге 400 даёт 448/400 = 1.12 — последний пролёт
+ * не раздуваем; пролёт 778 мм при шаге 600 (≈1,30) — вставляем промежуточную стойку.
+ */
+const GKL_FRAME_STUD_MAX_GAP_TO_STEP_RATIO = 1.12;
+
+/**
+ * Добавляет центры стоек на `lo + step`, пока между соседними отметками нет пролёта
+ * сильно шире допустимого относительно шага каркаса.
+ */
+function fillGkLFrameStudLongGapsMm(sortedUnique: readonly number[], studStepMm: number): number[] {
+  const step = Math.max(1, Math.round(studStepMm));
+  const maxGap = step * GKL_FRAME_STUD_MAX_GAP_TO_STEP_RATIO;
+  const xs = new Set(sortedUnique);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const arr = [...xs].sort((a, b) => a - b);
+    for (let i = 0; i < arr.length - 1; i++) {
+      const lo = arr[i]!;
+      const hi = arr[i + 1]!;
+      if (hi - lo <= maxGap + EPS) {
+        continue;
+      }
+      const insert = Math.round(lo + step);
+      if (insert <= lo + EPS || insert >= hi - EPS) {
+        continue;
+      }
+      if (!xs.has(insert)) {
+        xs.add(insert);
+        changed = true;
+      }
+    }
+  }
+  return [...xs].sort((a, b) => a - b);
 }
 
 function getOpeningMinEdgeRestMm(wall: Wall, opening: Opening, m: EffectiveWallManufacturingSettings): number {

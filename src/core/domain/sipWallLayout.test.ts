@@ -542,6 +542,26 @@ describe("buildWallCalculationForWall", () => {
     ).toBe(false);
   });
 
+  it("ГКЛ/металл: доборный лист ~778 мм при шаге 600 — промежуточная стойка, без огромного концевого пролёта", () => {
+    const xs = collectGkLFrameStudCentersFromSheetRegionsMm(
+      [
+        { startOffsetMm: 0, endOffsetMm: 1200 },
+        { startOffsetMm: 1200, endOffsetMm: 2400 },
+        { startOffsetMm: 2400, endOffsetMm: 3178 },
+      ],
+      600,
+    );
+    expect(xs).toContain(3000);
+    const i = xs.indexOf(3000);
+    expect(xs[i + 1]! - xs[i]!).toBeLessThanOrEqual(620);
+    expect(xs[i]! - xs[i - 1]!).toBeLessThanOrEqual(620);
+  });
+
+  it("ГКЛ/металл: короткая стена 796 мм при шаге 600 — внутренняя стойка на +600", () => {
+    const xs = collectGkLFrameStudCentersFromSheetRegionsMm([{ startOffsetMm: 0, endOffsetMm: 796 }], 600);
+    expect(xs).toEqual([0, 600, 796]);
+  });
+
   it("ГКЛ стена 2848 мм, шаг 400: в доборе 448 мм нет внутренней стойки на 2800 (интеграция)", () => {
     const p = createDemoProject();
     const wall = { ...p.walls[0]!, end: { x: 2848, y: 0 } };
