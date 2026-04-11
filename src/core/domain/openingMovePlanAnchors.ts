@@ -1,4 +1,5 @@
 import type { Point2D } from "../geometry/types";
+import type { Opening } from "./opening";
 import { distanceAlongWallAxisFromStartUnclampedMm, wallLengthMm } from "./wallCalculationGeometry";
 import type { Wall } from "./wall";
 import type { WallEndSide, WallJoint } from "./wallJoint";
@@ -239,6 +240,41 @@ export interface OpeningMovePlanAnchorsMm {
   readonly outerLeftRefAlongMm: number;
   readonly innerRightRefAlongMm: number;
   readonly outerRightRefAlongMm: number;
+}
+
+/**
+ * Вдоль оси стены: опорные точки для «локальных» размеров «Переместить» —
+ * правый край ближайшего проёма слева и левый край ближайшего справа; если соседа нет — внутренние углы стены (как у {@link resolveOpeningMovePlanAnchorsMm}).
+ */
+export function resolveOpeningMovePrimaryNeighborRefsMm(
+  wallId: string,
+  openingId: string,
+  innerLeftRefAlongMm: number,
+  innerRightRefAlongMm: number,
+  sameLayerOpenings: readonly Opening[],
+): { readonly primaryLeftRefAlongMm: number; readonly primaryRightRefAlongMm: number } {
+  const placed = sameLayerOpenings.filter(
+    (o): o is Opening & { wallId: string; offsetFromStartMm: number } =>
+      o.wallId === wallId &&
+      o.offsetFromStartMm != null &&
+      (o.kind === "window" || o.kind === "door"),
+  );
+  const row = [...placed].sort((a, b) => {
+    if (a.offsetFromStartMm !== b.offsetFromStartMm) {
+      return a.offsetFromStartMm - b.offsetFromStartMm;
+    }
+    return a.id.localeCompare(b.id);
+  });
+  const idx = row.findIndex((o) => o.id === openingId);
+  if (idx < 0) {
+    return { primaryLeftRefAlongMm: innerLeftRefAlongMm, primaryRightRefAlongMm: innerRightRefAlongMm };
+  }
+  const leftN = idx > 0 ? row[idx - 1]! : null;
+  const rightN = idx < row.length - 1 ? row[idx + 1]! : null;
+  return {
+    primaryLeftRefAlongMm: leftN ? leftN.offsetFromStartMm + leftN.widthMm : innerLeftRefAlongMm,
+    primaryRightRefAlongMm: rightN ? rightN.offsetFromStartMm : innerRightRefAlongMm,
+  };
 }
 
 export function resolveOpeningMovePlanAnchorsMm(

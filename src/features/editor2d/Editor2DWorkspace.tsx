@@ -56,7 +56,10 @@ import {
   snapOpeningLeftEdgeMm,
   validateWindowPlacementOnWall,
 } from "@/core/domain/openingWindowGeometry";
-import { resolveOpeningMovePlanAnchorsMm } from "@/core/domain/openingMovePlanAnchors";
+import {
+  resolveOpeningMovePlanAnchorsMm,
+  resolveOpeningMovePrimaryNeighborRefsMm,
+} from "@/core/domain/openingMovePlanAnchors";
 import { wallLengthMm } from "@/core/domain/wallCalculationGeometry";
 import { wallWithMovedEndAtLength } from "@/core/domain/wallLengthChangeGeometry";
 import type { WallEndSide } from "@/core/domain/wallJoint";
@@ -159,6 +162,9 @@ interface OpeningMoveMetrics {
   readonly outerLeftRefAlongMm: number;
   readonly innerRightRefAlongMm: number;
   readonly outerRightRefAlongMm: number;
+  /** Локальные опоры: соседний проём или внутренний угол стены (основные размеры «Переместить»). */
+  readonly primaryLeftRefAlongMm: number;
+  readonly primaryRightRefAlongMm: number;
 }
 
 function openingMoveMetrics(project: Project, openingId: string): OpeningMoveMetrics | null {
@@ -180,6 +186,13 @@ function openingMoveMetrics(project: Project, openingId: string): OpeningMoveMet
   const wallIds = new Set(layerWalls.map((w0) => w0.id));
   const layerJoints = project.wallJoints.filter((j) => wallIds.has(j.wallAId) && wallIds.has(j.wallBId));
   const a = resolveOpeningMovePlanAnchorsMm(wall, left, o.widthMm, layerWalls, layerJoints);
+  const pr = resolveOpeningMovePrimaryNeighborRefsMm(
+    wall.id,
+    o.id,
+    a.innerLeftRefAlongMm,
+    a.innerRightRefAlongMm,
+    layerSlice.openings,
+  );
   return {
     openingId: o.id,
     wallId: wall.id,
@@ -199,6 +212,8 @@ function openingMoveMetrics(project: Project, openingId: string): OpeningMoveMet
     outerLeftRefAlongMm: a.outerLeftRefAlongMm,
     innerRightRefAlongMm: a.innerRightRefAlongMm,
     outerRightRefAlongMm: a.outerRightRefAlongMm,
+    primaryLeftRefAlongMm: pr.primaryLeftRefAlongMm,
+    primaryRightRefAlongMm: pr.primaryRightRefAlongMm,
   };
 }
 
@@ -791,9 +806,10 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               const innerSign = wallInnerNormalSign(currentProject, wall.id);
               const halfT = wall.thicknessMm / 2;
               const faceShiftMm = 12 / t.zoomPixelsPerMm;
-              const chainShiftMm = 36 / t.zoomPixelsPerMm;
-              const innerLeftMm = m.innerLeftGapMm;
-              const innerRightMm = m.innerRightGapMm;
+              const chainShiftInnerMm = 32 / t.zoomPixelsPerMm;
+              const chainShiftOuterMm = 50 / t.zoomPixelsPerMm;
+              const primaryLeftMm = m.leftEdgeMm - m.primaryLeftRefAlongMm;
+              const primaryRightMm = m.primaryRightRefAlongMm - (m.leftEdgeMm + m.widthMm);
               const outerLeftMm = m.outerLeftGapMm;
               const outerRightMm = m.outerRightGapMm;
               const faceGeom = (wallFace: "inner" | "outer", leftRefAlong: number, rightRefAlong: number) => {
@@ -806,7 +822,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                 const pRightRef = { x: pBase.x + ux * rightRefAlong, y: pBase.y + uy * rightRefAlong };
                 const pOpenStart = { x: pBase.x + ux * openStart, y: pBase.y + uy * openStart };
                 const pOpenEnd = { x: pBase.x + ux * openEnd, y: pBase.y + uy * openEnd };
-                const nOut = faceSign * (faceShiftMm + chainShiftMm);
+                const chain = wallFace === "inner" ? chainShiftInnerMm : chainShiftOuterMm;
+                const nOut = faceSign * (faceShiftMm + chain);
                 const shift = (p: { x: number; y: number }) => ({ x: p.x + nx * nOut, y: p.y + ny * nOut });
                 return {
                   left0: worldToScreen(shift(pLeftRef).x, shift(pLeftRef).y, t),
@@ -815,7 +832,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                   right1: worldToScreen(shift(pRightRef).x, shift(pRightRef).y, t),
                 };
               };
-              const inner = faceGeom("inner", m.innerLeftRefAlongMm, m.innerRightRefAlongMm);
+              const inner = faceGeom("inner", m.primaryLeftRefAlongMm, m.primaryRightRefAlongMm);
               const outer = faceGeom("outer", m.outerLeftRefAlongMm, m.outerRightRefAlongMm);
               const drawDim = (
                 s0: { x: number; y: number },
@@ -823,10 +840,14 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                 anchor: MoveDimSide,
                 face: "inner" | "outer",
                 valueMm: number,
+                emphasis: "primary" | "secondary",
               ) => {
+                const lineW = emphasis === "primary" ? 2 : 1;
+                const lineAlpha = emphasis === "primary" ? 0.98 : 0.52;
+                const fontPx = emphasis === "primary" ? DIMENSION_FONT_SIZE_PX + 1 : DIMENSION_FONT_SIZE_PX - 1;
                 openingMoveG.moveTo(s0.x, s0.y);
                 openingMoveG.lineTo(s1.x, s1.y);
-                openingMoveG.stroke({ width: 1, color: dimLineCol, alpha: 0.95, cap: "butt" });
+                openingMoveG.stroke({ width: lineW, color: dimLineCol, alpha: lineAlpha, cap: "butt" });
                 const vxRaw = s1.x - s0.x;
                 const vyRaw = s1.y - s0.y;
                 const vLen = Math.hypot(vxRaw, vyRaw);
@@ -843,7 +864,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                   const drawTick = (x: number, y: number) => {
                     openingMoveG.moveTo(x - px * tick, y - py * tick);
                     openingMoveG.lineTo(x + px * tick, y + py * tick);
-                    openingMoveG.stroke({ width: 1, color: dimLineCol, alpha: 0.95, cap: "butt" });
+                    openingMoveG.stroke({ width: lineW, color: dimLineCol, alpha: lineAlpha, cap: "butt" });
                   };
                   drawTick(s0.x, s0.y);
                   drawTick(s1.x, s1.y);
@@ -854,8 +875,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                   text: `${Math.round(valueMm)}`,
                   style: {
                     fontFamily: DIMENSION_TEXT_FONT_STACK,
-                    fontSize: DIMENSION_FONT_SIZE_PX,
-                    fontWeight: "400",
+                    fontSize: fontPx,
+                    fontWeight: emphasis === "primary" ? "600" : "400",
                     fill: dimTextCol,
                   },
                 });
@@ -869,7 +890,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                   const ly1 = ly0 + vy * 10 * sideMul;
                   openingMoveG.moveTo(lx0, ly0);
                   openingMoveG.lineTo(lx1, ly1);
-                  openingMoveG.stroke({ width: 1, color: dimLineCol, alpha: 0.95, cap: "butt" });
+                  openingMoveG.stroke({ width: lineW, color: dimLineCol, alpha: lineAlpha, cap: "butt" });
                   txt.x = lx1 + px * 10;
                   txt.y = ly1 + py * 10;
                 } else {
@@ -899,10 +920,10 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                   { anchor, face, x: hx0, y: hy0, w: hx1 - hx0, h: hy1 - hy0, valueMm },
                 ];
               };
-              drawDim(inner.left0, inner.left1, "left", "inner", innerLeftMm);
-              drawDim(outer.left0, outer.left1, "left", "outer", outerLeftMm);
-              drawDim(inner.right0, inner.right1, "right", "inner", innerRightMm);
-              drawDim(outer.right0, outer.right1, "right", "outer", outerRightMm);
+              drawDim(inner.left0, inner.left1, "left", "inner", primaryLeftMm, "primary");
+              drawDim(outer.left0, outer.left1, "left", "outer", outerLeftMm, "secondary");
+              drawDim(inner.right0, inner.right1, "right", "inner", primaryRightMm, "primary");
+              drawDim(outer.right0, outer.right1, "right", "outer", outerRightMm, "secondary");
             }
           }
         }
@@ -2468,8 +2489,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                 setMoveEdit({ ...moveEdit, error: "Стена не найдена" });
                 return;
               }
-              const refL = moveEdit.face === "inner" ? m.innerLeftRefAlongMm : m.outerLeftRefAlongMm;
-              const refR = moveEdit.face === "inner" ? m.innerRightRefAlongMm : m.outerRightRefAlongMm;
+              const refL = moveEdit.face === "inner" ? m.primaryLeftRefAlongMm : m.outerLeftRefAlongMm;
+              const refR = moveEdit.face === "inner" ? m.primaryRightRefAlongMm : m.outerRightRefAlongMm;
               const nextLeft = moveEdit.side === "left" ? v + refL : refR - v - m.widthMm;
               if (nextLeft < m.allowedStartMm - 1e-3 || nextLeft + m.widthMm > m.allowedEndMm + 1e-3) {
                 setMoveEdit({ ...moveEdit, error: "Выход за пределы стены" });

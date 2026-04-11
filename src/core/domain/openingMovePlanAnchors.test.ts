@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import type { Opening } from "./opening";
 import type { Wall } from "./wall";
 import type { WallJoint } from "./wallJoint";
 import { computeCornerJointGeometry, computeTeeAbutmentGeometry } from "./wallJointGeometry";
 import {
   cornerInnerOuterCornersMm,
   resolveOpeningMovePlanAnchorsMm,
+  resolveOpeningMovePrimaryNeighborRefsMm,
   thicknessOfOrthogonalAdjoiningWallAtEndpointMm,
 } from "./openingMovePlanAnchors";
 
@@ -185,6 +187,49 @@ describe("resolveOpeningMovePlanAnchorsMm", () => {
     expect(ab!.inner.y).toBeCloseTo(ba!.inner.y, 6);
     expect(ab!.outer.x).toBeCloseTo(ba!.outer.x, 6);
     expect(ab!.outer.y).toBeCloseTo(ba!.outer.y, 6);
+  });
+});
+
+describe("resolveOpeningMovePrimaryNeighborRefsMm", () => {
+  const ow = (id: string, wallId: string, left: number, w: number): Opening => ({
+    id,
+    wallId,
+    kind: "window",
+    offsetFromStartMm: left,
+    widthMm: w,
+    heightMm: 1300,
+  });
+  const dr = (id: string, wallId: string, left: number, w: number): Opening => ({
+    id,
+    wallId,
+    kind: "door",
+    offsetFromStartMm: left,
+    widthMm: w,
+    heightMm: 2100,
+  });
+
+  it("дверь между двумя окнами — опоры на правый край левого окна и левый край правого", () => {
+    const wallId = "w1";
+    const innerL = 50;
+    const innerR = 8000;
+    const openings = [ow("ok1", wallId, 500, 1200), dr("d1", wallId, 2000, 1000), ow("ok2", wallId, 3500, 1250)];
+    const r = resolveOpeningMovePrimaryNeighborRefsMm(wallId, "d1", innerL, innerR, openings);
+    expect(r.primaryLeftRefAlongMm).toBe(500 + 1200);
+    expect(r.primaryRightRefAlongMm).toBe(3500);
+  });
+
+  it("единственный проём — внутренние углы стены", () => {
+    const r = resolveOpeningMovePrimaryNeighborRefsMm("w1", "o1", 0, 6000, [
+      { id: "o1", wallId: "w1", kind: "window", offsetFromStartMm: 1000, widthMm: 900, heightMm: 1200 },
+    ]);
+    expect(r.primaryLeftRefAlongMm).toBe(0);
+    expect(r.primaryRightRefAlongMm).toBe(6000);
+  });
+
+  it("неизвестный id — fallback на переданные внутренние опоры", () => {
+    const r = resolveOpeningMovePrimaryNeighborRefsMm("w1", "xx", 10, 990, []);
+    expect(r.primaryLeftRefAlongMm).toBe(10);
+    expect(r.primaryRightRefAlongMm).toBe(990);
   });
 });
 
