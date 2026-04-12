@@ -15,6 +15,7 @@ const PICK_PRIORITY: Record<Editor3dPickKind, number> = {
   floorInsulation: 2,
   roofPlane: 2,
   roofBatten: 2,
+  roofRafter: 2,
   calc: 1,
 };
 

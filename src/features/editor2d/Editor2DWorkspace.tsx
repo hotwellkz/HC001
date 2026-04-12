@@ -183,6 +183,8 @@ import {
   type RoofQuad4,
 } from "@/core/domain/roofPlaneQuadEditGeometry";
 import { drawRoofBattensPlan2d } from "./drawRoofBattensPlan2d";
+import { drawRoofRaftersPlan2d } from "./roofRafters2dPixi";
+import { pickRoofRafterAtPlanPoint } from "./roofRafterPick2d";
 import { drawRoofPlanePlacementPreview2d, drawRoofPlanes2d } from "./drawRoofPlanes2d";
 import { drawRoofSystemRidges2d } from "./drawRoofSystemRidges2d";
 import { appendRoofPlaneLabels2d } from "./roofPlaneLabels2dPixi";
@@ -797,6 +799,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               wallJointParamsModalOpen: stA.wallJointParamsModalOpen,
               wallCalculationModalOpen: stA.wallCalculationModalOpen,
               roofCalculationModalOpen: stA.roofCalculationModalOpen,
+              generateRoofRaftersModalOpen: stA.generateRoofRaftersModalOpen,
               wallCoordinateModalOpen: stA.wallCoordinateModalOpen,
               floorBeamPlacementCoordinateModalOpen: stA.floorBeamPlacementCoordinateModalOpen,
               slabCoordinateModalOpen: stA.slabCoordinateModalOpen,
@@ -871,6 +874,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             wallJointParamsModalOpen: st0.wallJointParamsModalOpen,
             wallCalculationModalOpen: st0.wallCalculationModalOpen,
             roofCalculationModalOpen: st0.roofCalculationModalOpen,
+            generateRoofRaftersModalOpen: st0.generateRoofRaftersModalOpen,
             wallCoordinateModalOpen: st0.wallCoordinateModalOpen,
             floorBeamPlacementCoordinateModalOpen: st0.floorBeamPlacementCoordinateModalOpen,
             slabCoordinateModalOpen: st0.slabCoordinateModalOpen,
@@ -1613,6 +1617,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
     roofPlanesG.eventMode = "none";
     const roofSystemRidgesG = new Graphics();
     roofSystemRidgesG.eventMode = "none";
+    const roofRafters2dG = new Graphics();
+    roofRafters2dG.eventMode = "none";
     const roofPlanePreviewG = new Graphics();
     roofPlanePreviewG.eventMode = "none";
     const roofPlaneLabelsC = new Container();
@@ -2524,6 +2530,15 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         firstRidge = false;
       }
       drawRoofSystemRidges2d(roofSystemRidgesG, layerView.roofSystems, t, { clear: firstRidge });
+
+      roofRafters2dG.clear();
+      let firstRafter = true;
+      for (const lid of contextIds) {
+        const ctxRr = narrowProjectToLayerSet(currentProject, new Set([lid]));
+        drawRoofRaftersPlan2d(roofRafters2dG, ctxRr.roofRafters, t, selected, { clear: firstRafter });
+        firstRafter = false;
+      }
+      drawRoofRaftersPlan2d(roofRafters2dG, layerView.roofRafters, t, selected, { clear: firstRafter });
 
       clearWallMarkLabelContainer(roofPlaneLabelsC);
       appendRoofPlaneLabels2d(roofPlaneLabelsC, roofPlanesForLabelLayout, roofLabelLayoutByPlaneId, t, {
@@ -3872,6 +3887,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       worldRoot.addChild(roofBattens2dG);
       worldRoot.addChild(roofPlanesG);
       worldRoot.addChild(roofSystemRidgesG);
+      worldRoot.addChild(roofRafters2dG);
       worldRoot.addChild(roofPlanePreviewG);
       worldRoot.addChild(wallsG);
       worldRoot.addChild(floorInsulationG);
@@ -4038,51 +4054,66 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
                       store.setSelectedEntityIds([hitFs.stripId]);
                     }
                   } else {
-                    const hitRoofTap = pickClosestRoofPlaneAtPoint(wClick, layerView.roofPlanes, segTol);
-                    if (hitRoofTap) {
+                    const hitRafterTap = pickRoofRafterAtPlanPoint(layerView.roofRafters, wClick, segTol);
+                    if (hitRafterTap) {
                       if (m.shiftKey) {
                         const s = new Set(store.selectedEntityIds);
-                        if (s.has(hitRoofTap.roofPlaneId)) {
-                          s.delete(hitRoofTap.roofPlaneId);
+                        if (s.has(hitRafterTap.id)) {
+                          s.delete(hitRafterTap.id);
                         } else {
-                          s.add(hitRoofTap.roofPlaneId);
+                          s.add(hitRafterTap.id);
                         }
                         store.setSelectedEntityIds([...s]);
                       } else {
-                        store.setSelectedEntityIds([hitRoofTap.roofPlaneId]);
+                        store.setSelectedEntityIds([hitRafterTap.id]);
                       }
                     } else {
-                    const hitBeam = pickFloorBeamAtPlanPoint(currentProject, layerView.floorBeams, wClick, segTol);
-                    if (hitBeam) {
-                      if (m.shiftKey) {
-                        const s = new Set(store.selectedEntityIds);
-                        if (s.has(hitBeam.id)) {
-                          s.delete(hitBeam.id);
-                        } else {
-                          s.add(hitBeam.id);
-                        }
-                        store.setSelectedEntityIds([...s]);
-                      } else {
-                        store.setSelectedEntityIds([hitBeam.id]);
-                      }
-                    } else {
-                      const hitWall = pickClosestWallAlongPoint(wClick, layerView.walls, segTol);
-                      if (hitWall) {
+                      const hitRoofTap = pickClosestRoofPlaneAtPoint(wClick, layerView.roofPlanes, segTol);
+                      if (hitRoofTap) {
                         if (m.shiftKey) {
                           const s = new Set(store.selectedEntityIds);
-                          if (s.has(hitWall.wallId)) {
-                            s.delete(hitWall.wallId);
+                          if (s.has(hitRoofTap.roofPlaneId)) {
+                            s.delete(hitRoofTap.roofPlaneId);
                           } else {
-                            s.add(hitWall.wallId);
+                            s.add(hitRoofTap.roofPlaneId);
                           }
                           store.setSelectedEntityIds([...s]);
                         } else {
-                          store.setSelectedEntityIds([hitWall.wallId]);
+                          store.setSelectedEntityIds([hitRoofTap.roofPlaneId]);
                         }
                       } else {
-                        store.clearSelection();
+                        const hitBeam = pickFloorBeamAtPlanPoint(currentProject, layerView.floorBeams, wClick, segTol);
+                        if (hitBeam) {
+                          if (m.shiftKey) {
+                            const s = new Set(store.selectedEntityIds);
+                            if (s.has(hitBeam.id)) {
+                              s.delete(hitBeam.id);
+                            } else {
+                              s.add(hitBeam.id);
+                            }
+                            store.setSelectedEntityIds([...s]);
+                          } else {
+                            store.setSelectedEntityIds([hitBeam.id]);
+                          }
+                        } else {
+                          const hitWall = pickClosestWallAlongPoint(wClick, layerView.walls, segTol);
+                          if (hitWall) {
+                            if (m.shiftKey) {
+                              const s = new Set(store.selectedEntityIds);
+                              if (s.has(hitWall.wallId)) {
+                                s.delete(hitWall.wallId);
+                              } else {
+                                s.add(hitWall.wallId);
+                              }
+                              store.setSelectedEntityIds([...s]);
+                            } else {
+                              store.setSelectedEntityIds([hitWall.wallId]);
+                            }
+                          } else {
+                            store.clearSelection();
+                          }
+                        }
                       }
-                    }
                     }
                   }
                 }
@@ -6625,6 +6656,26 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             }
             lastWallClickRef.current = null;
             lastFoundationStripClickRef.current = null;
+            paint();
+            return;
+          }
+          const rafterHitSel = pickRoofRafterAtPlanPoint(layerView.roofRafters, worldMm, segTolSel);
+          if (rafterHitSel) {
+            const storeRp = useAppStore.getState();
+            if (ev.shiftKey) {
+              const s = new Set(storeRp.selectedEntityIds);
+              if (s.has(rafterHitSel.id)) {
+                s.delete(rafterHitSel.id);
+              } else {
+                s.add(rafterHitSel.id);
+              }
+              storeRp.setSelectedEntityIds([...s]);
+            } else {
+              storeRp.setSelectedEntityIds([rafterHitSel.id]);
+            }
+            lastWallClickRef.current = null;
+            lastFoundationStripClickRef.current = null;
+            lastSlabClickRef.current = null;
             paint();
             return;
           }

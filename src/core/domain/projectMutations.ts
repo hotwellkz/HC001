@@ -36,6 +36,7 @@ export function deleteEntitiesFromProject(project: Project, selectedIds: Readonl
   const foundationStripsKept = project.foundationStrips.filter((s) => !selectedIds.has(s.id));
   const foundationPilesKept = project.foundationPiles.filter((p) => !selectedIds.has(p.id));
   const slabsKept = project.slabs.filter((s) => !selectedIds.has(s.id));
+  const removedFloorBeamIds = new Set(project.floorBeams.filter((b) => selectedIds.has(b.id)).map((b) => b.id));
   const floorBeamsKept = project.floorBeams.filter((b) => !selectedIds.has(b.id));
   const floorInsulationPiecesKept = project.floorInsulationPieces.filter((p) => !selectedIds.has(p.id));
   const roofPlanesKept = project.roofPlanes.filter((r) => !selectedIds.has(r.id));
@@ -52,6 +53,16 @@ export function deleteEntitiesFromProject(project: Project, selectedIds: Readonl
     c.roofPlaneIds.every((id) => keptRoofIds.has(id)),
   );
 
+  const roofRaftersKept = project.roofRafters.filter(
+    (r) => !selectedIds.has(r.id) && !removedFloorBeamIds.has(r.supportingFloorBeamId),
+  );
+  const roofRaftersPaired = roofRaftersKept.map((r) => {
+    if (r.pairedRoofRafterId && !roofRaftersKept.some((x) => x.id === r.pairedRoofRafterId)) {
+      return { ...r, pairedRoofRafterId: null };
+    }
+    return r;
+  });
+
   return touchProjectMeta({
     ...project,
     walls: wallsKept,
@@ -64,6 +75,7 @@ export function deleteEntitiesFromProject(project: Project, selectedIds: Readonl
     roofPlanes: roofPlanesStripped,
     roofSystems: roofSystemsKept,
     roofAssemblyCalculations: roofAssemblyCalculationsKept,
+    roofRafters: roofRaftersPaired,
     wallCalculations: wallCalculationsKept,
     wallJoints: wallJointsKept,
     openings: openingsKept,

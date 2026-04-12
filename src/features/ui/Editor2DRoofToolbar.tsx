@@ -1,4 +1,4 @@
-import { Calculator, Link2, Mountain } from "lucide-react";
+import { Calculator, Link2, Mountain, Rows3 } from "lucide-react";
 
 import { LucideToolIcon } from "@/shared/ui/LucideToolIcon";
 import { useAppStore } from "@/store/useAppStore";
@@ -9,6 +9,7 @@ import "./editor2d-plan-toolbar.css";
 export function Editor2DRoofToolbar() {
   const openPlane = useAppStore((s) => s.openAddRoofPlaneModal);
   const openCalc = useAppStore((s) => s.openRoofCalculationModal);
+  const openRafters = useAppStore((s) => s.openGenerateRoofRaftersModal);
   const startJoin = useAppStore((s) => s.startRoofContourJoinTool);
   const cancelJoin = useAppStore((s) => s.cancelRoofContourJoinTool);
   const planeToolActive =
@@ -46,6 +47,15 @@ export function Editor2DRoofToolbar() {
         onClick={() => (joinToolActive ? cancelJoin() : startJoin())}
       >
         <LucideToolIcon icon={Link2} className="e2dpt-icon" />
+      </button>
+      <button
+        type="button"
+        className="e2dpt-btn"
+        title="Сгенерировать стропила по перекрытию"
+        aria-label="Сгенерировать стропила"
+        onClick={() => openRafters()}
+      >
+        <LucideToolIcon icon={Rows3} className="e2dpt-icon" />
       </button>
       <button
         type="button"

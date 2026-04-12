@@ -80,7 +80,8 @@ export interface ProjectFileV1 {
   readonly floorInsulationPieces?: Project["floorInsulationPieces"];
   readonly roofPlanes?: Project["roofPlanes"];
   readonly roofSystems?: Project["roofSystems"];
-  readonly roofAssemblyCalculations?: Project["roofAssemblyCalculations"];
+    readonly roofAssemblyCalculations?: Project["roofAssemblyCalculations"];
+    readonly roofRafters?: Project["roofRafters"];
   /** В старых файлах может отсутствовать — []. */
   readonly wallCalculations?: Project["wallCalculations"];
   /** В старых файлах может отсутствовать — []. */
@@ -155,6 +156,7 @@ export function projectFromWireV1(wire: ProjectFileV1): Project {
     roofPlanes,
     roofSystems: normalizeRoofSystemsImported(wire.roofSystems ?? []),
     roofAssemblyCalculations: wire.roofAssemblyCalculations ?? [],
+    roofRafters: wire.roofRafters ?? [],
     wallCalculations: wire.wallCalculations ?? [],
     wallJoints: wire.wallJoints ?? [],
     openings: wire.openings,

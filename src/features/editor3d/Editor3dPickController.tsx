@@ -37,6 +37,7 @@ function editorHotkeySnapshot() {
     wallJointParamsModalOpen: s.wallJointParamsModalOpen,
     wallCalculationModalOpen: s.wallCalculationModalOpen,
     roofCalculationModalOpen: s.roofCalculationModalOpen,
+    generateRoofRaftersModalOpen: s.generateRoofRaftersModalOpen,
     wallCoordinateModalOpen: s.wallCoordinateModalOpen,
     floorBeamPlacementCoordinateModalOpen: s.floorBeamPlacementCoordinateModalOpen,
     slabCoordinateModalOpen: s.slabCoordinateModalOpen,
@@ -101,6 +102,11 @@ function applyPickToStore(
     return;
   }
   if (payload.kind === "roofPlane") {
+    setCalcFocus(null);
+    store.setSelectedEntityIds([payload.entityId]);
+    return;
+  }
+  if (payload.kind === "roofRafter") {
     setCalcFocus(null);
     store.setSelectedEntityIds([payload.entityId]);
     return;

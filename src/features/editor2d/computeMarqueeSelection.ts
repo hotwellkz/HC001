@@ -67,6 +67,13 @@ export function computeMarqueeSelection(
     }
   }
 
+  for (const rr of project.roofRafters) {
+    const bb = segmentBoundsMm(rr.footPlanMm, rr.ridgePlanMm);
+    if (rectsIntersectMm(bb, rect)) {
+      ids.push(rr.id);
+    }
+  }
+
   for (const rp of project.roofPlanes) {
     const pts = roofPlanePolygonMm(rp);
     if (pts.length === 0) {

@@ -115,6 +115,7 @@ describe("computeRoofGroupZAdjustMmByPlaneId", () => {
       roofPlanes: [a, b],
       roofSystems: [],
       roofAssemblyCalculations: [],
+      roofRafters: [],
     };
     const adj = computeAllRoofPlanesZAdjustMmByPlaneIdInProject(p, () => 0);
     const zA = rawRoofZUpAtPlanPointMm(a, 0, tie!.x, tie!.y) + (adj.get(a.id) ?? 0);

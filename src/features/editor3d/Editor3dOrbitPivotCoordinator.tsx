@@ -35,6 +35,7 @@ function editorOverlaySnapshot() {
     wallJointParamsModalOpen: s.wallJointParamsModalOpen,
     wallCalculationModalOpen: s.wallCalculationModalOpen,
     roofCalculationModalOpen: s.roofCalculationModalOpen,
+    generateRoofRaftersModalOpen: s.generateRoofRaftersModalOpen,
     wallCoordinateModalOpen: s.wallCoordinateModalOpen,
     floorBeamPlacementCoordinateModalOpen: s.floorBeamPlacementCoordinateModalOpen,
     slabCoordinateModalOpen: s.slabCoordinateModalOpen,

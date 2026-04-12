@@ -25,6 +25,7 @@ import type { WallCalculationResult } from "./wallCalculation";
 import type { WallJoint } from "./wallJoint";
 import type { FloorBeamEntity } from "./floorBeam";
 import type { FloorInsulationPiece } from "./floorInsulation";
+import type { RoofRafterEntity } from "./roofRafter";
 
 export interface Project {
   readonly meta: ProjectMeta;
@@ -53,6 +54,8 @@ export interface Project {
   readonly roofSystems: readonly RoofSystemEntity[];
   /** Расчёт кровли для 3D: какие скаты включены в сборку (геометрия строится из roofPlanes). */
   readonly roofAssemblyCalculations: readonly RoofAssemblyCalculation[];
+  /** Сгенерированные стропила (конструктивные объекты). */
+  readonly roofRafters: readonly RoofRafterEntity[];
   /** Результаты производственного расчёта по стенам (SIP-раскладка, пиломатериалы). */
   readonly wallCalculations: readonly WallCalculationResult[];
   /** Узлы соединения стен (углы, примыкания); персистится в snapshot. */

@@ -27,6 +27,7 @@ const baseApp = {
   wallJointParamsModalOpen: false,
   wallCalculationModalOpen: false,
   roofCalculationModalOpen: false,
+  generateRoofRaftersModalOpen: false,
   wallCoordinateModalOpen: false,
   floorBeamPlacementCoordinateModalOpen: false,
   slabCoordinateModalOpen: false,

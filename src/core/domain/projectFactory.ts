@@ -59,6 +59,7 @@ export function createEmptyProject(): Project {
     roofPlanes: [],
     roofSystems: [],
     roofAssemblyCalculations: [],
+    roofRafters: [],
     wallCalculations: [],
     wallJoints: [],
     openings: [],

@@ -36,6 +36,10 @@ import type { Wall } from "@/core/domain/wall";
 import { validateProfile } from "@/core/domain/profileValidation";
 import type { Project } from "@/core/domain/project";
 import {
+  generateRoofRaftersForProject,
+  type RoofRafterGeneratorParams,
+} from "@/core/domain/roofRafterGenerator";
+import {
   DEFAULT_WALL_CALC_STAGE3_OPTIONS,
   type WallCalculationResult,
   type WallCalculationStage3Options,
@@ -540,6 +544,8 @@ interface AppState {
   readonly sceneCoordModalDesiredFocus: "x" | "y" | null;
   readonly wallCalculationModalOpen: boolean;
   readonly roofCalculationModalOpen: boolean;
+  /** Генерация стропил по перекрытию (двускатная крыша). */
+  readonly generateRoofRaftersModalOpen: boolean;
   readonly dirty: boolean;
   readonly lastError: string | null;
   /** Краткое уведомление об успехе (не ошибка); показывается отдельным баннером. */
@@ -1156,6 +1162,9 @@ interface AppActions {
   openRoofCalculationModal: () => void;
   closeRoofCalculationModal: () => void;
   applyRoofCalculationModal: () => void;
+  openGenerateRoofRaftersModal: () => void;
+  closeGenerateRoofRaftersModal: () => void;
+  applyGenerateRoofRafters: (input: RoofRafterGeneratorParams) => void;
   /** После серии правок без истории (например drag проёма) — одна запись undo, если модель изменилась. */
   recordUndoIfModelChangedSince: (baseline: Project) => void;
 }
@@ -1217,6 +1226,7 @@ function historyJumpClearTransientUi(s: AppStore, restored: Project): Partial<Ap
     sceneCoordModalDesiredFocus: null,
     wallCalculationModalOpen: false,
     roofCalculationModalOpen: false,
+    generateRoofRaftersModalOpen: false,
     wallCoordinateModalOpen: false,
     floorBeamPlacementCoordinateModalOpen: false,
     wallAnchorCoordinateModalOpen: false,
@@ -1662,6 +1672,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     sceneCoordModalDesiredFocus: null,
     wallCalculationModalOpen: false,
     roofCalculationModalOpen: false,
+    generateRoofRaftersModalOpen: false,
     dirty: false,
     lastError: null,
     infoMessage: null,
@@ -8775,6 +8786,33 @@ export const useAppStore = create<AppStore>((set, get) => {
           roofCalculationModalOpen: false,
           dirty: true,
           lastError: null,
+        }),
+      );
+    },
+
+    openGenerateRoofRaftersModal: () => set({ generateRoofRaftersModalOpen: true, lastError: null }),
+
+    closeGenerateRoofRaftersModal: () => set({ generateRoofRaftersModalOpen: false }),
+
+    applyGenerateRoofRafters: (input: RoofRafterGeneratorParams) => {
+      const nowIso = new Date().toISOString();
+      const { currentProject } = get();
+      const { entities, warnings } = generateRoofRaftersForProject(currentProject, input, nowIso);
+      const kept = currentProject.roofRafters.filter((r) => r.roofSystemId !== input.roofSystemId);
+      const next = touchProjectMeta({
+        ...currentProject,
+        roofRafters: [...kept, ...entities],
+      });
+      const warnText = warnings.length ? warnings.join(" ") : null;
+      set((s) =>
+        buildProjectMutationState(s, next, {
+          generateRoofRaftersModalOpen: false,
+          dirty: true,
+          lastError: entities.length === 0 && warnText ? warnText : null,
+          infoMessage:
+            entities.length > 0
+              ? `Добавлено стропил: ${entities.length}${warnText ? `. ${warnText}` : ""}`
+              : null,
         }),
       );
     },

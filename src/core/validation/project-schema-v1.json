@@ -94,6 +94,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/roofAssemblyCalculation" }
     },
+    "roofRafters": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/roofRafterEntity" }
+    },
     "wallCalculations": {
       "type": "array",
       "items": { "$ref": "#/$defs/wallCalculationResult" }
@@ -983,6 +987,46 @@
           "type": "string",
           "enum": ["overlap", "foundation"]
         },
+        "createdAt": { "type": "string", "minLength": 1 },
+        "updatedAt": { "type": "string", "minLength": 1 }
+      }
+    },
+    "roofRafterEntity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "layerId",
+        "roofSystemId",
+        "profileId",
+        "supportingFloorBeamId",
+        "pairedRoofRafterId",
+        "roofPlaneId",
+        "footPlanMm",
+        "ridgePlanMm",
+        "footElevationMm",
+        "ridgeElevationMm",
+        "sectionRolled",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "const": "roofRafter" },
+        "layerId": { "type": "string", "minLength": 1 },
+        "roofSystemId": { "type": "string", "minLength": 1 },
+        "profileId": { "type": "string", "minLength": 1 },
+        "supportingFloorBeamId": { "type": "string", "minLength": 1 },
+        "pairedRoofRafterId": {
+          "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }]
+        },
+        "roofPlaneId": { "type": "string", "minLength": 1 },
+        "footPlanMm": { "$ref": "#/$defs/point2d" },
+        "ridgePlanMm": { "$ref": "#/$defs/point2d" },
+        "footElevationMm": { "type": "number" },
+        "ridgeElevationMm": { "type": "number" },
+        "sectionRolled": { "type": "boolean" },
         "createdAt": { "type": "string", "minLength": 1 },
         "updatedAt": { "type": "string", "minLength": 1 }
       }

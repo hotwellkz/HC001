@@ -11,6 +11,7 @@ export type Editor3dPickKind =
   | "floorInsulation"
   | "roofPlane"
   | "roofBatten"
+  | "roofRafter"
   | "calc";
 
 /**

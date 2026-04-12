@@ -36,6 +36,7 @@ import { ProjectWalls } from "./ProjectWalls";
 import { ProjectFloorBeams } from "./ProjectFloorBeams";
 import { ProjectFloorInsulation } from "./ProjectFloorInsulation";
 import { ProjectRoofAssembly } from "./ProjectRoofAssembly";
+import { ProjectRoofRafters } from "./ProjectRoofRafters";
 import { useEditor3dThemeColors } from "./useEditor3dThemeColors";
 
 type CalcFocus = { readonly wallId: string; readonly reactKey: string };
@@ -92,6 +93,7 @@ function editorOverlaySnapshot() {
     wallJointParamsModalOpen: s.wallJointParamsModalOpen,
     wallCalculationModalOpen: s.wallCalculationModalOpen,
     roofCalculationModalOpen: s.roofCalculationModalOpen,
+    generateRoofRaftersModalOpen: s.generateRoofRaftersModalOpen,
     wallCoordinateModalOpen: s.wallCoordinateModalOpen,
     floorBeamPlacementCoordinateModalOpen: s.floorBeamPlacementCoordinateModalOpen,
     slabCoordinateModalOpen: s.slabCoordinateModalOpen,
@@ -131,8 +133,10 @@ function SceneFromProject({
   texturePickLocked,
   selectedRoofBattenEntityId,
   selectedRoofPlaneEntityId,
+  selectedRoofRafterEntityId,
   selectedFloorInsulationEntityId,
   hoverFloorInsulationEntityId,
+  hoverRoofRafterEntityId,
 }: {
   readonly selectedWallEntityId: string | null;
   readonly selectedFloorBeamEntityId: string | null;
@@ -142,8 +146,10 @@ function SceneFromProject({
   readonly selectedSlabEntityId: string | null;
   readonly selectedRoofBattenEntityId: string | null;
   readonly selectedRoofPlaneEntityId: string | null;
+  readonly selectedRoofRafterEntityId: string | null;
   readonly selectedFloorInsulationEntityId: string | null;
   readonly hoverFloorInsulationEntityId: string | null;
+  readonly hoverRoofRafterEntityId: string | null;
   readonly calcFocus: CalcFocus | null;
   readonly hoverWallEntityId: string | null;
   readonly hoverFloorBeamEntityId: string | null;
@@ -225,6 +231,11 @@ function SceneFromProject({
         selectedRoofPlaneEntityId={selectedRoofPlaneEntityId}
         hoverRoofPlaneEntityId={hoverRoofPlaneEntityId}
       />
+      <ProjectRoofRafters
+        project={project}
+        selectedRafterEntityId={selectedRoofRafterEntityId}
+        hoverRafterEntityId={hoverRoofRafterEntityId}
+      />
     </>
   );
 }
@@ -245,6 +256,7 @@ function Editor3dCanvasScene({
   hoverFloorInsulationEntityId,
   hoverRoofBattenEntityId,
   hoverRoofPlaneEntityId,
+  hoverRoofRafterEntityId,
   hoverCalcReactKey,
   flyModeActive,
   orbitPivotModeActive,
@@ -277,6 +289,7 @@ function Editor3dCanvasScene({
   readonly hoverFloorInsulationEntityId: string | null;
   readonly hoverRoofBattenEntityId: string | null;
   readonly hoverRoofPlaneEntityId: string | null;
+  readonly hoverRoofRafterEntityId: string | null;
   readonly hoverCalcReactKey: string | null;
   readonly flyModeActive: boolean;
   readonly orbitPivotModeActive: boolean;
@@ -369,8 +382,19 @@ function Editor3dCanvasScene({
     if (parseRoofBattenPickEntityId(id) != null) {
       return null;
     }
+    if (project.roofRafters.some((r) => r.id === id)) {
+      return null;
+    }
     return project.roofPlanes.some((r) => r.id === id) ? id : null;
-  }, [project.roofPlanes, selectedEntityIds]);
+  }, [project.roofPlanes, project.roofRafters, selectedEntityIds]);
+
+  const selectedRoofRafterEntityId = useMemo(() => {
+    if (selectedEntityIds.length !== 1) {
+      return null;
+    }
+    const id = selectedEntityIds[0]!;
+    return project.roofRafters.some((r) => r.id === id) ? id : null;
+  }, [project.roofRafters, selectedEntityIds]);
 
   const show3dGrid = project.viewState.show3dGrid !== false;
 
@@ -425,6 +449,7 @@ function Editor3dCanvasScene({
           selectedSlabEntityId={selectedSlabEntityId}
           selectedRoofBattenEntityId={selectedRoofBattenEntityId}
           selectedRoofPlaneEntityId={selectedRoofPlaneEntityId}
+          selectedRoofRafterEntityId={selectedRoofRafterEntityId}
           selectedFloorInsulationEntityId={selectedFloorInsulationEntityId}
           calcFocus={calcFocus}
           hoverWallEntityId={hoverWallEntityId}
@@ -435,6 +460,7 @@ function Editor3dCanvasScene({
           hoverSlabEntityId={hoverSlabEntityId}
           hoverRoofBattenEntityId={hoverRoofBattenEntityId}
           hoverRoofPlaneEntityId={hoverRoofPlaneEntityId}
+          hoverRoofRafterEntityId={hoverRoofRafterEntityId}
           hoverFloorInsulationEntityId={hoverFloorInsulationEntityId}
           hoverCalcReactKey={hoverCalcReactKey}
           texturePickHover={texturePickHover}
@@ -536,6 +562,7 @@ export function Editor3DWorkspace() {
   const hoverFloorInsulationEntityId = hoverPick?.kind === "floorInsulation" ? hoverPick.entityId : null;
   const hoverRoofBattenEntityId = hoverPick?.kind === "roofBatten" ? hoverPick.entityId : null;
   const hoverRoofPlaneEntityId = hoverPick?.kind === "roofPlane" ? hoverPick.entityId : null;
+  const hoverRoofRafterEntityId = hoverPick?.kind === "roofRafter" ? hoverPick.entityId : null;
   const hoverCalcReactKey = hoverPick?.kind === "calc" ? hoverPick.reactKey : null;
 
   useEffect(() => {
@@ -770,6 +797,19 @@ export function Editor3DWorkspace() {
       };
     }
 
+    const rafter = project.roofRafters.find((r) => r.id === id);
+    if (rafter) {
+      return {
+        title: "Стропило",
+        rows: [
+          ["ID", rafter.id],
+          ["Скат", rafter.roofPlaneId],
+          ["Перекрытие", rafter.supportingFloorBeamId],
+          ["Профиль", rafter.profileId],
+        ] as const,
+      };
+    }
+
     return null;
   }, [calcFocus, project, selectedEntityIds]);
 
@@ -797,6 +837,9 @@ export function Editor3DWorkspace() {
     }
     if (hoverPick.kind === "roofPlane") {
       return "Скат крыши";
+    }
+    if (hoverPick.kind === "roofRafter") {
+      return "Стропило";
     }
     if (hoverPick.kind === "calc") {
       return "Элемент расчёта";
@@ -1004,6 +1047,7 @@ export function Editor3DWorkspace() {
           hoverFloorInsulationEntityId={hoverFloorInsulationEntityId}
           hoverRoofBattenEntityId={hoverRoofBattenEntityId}
           hoverRoofPlaneEntityId={hoverRoofPlaneEntityId}
+          hoverRoofRafterEntityId={hoverRoofRafterEntityId}
           hoverCalcReactKey={hoverCalcReactKey}
           flyModeActive={flyModeActive}
           orbitPivotModeActive={orbitPivotModeActive}

@@ -1,4 +1,4 @@
-import { type Firestore, getFirestore } from "firebase/firestore";
+import { type Firestore, initializeFirestore } from "firebase/firestore";
 import { getApps, initializeApp, type FirebaseApp } from "firebase/app";
 
 import { getFirebaseWebConfig, isFirebaseConfigured } from "./config";
@@ -19,7 +19,11 @@ export function getFirebaseApp(): FirebaseApp {
 
 export function getFirestoreDb(): Firestore {
   if (!db) {
-    db = getFirestore(getFirebaseApp());
+    // Long polling (XHR) вместо fetch/WebChannel по QUIC — уменьшает
+    // net::ERR_QUIC_PROTOCOL_ERROR (QUIC_TOO_MANY_RTOS) в нестабильных сетях/браузерах.
+    db = initializeFirestore(getFirebaseApp(), {
+      experimentalForceLongPolling: true,
+    });
   }
   return db;
 }

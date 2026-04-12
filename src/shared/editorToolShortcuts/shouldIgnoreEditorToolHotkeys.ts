@@ -28,6 +28,7 @@ export interface EditorToolHotkeyAppSnapshot {
   readonly wallJointParamsModalOpen: boolean;
   readonly wallCalculationModalOpen: boolean;
   readonly roofCalculationModalOpen: boolean;
+  readonly generateRoofRaftersModalOpen: boolean;
   readonly wallCoordinateModalOpen: boolean;
   readonly floorBeamPlacementCoordinateModalOpen: boolean;
   readonly slabCoordinateModalOpen: boolean;
@@ -81,6 +82,7 @@ export function hasBlockingEditorOverlayModal(app: EditorToolHotkeyAppSnapshot):
     app.wallJointParamsModalOpen ||
     app.wallCalculationModalOpen ||
     app.roofCalculationModalOpen ||
+    app.generateRoofRaftersModalOpen ||
     app.foundationStripAutoPilesModal != null ||
     app.textureApply3dParamsModal != null ||
     app.editor3dContextMenu != null ||

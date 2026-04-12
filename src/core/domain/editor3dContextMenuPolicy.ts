@@ -26,6 +26,8 @@ export function editor3dContextDeleteTargetLabelRu(pick: Editor3dPickPayload): s
       return "утеплитель перекрытия";
     case "roofPlane":
       return "скат крыши";
+    case "roofRafter":
+      return "стропило";
     default:
       return "объект";
   }
