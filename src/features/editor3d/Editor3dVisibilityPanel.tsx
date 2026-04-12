@@ -1,5 +1,5 @@
 import { type CSSProperties, useEffect, useId, useMemo, useRef, useState } from "react";
-import { Layers } from "lucide-react";
+import { Layers, X } from "lucide-react";
 
 import { sortLayersByOrder } from "@/core/domain/layerOps";
 import { LucideToolIcon } from "@/shared/ui/LucideToolIcon";
@@ -10,8 +10,13 @@ import { useEditor3dThemeColors } from "./useEditor3dThemeColors";
 
 import "./editor3d-visibility.css";
 
-/** Компактный popover: видимость категорий 3D (OSB, EPS, каркас, окна; двери — заготовка). */
-export function Editor3dVisibilityPanel() {
+export type Editor3dVisibilityPanelProps = {
+  /** Сообщить родителю об открытии (например, чтобы скрыть соседние плавающие кнопки). */
+  readonly onOpenChange?: (open: boolean) => void;
+};
+
+/** Плавающая панель: видимость категорий 3D (слои проекта, OSB, EPS, каркас; окна/двери — заготовка). */
+export function Editor3dVisibilityPanel({ onOpenChange }: Editor3dVisibilityPanelProps) {
   const idBase = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -34,6 +39,10 @@ export function Editor3dVisibilityPanel() {
   const hasRoofAssembly3d = project.roofAssemblyCalculations.length > 0;
 
   useEffect(() => {
+    onOpenChange?.(open);
+  }, [open, onOpenChange]);
+
+  useEffect(() => {
     if (!open) {
       return;
     }
@@ -50,7 +59,7 @@ export function Editor3dVisibilityPanel() {
   return (
     <div
       ref={wrapRef}
-      className="ed3-vis-wrap"
+      className={`ed3-vis-wrap${open ? " ed3-vis-wrap--open" : ""}`}
       style={
         {
           "--ed3-overlay-bg": theme3d.overlayBg,
@@ -69,10 +78,33 @@ export function Editor3dVisibilityPanel() {
         Видимость
       </button>
       {open ? (
-        <div id={`${idBase}-panel`} className="ed3-vis-popover" role="region" aria-label="Видимость слоёв 3D">
-          <p className="ed3-vis-hint">Показать или скрыть части модели. Настройки камеры и вида сохраняются.</p>
-          <p className="ed3-vis-section-title">Слои проекта</p>
-          <div className="ed3-vis-actions">
+        <div
+          id={`${idBase}-panel`}
+          className="ed3-vis-popover"
+          role="dialog"
+          aria-modal="false"
+          aria-labelledby={`${idBase}-vis-title`}
+        >
+          <header className="ed3-vis-card-header">
+            <div className="ed3-vis-card-title-group">
+              <LucideToolIcon icon={Layers} className="ed3-vis-card-title-icon" />
+              <h2 id={`${idBase}-vis-title`} className="ed3-vis-card-title">
+                Видимость
+              </h2>
+            </div>
+            <button
+              type="button"
+              className="ed3-vis-card-close"
+              aria-label="Закрыть панель видимости"
+              onClick={() => setOpen(false)}
+            >
+              <LucideToolIcon icon={X} className="ed3-vis-card-close-icon" />
+            </button>
+          </header>
+          <p className="ed3-vis-card-lead">
+            Показать или скрыть части модели. Настройки камеры и вида сохраняются.
+          </p>
+          <div className="ed3-vis-card-toolbar">
             <button type="button" className="ed3-vis-action-btn" onClick={() => showAll3dProjectLayers()}>
               Включить все слои
             </button>
@@ -80,171 +112,174 @@ export function Editor3dVisibilityPanel() {
               Выключить все слои
             </button>
           </div>
-          {sortedProjectLayers.map((layer) => (
-            <div key={layer.id} className="ed3-vis-row">
-              <label htmlFor={`${idBase}-pl-${layer.id}`}>{layer.name}</label>
+          <div className="ed3-vis-card-scroll">
+            <p className="ed3-vis-section-title ed3-vis-section-title--first">Слои проекта</p>
+            {sortedProjectLayers.map((layer) => (
+              <div key={layer.id} className="ed3-vis-row">
+                <label htmlFor={`${idBase}-pl-${layer.id}`} title={layer.name}>
+                  {layer.name}
+                </label>
+                <input
+                  id={`${idBase}-pl-${layer.id}`}
+                  type="checkbox"
+                  checked={!hidden3dLayerSet.has(layer.id)}
+                  onChange={() => toggle3dProjectLayerHidden(layer.id)}
+                />
+              </div>
+            ))}
+            <p className="ed3-vis-section-title">Материалы и элементы</p>
+            <div className="ed3-vis-row">
+              <label htmlFor={`${idBase}-osb`}>OSB</label>
               <input
-                id={`${idBase}-pl-${layer.id}`}
+                id={`${idBase}-osb`}
                 type="checkbox"
-                checked={!hidden3dLayerSet.has(layer.id)}
-                onChange={() => toggle3dProjectLayerHidden(layer.id)}
+                checked={vs.show3dLayerOsb !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dLayerOsb: e.target.checked })}
               />
             </div>
-          ))}
-          <p className="ed3-vis-section-title">Материалы и элементы</p>
-          <div className="ed3-vis-row">
-            <label htmlFor={`${idBase}-osb`}>OSB</label>
-            <input
-              id={`${idBase}-osb`}
-              type="checkbox"
-              checked={vs.show3dLayerOsb !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dLayerOsb: e.target.checked })}
-            />
-          </div>
-          <div className="ed3-vis-row">
-            <label htmlFor={`${idBase}-eps`}>Пенополистирол</label>
-            <input
-              id={`${idBase}-eps`}
-              type="checkbox"
-              checked={vs.show3dLayerEps !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dLayerEps: e.target.checked })}
-            />
-          </div>
-          <div className="ed3-vis-row">
-            <label htmlFor={`${idBase}-frame`}>Каркас</label>
-            <input
-              id={`${idBase}-frame`}
-              type="checkbox"
-              checked={vs.show3dLayerFrame !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dLayerFrame: e.target.checked })}
-            />
-          </div>
-          <div className="ed3-vis-row">
-            <label htmlFor={`${idBase}-gyp`}>Гипсокартон</label>
-            <input
-              id={`${idBase}-gyp`}
-              type="checkbox"
-              checked={vs.show3dLayerGypsum !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dLayerGypsum: e.target.checked })}
-            />
-          </div>
-          <div
-            className={`ed3-vis-row${!windowsReady ? " ed3-vis-row--disabled" : ""}`}
-            title={!windowsReady ? "Скоро" : undefined}
-          >
-            <label htmlFor={`${idBase}-win`}>Окна</label>
-            <input
-              id={`${idBase}-win`}
-              type="checkbox"
-              disabled={!windowsReady}
-              checked={vs.show3dLayerWindows !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dLayerWindows: e.target.checked })}
-            />
-          </div>
-          <div
-            className={`ed3-vis-row${!doorsReady ? " ed3-vis-row--disabled" : ""}`}
-            title={!doorsReady ? "Скоро" : undefined}
-          >
-            <label htmlFor={`${idBase}-door`}>Двери</label>
-            <input
-              id={`${idBase}-door`}
-              type="checkbox"
-              disabled={!doorsReady}
-              checked={vs.show3dLayerDoors !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dLayerDoors: e.target.checked })}
-            />
-          </div>
-          <p className="ed3-vis-hint" style={{ marginTop: 10, marginBottom: 4 }}>
-            Фундамент и перекрытие
-          </p>
-          <div className="ed3-vis-row">
-            <label htmlFor={`${idBase}-found`}>Фундамент</label>
-            <input
-              id={`${idBase}-found`}
-              type="checkbox"
-              checked={vs.show3dFoundation !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dFoundation: e.target.checked })}
-            />
-          </div>
-          <div className="ed3-vis-row">
-            <label htmlFor={`${idBase}-pile`}>Сваи</label>
-            <input
-              id={`${idBase}-pile`}
-              type="checkbox"
-              checked={vs.show3dPiles !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dPiles: e.target.checked })}
-            />
-          </div>
-          <div className="ed3-vis-row">
-            <label htmlFor={`${idBase}-overlap`}>Перекрытие</label>
-            <input
-              id={`${idBase}-overlap`}
-              type="checkbox"
-              checked={vs.show3dOverlap !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dOverlap: e.target.checked })}
-            />
-          </div>
-          <div className="ed3-vis-row">
-            <label htmlFor={`${idBase}-floor-ins`}>Утеплитель перекрытия (EPS)</label>
-            <input
-              id={`${idBase}-floor-ins`}
-              type="checkbox"
-              checked={vs.show3dFloorInsulation !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dFloorInsulation: e.target.checked })}
-            />
-          </div>
-          <p className="ed3-vis-hint" style={{ marginTop: 10, marginBottom: 4 }}>
-            Крыша (после «Рассчитать» в режиме крыши)
-          </p>
-          <div
-            className={`ed3-vis-row${!hasRoofAssembly3d ? " ed3-vis-row--disabled" : ""}`}
-            title={!hasRoofAssembly3d ? "Сначала выполните расчёт крыши" : undefined}
-          >
-            <label htmlFor={`${idBase}-roof-all`}>Крыша целиком</label>
-            <input
-              id={`${idBase}-roof-all`}
-              type="checkbox"
-              disabled={!hasRoofAssembly3d}
-              checked={vs.show3dRoof !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dRoof: e.target.checked })}
-            />
-          </div>
-          <div className={`ed3-vis-row${!hasRoofAssembly3d ? " ed3-vis-row--disabled" : ""}`}>
-            <label htmlFor={`${idBase}-roof-cov`}>Покрытие крыши</label>
-            <input
-              id={`${idBase}-roof-cov`}
-              type="checkbox"
-              disabled={!hasRoofAssembly3d}
-              checked={vs.show3dRoofCovering !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dRoofCovering: e.target.checked })}
-            />
-          </div>
-          <div className={`ed3-vis-row${!hasRoofAssembly3d ? " ed3-vis-row--disabled" : ""}`}>
-            <label htmlFor={`${idBase}-roof-bat`}>Обрешётка</label>
-            <input
-              id={`${idBase}-roof-bat`}
-              type="checkbox"
-              disabled={!hasRoofAssembly3d}
-              checked={vs.show3dRoofBattens !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dRoofBattens: e.target.checked })}
-            />
-          </div>
-          <div
-            className={`ed3-vis-row${!hasRoofAssembly3d ? " ed3-vis-row--disabled" : ""}`}
-            title={!hasRoofAssembly3d ? undefined : "Под обрешёткой"}
-          >
-            <label htmlFor={`${idBase}-roof-mem`}>Мембрана / ветрозащита</label>
-            <input
-              id={`${idBase}-roof-mem`}
-              type="checkbox"
-              disabled={!hasRoofAssembly3d}
-              checked={vs.show3dRoofMembrane !== false}
-              onChange={(e) => set3dLayerVisibility({ show3dRoofMembrane: e.target.checked })}
-            />
-          </div>
-          <div className={`ed3-vis-row ed3-vis-row--disabled`} title="Геометрия будет добавлена позже">
-            <label htmlFor={`${idBase}-roof-soff`}>Подшивка свесов</label>
-            <input id={`${idBase}-roof-soff`} type="checkbox" disabled checked={false} readOnly />
+            <div className="ed3-vis-row">
+              <label htmlFor={`${idBase}-eps`}>Пенополистирол</label>
+              <input
+                id={`${idBase}-eps`}
+                type="checkbox"
+                checked={vs.show3dLayerEps !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dLayerEps: e.target.checked })}
+              />
+            </div>
+            <div className="ed3-vis-row">
+              <label htmlFor={`${idBase}-frame`}>Каркас</label>
+              <input
+                id={`${idBase}-frame`}
+                type="checkbox"
+                checked={vs.show3dLayerFrame !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dLayerFrame: e.target.checked })}
+              />
+            </div>
+            <div className="ed3-vis-row">
+              <label htmlFor={`${idBase}-gyp`}>Гипсокартон</label>
+              <input
+                id={`${idBase}-gyp`}
+                type="checkbox"
+                checked={vs.show3dLayerGypsum !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dLayerGypsum: e.target.checked })}
+              />
+            </div>
+            <div
+              className={`ed3-vis-row${!windowsReady ? " ed3-vis-row--disabled" : ""}`}
+              title={!windowsReady ? "Скоро" : undefined}
+            >
+              <label htmlFor={`${idBase}-win`}>Окна</label>
+              <input
+                id={`${idBase}-win`}
+                type="checkbox"
+                disabled={!windowsReady}
+                checked={vs.show3dLayerWindows !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dLayerWindows: e.target.checked })}
+              />
+            </div>
+            <div
+              className={`ed3-vis-row${!doorsReady ? " ed3-vis-row--disabled" : ""}`}
+              title={!doorsReady ? "Скоро" : undefined}
+            >
+              <label htmlFor={`${idBase}-door`}>Двери</label>
+              <input
+                id={`${idBase}-door`}
+                type="checkbox"
+                disabled={!doorsReady}
+                checked={vs.show3dLayerDoors !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dLayerDoors: e.target.checked })}
+              />
+            </div>
+            <p className="ed3-vis-section-title">Фундамент и перекрытие</p>
+            <div className="ed3-vis-row">
+              <label htmlFor={`${idBase}-found`}>Фундамент</label>
+              <input
+                id={`${idBase}-found`}
+                type="checkbox"
+                checked={vs.show3dFoundation !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dFoundation: e.target.checked })}
+              />
+            </div>
+            <div className="ed3-vis-row">
+              <label htmlFor={`${idBase}-pile`}>Сваи</label>
+              <input
+                id={`${idBase}-pile`}
+                type="checkbox"
+                checked={vs.show3dPiles !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dPiles: e.target.checked })}
+              />
+            </div>
+            <div className="ed3-vis-row">
+              <label htmlFor={`${idBase}-overlap`}>Перекрытие</label>
+              <input
+                id={`${idBase}-overlap`}
+                type="checkbox"
+                checked={vs.show3dOverlap !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dOverlap: e.target.checked })}
+              />
+            </div>
+            <div className="ed3-vis-row">
+              <label htmlFor={`${idBase}-floor-ins`} title="Утеплитель перекрытия (EPS)">
+                Утеплитель перекрытия (EPS)
+              </label>
+              <input
+                id={`${idBase}-floor-ins`}
+                type="checkbox"
+                checked={vs.show3dFloorInsulation !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dFloorInsulation: e.target.checked })}
+              />
+            </div>
+            <p className="ed3-vis-section-sub">Крыша (после «Рассчитать» в режиме крыши)</p>
+            <div
+              className={`ed3-vis-row${!hasRoofAssembly3d ? " ed3-vis-row--disabled" : ""}`}
+              title={!hasRoofAssembly3d ? "Сначала выполните расчёт крыши" : undefined}
+            >
+              <label htmlFor={`${idBase}-roof-all`}>Крыша целиком</label>
+              <input
+                id={`${idBase}-roof-all`}
+                type="checkbox"
+                disabled={!hasRoofAssembly3d}
+                checked={vs.show3dRoof !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dRoof: e.target.checked })}
+              />
+            </div>
+            <div className={`ed3-vis-row${!hasRoofAssembly3d ? " ed3-vis-row--disabled" : ""}`}>
+              <label htmlFor={`${idBase}-roof-cov`}>Покрытие крыши</label>
+              <input
+                id={`${idBase}-roof-cov`}
+                type="checkbox"
+                disabled={!hasRoofAssembly3d}
+                checked={vs.show3dRoofCovering !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dRoofCovering: e.target.checked })}
+              />
+            </div>
+            <div className={`ed3-vis-row${!hasRoofAssembly3d ? " ed3-vis-row--disabled" : ""}`}>
+              <label htmlFor={`${idBase}-roof-bat`}>Обрешётка</label>
+              <input
+                id={`${idBase}-roof-bat`}
+                type="checkbox"
+                disabled={!hasRoofAssembly3d}
+                checked={vs.show3dRoofBattens !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dRoofBattens: e.target.checked })}
+              />
+            </div>
+            <div
+              className={`ed3-vis-row${!hasRoofAssembly3d ? " ed3-vis-row--disabled" : ""}`}
+              title={!hasRoofAssembly3d ? undefined : "Под обрешёткой"}
+            >
+              <label htmlFor={`${idBase}-roof-mem`}>Мембрана / ветрозащита</label>
+              <input
+                id={`${idBase}-roof-mem`}
+                type="checkbox"
+                disabled={!hasRoofAssembly3d}
+                checked={vs.show3dRoofMembrane !== false}
+                onChange={(e) => set3dLayerVisibility({ show3dRoofMembrane: e.target.checked })}
+              />
+            </div>
+            <div className="ed3-vis-row ed3-vis-row--disabled" title="Геометрия будет добавлена позже">
+              <label htmlFor={`${idBase}-roof-soff`}>Подшивка свесов</label>
+              <input id={`${idBase}-roof-soff`} type="checkbox" disabled checked={false} readOnly />
+            </div>
           </div>
         </div>
       ) : null}

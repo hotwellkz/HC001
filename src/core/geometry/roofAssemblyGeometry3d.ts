@@ -63,6 +63,27 @@ export function roofPlanVertexToThreeMm(pxMm: number, pyMm: number, zUpMm: numbe
 }
 
 /**
+ * Единичная нормаль ската наружу (к небу), в той же системе, что {@link roofPlanVertexToThreeMm}.
+ * Не зависит от подъёма слоя — только угол и направление стока.
+ */
+export function roofSlopeOutwardUnitNormalThreeMm(rp: RoofPlaneEntity): RoofThreeMm {
+  const { uxn, uyn } = roofPlaneDrainUnitPlanMm(rp);
+  const pitchRad = (rp.angleDeg * Math.PI) / 180;
+  const tanP = Math.tan(pitchRad);
+  /** Вдоль карниза в плане. */
+  const tEave = unit3(-uyn, 0, -uxn);
+  /** Вниз по скату в плане. */
+  const tDownRaw: RoofThreeMm = [uxn, -tanP, -uyn];
+  const tDown = unit3(tDownRaw[0], tDownRaw[1], tDownRaw[2]);
+  const cCross = cross3(tEave, tDown);
+  let n = unit3(cCross[0], cCross[1], cCross[2]);
+  if (n[1] < 0) {
+    n = scale3(n, -1);
+  }
+  return n;
+}
+
+/**
  * Плоскость ската: сток в плане по `slopeDirection`, подъём против стока.
  * `zAdjustMm` — согласование стыков с соседними скатами (см. roofGroupHeightAdjust).
  *
@@ -87,17 +108,7 @@ function roofSlopeVerticesThreeMmFromPolyWithMaxDotRef(
     return roofPlanVertexToThreeMm(p.x, p.y, zUp);
   });
 
-  /** Вдоль карниза в плане: (-uy, ux) → Three (-uyn, 0, uxn)? py → -Z: ( -uyn, 0, -(-uxn)? ) */
-  const tEave = unit3(-uyn, 0, -uxn);
-  /** Сток в плане (ux, uy): в Three горизонталь (uxn, 0, -uyn), вверх dz/ds = -tan при движении вниз по скату. */
-  const tDownRaw: RoofThreeMm = [uxn, -tanP, -uyn];
-  const tDown = unit3(tDownRaw[0], tDownRaw[1], tDownRaw[2]);
-
-  const cCross = cross3(tEave, tDown);
-  let n = unit3(cCross[0], cCross[1], cCross[2]);
-  if (n[1] < 0) {
-    n = scale3(n, -1);
-  }
+  const n = roofSlopeOutwardUnitNormalThreeMm(rp);
   return { verts, outwardNormal: n };
 }
 

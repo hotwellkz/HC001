@@ -33,6 +33,13 @@ export function beamSectionPrincipalDimsMm(profile: Profile): { aMm: number; bMm
 }
 
 /**
+ * Ориентация прямоугольного сечения линейного элемента (балка, стропило и т.п.):
+ * - `flat` — плашмя: большая сторона в плане, меньшая по вертикали в типичной горизонтальной укладке;
+ * - `edge` — на ребро: меньшая сторона в плане, большая по «высоте» сечения.
+ */
+export type LinearElementSectionOrientation = "flat" | "edge";
+
+/**
  * Толщина в плане (перпендикулярно оси балки) и высота по Z.
  * Без roll: «плашмя» — большая сторона в плане, меньшая по высоте.
  * С roll: на ребро — наоборот.
@@ -48,4 +55,12 @@ export function beamPlanThicknessAndVerticalMm(
   return sectionRolled
     ? { planThicknessMm: dims.bMm, verticalMm: dims.aMm }
     : { planThicknessMm: dims.aMm, verticalMm: dims.bMm };
+}
+
+/** То же, что {@link beamPlanThicknessAndVerticalMm} с явной ориентацией сечения. */
+export function beamPlanThicknessAndVerticalFromOrientationMm(
+  profile: Profile,
+  orientation: LinearElementSectionOrientation,
+): { planThicknessMm: number; verticalMm: number } {
+  return beamPlanThicknessAndVerticalMm(profile, orientation === "edge");
 }

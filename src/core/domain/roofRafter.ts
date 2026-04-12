@@ -1,3 +1,4 @@
+import type { LinearElementSectionOrientation } from "./floorBeamSection";
 import type { Point2D } from "../geometry/types";
 
 /**
@@ -24,7 +25,18 @@ export interface RoofRafterEntity {
   readonly footElevationMm: number;
   /** Мировая отметка верха на линии конька, мм. */
   readonly ridgeElevationMm: number;
+  /**
+   * Ориентация сечения в 3D (плашмя / на ребро). Для стропил по умолчанию `edge`.
+   * Если поле отсутствует в старых проектах — считается `edge`.
+   */
+  readonly sectionOrientation?: LinearElementSectionOrientation;
+  /** Согласовано с {@link LinearElementSectionOrientation}: `true` = на ребро. */
   readonly sectionRolled: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
+}
+
+/** Ориентация сечения для 3D: явное поле или `edge` (в т.ч. для старых проектов без поля). */
+export function resolveRoofRafterSectionOrientation(r: RoofRafterEntity): LinearElementSectionOrientation {
+  return r.sectionOrientation === "flat" ? "flat" : "edge";
 }

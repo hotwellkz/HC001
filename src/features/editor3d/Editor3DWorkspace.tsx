@@ -5,6 +5,7 @@ import type { MutableRefObject, Ref, RefObject } from "react";
 import type { Group } from "three";
 
 import { slabWorldBottomMm, slabWorldTopMm } from "@/core/domain/layerVerticalStack";
+import { resolveRoofRafterSectionOrientation } from "@/core/domain/roofRafter";
 import { parseRoofBattenPickEntityId } from "@/core/domain/roofBattenPick3d";
 import { formatLumberDisplayMark, lumberDisplayIndexByPieceId } from "@/core/domain/pieceDisplayMark";
 import { buildCalculationSolidSpecsForProject } from "@/core/domain/wallCalculation3dSpecs";
@@ -513,6 +514,7 @@ export function Editor3DWorkspace() {
   const [textureToolHoverPick, setTextureToolHoverPick] = useState<Editor3dPickPayload | null>(null);
   const [flyModeActive, setFlyModeActive] = useState(false);
   const [orbitPivotModeActive, setOrbitPivotModeActive] = useState(false);
+  const [editor3dVisibilityOpen, setEditor3dVisibilityOpen] = useState(false);
   const [pivotMarkerWorld, setPivotMarkerWorld] = useState<readonly [number, number, number] | null>(null);
   const modelBoundsRef = useRef<Group | null>(null);
   const orbitViewportSerialRef = useRef<string>("");
@@ -799,6 +801,7 @@ export function Editor3DWorkspace() {
 
     const rafter = project.roofRafters.find((r) => r.id === id);
     if (rafter) {
+      const orientRu = resolveRoofRafterSectionOrientation(rafter) === "edge" ? "на ребро" : "плашмя";
       return {
         title: "Стропило",
         rows: [
@@ -806,6 +809,7 @@ export function Editor3DWorkspace() {
           ["Скат", rafter.roofPlaneId],
           ["Перекрытие", rafter.supportingFloorBeamId],
           ["Профиль", rafter.profileId],
+          ["Сечение", orientRu],
         ] as const,
       };
     }
@@ -868,8 +872,10 @@ export function Editor3DWorkspace() {
         e.preventDefault();
       }}
     >
-      <Editor3dVisibilityPanel />
-      <Editor3dCameraPresetPanel disabled={flyModeActive} onSelectPreset={requestCameraPreset} />
+      <Editor3dVisibilityPanel onOpenChange={setEditor3dVisibilityOpen} />
+      {!editor3dVisibilityOpen ? (
+        <Editor3dCameraPresetPanel disabled={flyModeActive} onSelectPreset={requestCameraPreset} />
+      ) : null}
       <label
         style={{
           position: "absolute",
