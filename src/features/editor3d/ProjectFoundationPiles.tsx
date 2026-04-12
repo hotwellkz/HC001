@@ -21,6 +21,7 @@ import {
 import { editor3dTextureHighlightMatches } from "./editor3dTextureHighlight";
 import { meshStandardPresetForMaterialType } from "./materials3d";
 import { buildTexturedBoxMaterials, disposeOwnedMaterials } from "./surfaceTextureMaterial3d";
+import { isProjectLayerVisibleIn3d } from "./view3dVisibility";
 
 const MM_TO_M = 0.001;
 
@@ -221,6 +222,9 @@ export function ProjectFoundationPiles({
       readonly concrete: ReturnType<typeof pileMeshesForEntity>["concrete"];
     }[] = [];
     for (const pile of project.foundationPiles) {
+      if (!isProjectLayerVisibleIn3d(pile.layerId, project)) {
+        continue;
+      }
       const r = pileMeshesForEntity(project, pile, layerBaseById);
       if (r.parts.length === 0) {
         continue;

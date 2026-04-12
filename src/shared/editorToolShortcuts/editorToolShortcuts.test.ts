@@ -8,6 +8,7 @@ const baseApp = {
   activeTab: "2d",
   layerManagerOpen: false,
   layerParamsModalOpen: false,
+  floorInsulationModalOpen: false,
   profilesModalOpen: false,
   addWallModalOpen: false,
   addFloorBeamModalOpen: false,

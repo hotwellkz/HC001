@@ -35,6 +35,7 @@ export function AddRoofPlaneModal() {
   const [roofKind, setRoofKind] = useState<RoofSystemKind>("gable");
   const [eaveMm, setEaveMm] = useState(450);
   const [sideMm, setSideMm] = useState(450);
+  const [coverEaveMm, setCoverEaveMm] = useState(50);
   const [ridgeAlong, setRidgeAlong] = useState<"short" | "long">("short");
   const [monoDrain, setMonoDrain] = useState<MonoCardinalDrain>("s");
 
@@ -58,6 +59,7 @@ export function AddRoofPlaneModal() {
       setProfileId(d.profileId);
       setEaveMm(d.eaveOverhangMm);
       setSideMm(d.sideOverhangMm);
+      setCoverEaveMm(typeof d.roofCoverEaveProjectionMm === "number" ? d.roofCoverEaveProjectionMm : 50);
       setRidgeAlong(d.ridgeAlong);
       setMonoDrain(d.monoDrainCardinal);
       return;
@@ -70,6 +72,7 @@ export function AddRoofPlaneModal() {
       setProfileId(stickySys.profileId);
       setEaveMm(stickySys.eaveOverhangMm);
       setSideMm(stickySys.sideOverhangMm);
+      setCoverEaveMm(typeof stickySys.roofCoverEaveProjectionMm === "number" ? stickySys.roofCoverEaveProjectionMm : 50);
       setRidgeAlong(stickySys.ridgeAlong);
       setMonoDrain(stickySys.monoDrainCardinal);
       return;
@@ -88,6 +91,7 @@ export function AddRoofPlaneModal() {
     setRoofKind("gable");
     setEaveMm(450);
     setSideMm(450);
+    setCoverEaveMm(50);
     setRidgeAlong("short");
     setMonoDrain("s");
   }, [open, session, sessionSys, stickyManual, stickySys, roofProfiles]);
@@ -121,6 +125,7 @@ export function AddRoofPlaneModal() {
           profileId: profileId.trim(),
           eaveOverhangMm: Number(eaveMm),
           sideOverhangMm: Number(sideMm),
+          roofCoverEaveProjectionMm: Math.max(0, Number(coverEaveMm)),
           ridgeAlong,
           monoDrainCardinal: monoDrain,
         });
@@ -226,6 +231,17 @@ export function AddRoofPlaneModal() {
             <label className="lm-field">
               <span className="lm-label">Боковой свес (мм)</span>
               <input className="lm-input" type="number" step={1} min={0} value={sideMm} onChange={(e) => setSideMm(Number(e.target.value))} />
+            </label>
+            <label className="lm-field">
+              <span className="lm-label">Выпуск покрытия по карнизу (мм)</span>
+              <input
+                className="lm-input"
+                type="number"
+                step={1}
+                min={0}
+                value={coverEaveMm}
+                onChange={(e) => setCoverEaveMm(Number(e.target.value))}
+              />
             </label>
             {roofKind === "mono" ? (
               <label className="lm-field">

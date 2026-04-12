@@ -11,6 +11,7 @@ import type { Project } from "@/core/domain/project";
 import type { Point2D } from "@/core/geometry/types";
 
 import { slabFootprintMaxSpanMm } from "./slabMesh3d";
+import { isProjectLayerVisibleIn3d } from "./view3dVisibility";
 
 const MM_TO_M = 0.001;
 
@@ -74,6 +75,9 @@ export function selectFoundationStripsForScene3d(project: Project): readonly Fou
   return project.foundationStrips.filter((fs) => {
     const layer = getLayerById(project, fs.layerId);
     if (layer?.isVisible === false) {
+      return false;
+    }
+    if (!isProjectLayerVisibleIn3d(fs.layerId, project)) {
       return false;
     }
     return true;

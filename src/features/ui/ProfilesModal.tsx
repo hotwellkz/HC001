@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { newEntityId } from "@/core/domain/ids";
 import type {
+  InsulationDefaultLayoutMode,
+  InsulationMaterialKind,
   Profile,
   ProfileCategory,
   ProfileCompositionMode,
@@ -42,8 +44,22 @@ const CATEGORY_LABELS: Record<ProfileCategory, string> = {
   beam: "Балка",
   pipe: "Труба",
   board: "Доска/брус",
+  insulation: "Утеплитель",
   custom: "Другое",
 };
+
+const INSULATION_MATERIAL_OPTIONS: { readonly value: InsulationMaterialKind; readonly label: string }[] = [
+  { value: "eps", label: "EPS" },
+  { value: "xps", label: "XPS" },
+  { value: "mineralWool", label: "Минвата" },
+  { value: "other", label: "Другое" },
+];
+
+const INSULATION_LAYOUT_OPTIONS: { readonly value: InsulationDefaultLayoutMode; readonly label: string }[] = [
+  { value: "auto", label: "Авто" },
+  { value: "alongBeams", label: "Вдоль балок" },
+  { value: "acrossBeams", label: "Поперёк балок" },
+];
 
 const LINEAR_STOCK_PROFILE_CATEGORIES = new Set<ProfileCategory>(["beam", "board", "pipe", "slab", "custom"]);
 
@@ -232,6 +248,14 @@ export function ProfilesModal({ open, onClose }: ProfilesModalProps) {
           compositionMode: "solid",
           layers: stub,
           roofAssembly: migrateRoofProfileAssemblyWire(toSave.roofAssembly),
+        };
+      }
+      if (toSave.category === "insulation") {
+        toSave = {
+          ...toSave,
+          compositionMode: "solid",
+          layers: [],
+          roofAssembly: undefined,
         };
       }
       const errs = validateProfile(toSave);
@@ -492,12 +516,30 @@ export function ProfilesModal({ open, onClose }: ProfilesModalProps) {
                             category: c,
                             compositionMode: "solid",
                             layers: stub,
+                            insulation: undefined,
                             roofAssembly: migrateRoofProfileAssemblyWire(
                               draft.roofAssembly ?? { ...DEFAULT_ROOF_PROFILE_ASSEMBLY },
                             ),
                           });
+                        } else if (c === "insulation") {
+                          updateDraft({
+                            ...draft,
+                            category: c,
+                            compositionMode: "solid",
+                            layers: [],
+                            roofAssembly: undefined,
+                            insulation:
+                              draft.insulation ?? {
+                                materialKind: "eps",
+                                sheetLengthMm: 2400,
+                                sheetWidthMm: 1200,
+                                thicknessMm: 100,
+                                technologicalGapMm: 5,
+                                defaultLayoutMode: "auto",
+                              },
+                          });
                         } else {
-                          updateDraft({ ...draft, category: c });
+                          updateDraft({ ...draft, category: c, insulation: undefined });
                         }
                       }}
                     >
@@ -508,7 +550,7 @@ export function ProfilesModal({ open, onClose }: ProfilesModalProps) {
                       ))}
                     </select>
                   </div>
-                  {draft.category !== "roof" ? (
+                  {draft.category !== "roof" && draft.category !== "insulation" ? (
                     <div className="pm-field">
                       <label className="pm-label" htmlFor="pm-mode">
                         Режим
@@ -523,10 +565,16 @@ export function ProfilesModal({ open, onClose }: ProfilesModalProps) {
                         <option value="solid">Цельный / сечение</option>
                       </select>
                     </div>
-                  ) : (
+                  ) : draft.category === "roof" ? (
                     <div className="pm-field" style={{ alignSelf: "flex-end" }}>
                       <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.45 }}>
                         Конструкция кровли задаётся блоками ниже; слои SIP для этой категории не используются.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="pm-field" style={{ alignSelf: "flex-end" }}>
+                      <p className="muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.45 }}>
+                        Габариты листа и материал задаются ниже; слои профиля не используются.
                       </p>
                     </div>
                   )}
@@ -551,7 +599,192 @@ export function ProfilesModal({ open, onClose }: ProfilesModalProps) {
                   </div>
                 ) : null}
 
-                {draft.category !== "roof" ? (
+                {draft.category === "insulation" && draft.insulation ? (
+                  <>
+                    <p className="muted" style={{ margin: "4px 0 10px", fontSize: 12, lineHeight: 1.5 }}>
+                      Используется инструментом утепления перекрытия между балками. Размеры листа и толщина не дублируются в
+                      инструменте — только выбор этого профиля.
+                    </p>
+                    <div className="pm-row2">
+                      <div className="pm-field">
+                        <label className="pm-label" htmlFor="pm-ins-mat">
+                          Материал
+                        </label>
+                        <select
+                          id="pm-ins-mat"
+                          className="pm-select"
+                          value={draft.insulation.materialKind}
+                          onChange={(e) =>
+                            updateDraft({
+                              ...draft,
+                              insulation: {
+                                ...draft.insulation!,
+                                materialKind: e.target.value as InsulationMaterialKind,
+                              },
+                            })
+                          }
+                        >
+                          {INSULATION_MATERIAL_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {draft.insulation.materialKind === "other" ? (
+                        <div className="pm-field">
+                          <label className="pm-label" htmlFor="pm-ins-custom">
+                            Название материала
+                          </label>
+                          <input
+                            id="pm-ins-custom"
+                            className="pm-input"
+                            value={draft.insulation.customMaterialLabel ?? ""}
+                            placeholder="Напр. ППУ"
+                            onChange={(e) =>
+                              updateDraft({
+                                ...draft,
+                                insulation: {
+                                  ...draft.insulation!,
+                                  customMaterialLabel: e.target.value || undefined,
+                                },
+                              })
+                            }
+                          />
+                        </div>
+                      ) : (
+                        <div className="pm-field" />
+                      )}
+                    </div>
+                    <div className="pm-row2">
+                      <div className="pm-field">
+                        <label className="pm-label" htmlFor="pm-ins-len">
+                          Длина листа, мм
+                        </label>
+                        <input
+                          id="pm-ins-len"
+                          className="pm-input"
+                          type="number"
+                          min={1}
+                          step={10}
+                          value={draft.insulation.sheetLengthMm}
+                          onChange={(e) =>
+                            updateDraft({
+                              ...draft,
+                              insulation: { ...draft.insulation!, sheetLengthMm: Number(e.target.value) || 0 },
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="pm-field">
+                        <label className="pm-label" htmlFor="pm-ins-wid">
+                          Ширина листа, мм
+                        </label>
+                        <input
+                          id="pm-ins-wid"
+                          className="pm-input"
+                          type="number"
+                          min={1}
+                          step={10}
+                          value={draft.insulation.sheetWidthMm}
+                          onChange={(e) =>
+                            updateDraft({
+                              ...draft,
+                              insulation: { ...draft.insulation!, sheetWidthMm: Number(e.target.value) || 0 },
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="pm-row2">
+                      <div className="pm-field">
+                        <label className="pm-label" htmlFor="pm-ins-th">
+                          Толщина, мм
+                        </label>
+                        <input
+                          id="pm-ins-th"
+                          className="pm-input"
+                          type="number"
+                          min={1}
+                          step={1}
+                          value={draft.insulation.thicknessMm}
+                          onChange={(e) =>
+                            updateDraft({
+                              ...draft,
+                              insulation: { ...draft.insulation!, thicknessMm: Number(e.target.value) || 0 },
+                            })
+                          }
+                        />
+                      </div>
+                      <div className="pm-field">
+                        <label className="pm-label" htmlFor="pm-ins-gap">
+                          Технологический зазор, мм
+                        </label>
+                        <input
+                          id="pm-ins-gap"
+                          className="pm-input"
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={draft.insulation.technologicalGapMm}
+                          onChange={(e) =>
+                            updateDraft({
+                              ...draft,
+                              insulation: { ...draft.insulation!, technologicalGapMm: Number(e.target.value) || 0 },
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="pm-field">
+                      <label className="pm-label" htmlFor="pm-ins-layout">
+                        Режим раскладки по умолчанию
+                      </label>
+                      <select
+                        id="pm-ins-layout"
+                        className="pm-select"
+                        value={draft.insulation.defaultLayoutMode}
+                        onChange={(e) =>
+                          updateDraft({
+                            ...draft,
+                            insulation: {
+                              ...draft.insulation!,
+                              defaultLayoutMode: e.target.value as InsulationDefaultLayoutMode,
+                            },
+                          })
+                        }
+                      >
+                        {INSULATION_LAYOUT_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="pm-field">
+                      <label className="pm-label" htmlFor="pm-ins-fill">
+                        Цвет заливки 2D (#rrggbb), необязательно
+                      </label>
+                      <input
+                        id="pm-ins-fill"
+                        className="pm-input"
+                        placeholder="#e0f2fe"
+                        value={draft.insulation.fillColorHex2d ?? ""}
+                        onChange={(e) =>
+                          updateDraft({
+                            ...draft,
+                            insulation: {
+                              ...draft.insulation!,
+                              fillColorHex2d: e.target.value.trim() || undefined,
+                            },
+                          })
+                        }
+                      />
+                    </div>
+                  </>
+                ) : null}
+
+                {draft.category !== "roof" && draft.category !== "insulation" ? (
                   <>
                     <div className="pm-row2">
                       <div className="pm-field">
@@ -1169,7 +1402,9 @@ export function ProfilesModal({ open, onClose }: ProfilesModalProps) {
                   />
                 </div>
 
-                {draft.category !== "roof" && draft.compositionMode === "layered" && (
+                {draft.category !== "roof" &&
+                  draft.category !== "insulation" &&
+                  draft.compositionMode === "layered" && (
                   <>
                     <div className="pm-label" style={{ marginBottom: 8 }}>
                       Слои (снизу вверх по порядку)
@@ -1242,7 +1477,9 @@ export function ProfilesModal({ open, onClose }: ProfilesModalProps) {
                   </>
                 )}
 
-                {draft.category !== "roof" && draft.compositionMode === "solid" && (
+                {draft.category !== "roof" &&
+                  draft.category !== "insulation" &&
+                  draft.compositionMode === "solid" && (
                   <div>
                     <div className="pm-label" style={{ marginBottom: 8 }}>
                       Сечение (один материал)

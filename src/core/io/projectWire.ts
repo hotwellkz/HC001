@@ -14,6 +14,20 @@ import { normalizeLayer, type Layer } from "../domain/layer";
 import { migrateRoofProfileAssemblyWire } from "../domain/roofProfileAssembly";
 import { migrateWallProfileWallManufacturingWire } from "../domain/wallManufacturing";
 import { migrateWireV0ToProject } from "./migrateWireV0";
+import { normalizeFloorInsulationPieceImported } from "../domain/floorInsulation";
+import type { RoofSystemEntity } from "../domain/roofSystem";
+
+/** Старые файлы без поля выпуска покрытия — подставляем 0. */
+function normalizeRoofSystemsImported(systems: readonly RoofSystemEntity[]): RoofSystemEntity[] {
+  return systems.map((s) => {
+    const raw = s as RoofSystemEntity & { roofCoverEaveProjectionMm?: number };
+    const v = raw.roofCoverEaveProjectionMm;
+    return {
+      ...s,
+      roofCoverEaveProjectionMm: typeof v === "number" && Number.isFinite(v) ? Math.max(0, v) : 0,
+    };
+  });
+}
 
 /** schema v1: slopeDirection хранил направление выдавливания; в v2 — направление стока (инверсия). */
 function migrateRoofPlanesSlopeSemanticsV1ToV2(roofPlanes: Project["roofPlanes"]): Project["roofPlanes"] {
@@ -63,6 +77,7 @@ export interface ProjectFileV1 {
   readonly foundationPiles?: Project["foundationPiles"];
   readonly slabs?: Project["slabs"];
   readonly floorBeams?: Project["floorBeams"];
+  readonly floorInsulationPieces?: Project["floorInsulationPieces"];
   readonly roofPlanes?: Project["roofPlanes"];
   readonly roofSystems?: Project["roofSystems"];
   readonly roofAssemblyCalculations?: Project["roofAssemblyCalculations"];
@@ -136,8 +151,9 @@ export function projectFromWireV1(wire: ProjectFileV1): Project {
     foundationPiles: wire.foundationPiles ?? [],
     slabs: wire.slabs ?? [],
     floorBeams: wire.floorBeams ?? [],
+    floorInsulationPieces: (wire.floorInsulationPieces ?? []).map((p) => normalizeFloorInsulationPieceImported(p)),
     roofPlanes,
-    roofSystems: wire.roofSystems ?? [],
+    roofSystems: normalizeRoofSystemsImported(wire.roofSystems ?? []),
     roofAssemblyCalculations: wire.roofAssemblyCalculations ?? [],
     wallCalculations: wire.wallCalculations ?? [],
     wallJoints: wire.wallJoints ?? [],
@@ -150,7 +166,14 @@ export function projectFromWireV1(wire: ProjectFileV1): Project {
     sheets: wire.sheets,
     dimensions: wire.dimensions,
     settings: normalizeProjectSettings(wire.settings as ProjectSettingsWire),
-    viewState: normalizeViewState(wire.viewState),
+    viewState: (() => {
+      const vs = normalizeViewState(wire.viewState);
+      const valid = new Set(wire.layers.map((l) => normalizeLayer(l as Layer).id));
+      return {
+        ...vs,
+        hidden3dProjectLayerIds: vs.hidden3dProjectLayerIds.filter((id) => valid.has(id)),
+      };
+    })(),
     profiles: normalizeProfilesImported(wire.profiles ?? []),
     surfaceTextureState: normalizeSurfaceTextureState(wire.surfaceTextureState),
   };

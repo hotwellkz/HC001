@@ -37,6 +37,7 @@ export function deleteEntitiesFromProject(project: Project, selectedIds: Readonl
   const foundationPilesKept = project.foundationPiles.filter((p) => !selectedIds.has(p.id));
   const slabsKept = project.slabs.filter((s) => !selectedIds.has(s.id));
   const floorBeamsKept = project.floorBeams.filter((b) => !selectedIds.has(b.id));
+  const floorInsulationPiecesKept = project.floorInsulationPieces.filter((p) => !selectedIds.has(p.id));
   const roofPlanesKept = project.roofPlanes.filter((r) => !selectedIds.has(r.id));
   const keptRoofIds = new Set(roofPlanesKept.map((r) => r.id));
   const removedRoofIds = new Set(project.roofPlanes.filter((r) => selectedIds.has(r.id)).map((r) => r.id));
@@ -59,6 +60,7 @@ export function deleteEntitiesFromProject(project: Project, selectedIds: Readonl
     foundationPiles: foundationPilesKept,
     slabs: slabsKept,
     floorBeams: floorBeamsKept,
+    floorInsulationPieces: floorInsulationPiecesKept,
     roofPlanes: roofPlanesStripped,
     roofSystems: roofSystemsKept,
     roofAssemblyCalculations: roofAssemblyCalculationsKept,

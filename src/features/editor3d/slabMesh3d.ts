@@ -6,6 +6,8 @@ import type { Project } from "@/core/domain/project";
 import type { SlabEntity } from "@/core/domain/slab";
 import type { Point2D } from "@/core/geometry/types";
 
+import { isProjectLayerVisibleIn3d } from "./view3dVisibility";
+
 const MM_TO_M = 0.001;
 
 function planMmToShapeXZ(p: Point2D): { readonly x: number; readonly y: number } {
@@ -78,6 +80,9 @@ export function selectSlabsForScene3d(project: Project): readonly SlabEntity[] {
   return project.slabs.filter((sl) => {
     const layer = getLayerById(project, sl.layerId);
     if (layer?.isVisible === false) {
+      return false;
+    }
+    if (!isProjectLayerVisibleIn3d(sl.layerId, project)) {
       return false;
     }
     return true;

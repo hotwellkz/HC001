@@ -2,7 +2,11 @@ import { newEntityId } from "./ids";
 import type { LayerDomain } from "./layerDomain";
 import { editor2dPlanScopeToLayerDomain } from "./layerDomain";
 import { normalizeLayer, type Layer } from "./layer";
-import { normalizeVisibleLayerIds, removeLayerFromVisibleLayerIds } from "./layerVisibility";
+import {
+  normalizeVisibleLayerIds,
+  removeLayerFromVisibleLayerIds,
+  removeLayerIdFromHidden3dProjectLayerIds,
+} from "./layerVisibility";
 import type { Project } from "./project";
 import { touchProjectMeta } from "./projectFactory";
 import type { Editor2dPlanScope } from "./viewState";
@@ -308,6 +312,7 @@ export function deleteLayerAndEntities(project: Project, layerId: string): Proje
     planLines,
     foundationStrips,
     foundationPiles,
+    floorInsulationPieces: project.floorInsulationPieces.filter((p) => p.layerId !== layerId),
     wallCalculations: project.wallCalculations.filter((c) => !wallIds.has(c.wallId)),
     wallJoints,
     openings,
@@ -315,7 +320,7 @@ export function deleteLayerAndEntities(project: Project, layerId: string): Proje
     rooms,
     activeLayerId: nextActive,
   };
-  return removeLayerFromVisibleLayerIds(pruned, layerId);
+  return removeLayerIdFromHidden3dProjectLayerIds(removeLayerFromVisibleLayerIds(pruned, layerId), layerId);
 }
 
 export function setActiveLayerId(project: Project, layerId: string): Project | null {

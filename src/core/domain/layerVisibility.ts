@@ -29,3 +29,18 @@ export function removeLayerFromVisibleLayerIds(project: Project, layerId: string
   const filtered = project.visibleLayerIds.filter((id) => id !== layerId);
   return setVisibleLayerIdsOnProject(project, filtered);
 }
+
+/** Убирает id из списка «скрыто в 3D» при удалении слоя проекта. */
+export function removeLayerIdFromHidden3dProjectLayerIds(project: Project, layerId: string): Project {
+  const cur = project.viewState.hidden3dProjectLayerIds;
+  if (!cur.includes(layerId)) {
+    return project;
+  }
+  return touchProjectMeta({
+    ...project,
+    viewState: {
+      ...project.viewState,
+      hidden3dProjectLayerIds: cur.filter((id) => id !== layerId),
+    },
+  });
+}

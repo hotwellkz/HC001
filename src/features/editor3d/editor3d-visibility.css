@@ -128,3 +128,36 @@
   color: var(--color-text-secondary);
   line-height: 1.35;
 }
+
+.ed3-vis-section-title {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.ed3-vis-section-title:first-child {
+  margin-top: 0;
+}
+
+.ed3-vis-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.ed3-vis-action-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
+  background: color-mix(in srgb, var(--color-glass-fill-strong) 85%, transparent);
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.ed3-vis-action-btn:hover {
+  border-color: var(--color-border-strong);
+}

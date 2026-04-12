@@ -21,4 +21,19 @@ export interface Wall {
   readonly markSequenceNumber?: number;
   /** Полная марка, например "1S_3". */
   readonly markLabel?: string;
+  /**
+   * Подрезка верха по нижней рабочей поверхности кровли (команда «Подрезать под крышу»).
+   * `heightMm` — по-прежнему максимум по торцам для проёмов и габаритов.
+   */
+  readonly roofUnderTrim?: {
+    readonly roofPlaneId: string;
+    readonly heightAtStartMm: number;
+    readonly heightAtEndMm: number;
+    /**
+     * Верхний контур стены вдоль оси (мм от старта стены → высота над низом).
+     * Строится по нижней рабочей поверхности кровли (пирог) с шагом вдоль стены и упрощением;
+     * если отсутствует (старые проекты) — линейная интерполяция между heightAtStart/End.
+     */
+    readonly topProfileMm?: readonly { readonly alongMm: number; readonly heightMm: number }[];
+  };
 }

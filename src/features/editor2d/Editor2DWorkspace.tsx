@@ -1,5 +1,5 @@
 import { Application, Container, FederatedPointerEvent, Graphics, Text } from "pixi.js";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { linearPlacementModeLabelRu } from "@/core/geometry/linearPlacementGeometry";
 import { wallPlacementHintMessage } from "@/core/domain/wallPlacement";
@@ -13,6 +13,7 @@ import { wallJointHintRu } from "@/core/domain/wallJointSession";
 import { pickNearestLinearProfileLengthEnd } from "@/core/domain/linearLengthChangePick";
 import { pickNearestWallEnd, pickWallSegmentInterior } from "@/core/domain/wallJointPick";
 import { getProfileById } from "@/core/domain/profileOps";
+import { canShowWallTrimUnderRoofMenu } from "@/core/domain/wallRoofUnderTrim";
 import { cssColorToPixiNumber } from "@/shared/cssColor";
 import {
   DIMENSION_FONT_SIZE_PX,
@@ -199,7 +200,10 @@ import { pickClosestRoofPlaneAtPoint } from "./roofPlanePick2d";
 import { pickClosestSlabAtPoint } from "./slabPick2d";
 import { readFloorBeamOverStockPaintFromTheme } from "./floorBeamOverStock2dTheme";
 import { drawFloorBeams2d } from "./floorBeams2dPixi";
+import { drawFloorInsulation2d } from "./drawFloorInsulation2d";
+import { drawFloorInsulationSessionPreview2d } from "./drawFloorInsulationSessionPreview2d";
 import { pickFloorBeamAtPlanPoint } from "./floorBeamPick2d";
+import { pickFloorInsulationPieceAtPoint } from "./floorInsulationPick2d";
 import { drawEntityCopyGhost2d } from "./entityCopyGhost2d";
 import { drawEntityCopySnapMarkers2d } from "./entityCopySnapMarkers2d";
 
@@ -498,6 +502,14 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
   const floorBeamSplitSession = useAppStore((s) => s.floorBeamSplitSession);
   const wallMoveCopySession = useAppStore((s) => s.wallMoveCopySession);
   const wallContextMenu = useAppStore((s) => s.wallContextMenu);
+  const currentProject = useAppStore((s) => s.currentProject);
+  const trimUnderRoofAvailable = useMemo(() => {
+    if (!wallContextMenu) {
+      return false;
+    }
+    const w = currentProject.walls.find((x) => x.id === wallContextMenu.wallId);
+    return w ? canShowWallTrimUnderRoofMenu(w, currentProject) : false;
+  }, [wallContextMenu, currentProject]);
   const foundationPileContextMenu = useAppStore((s) => s.foundationPileContextMenu);
   const foundationPileMoveCopySession = useAppStore((s) => s.foundationPileMoveCopySession);
   const floorBeamContextMenu = useAppStore((s) => s.floorBeamContextMenu);
@@ -766,6 +778,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
               activeTab: stA.activeTab,
               layerManagerOpen: stA.layerManagerOpen,
               layerParamsModalOpen: stA.layerParamsModalOpen,
+              floorInsulationModalOpen: stA.floorInsulationModalOpen,
               profilesModalOpen: stA.profilesModalOpen,
               addWallModalOpen: stA.addWallModalOpen,
               addFloorBeamModalOpen: stA.addFloorBeamModalOpen,
@@ -839,6 +852,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             activeTab: st0.activeTab,
             layerManagerOpen: st0.layerManagerOpen,
             layerParamsModalOpen: st0.layerParamsModalOpen,
+            floorInsulationModalOpen: st0.floorInsulationModalOpen,
             profilesModalOpen: st0.profilesModalOpen,
             addWallModalOpen: st0.addWallModalOpen,
             addFloorBeamModalOpen: st0.addFloorBeamModalOpen,
@@ -1003,6 +1017,15 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           useAppStore.getState().slabPlacementBackOrExit();
           setWallHintRef.current(null);
           setCoordHudRef.current(null);
+          return;
+        }
+        if (stEsc.activeTool === "floorInsulation") {
+          e.preventDefault();
+          if (stEsc.floorInsulationSpatialSession) {
+            useAppStore.getState().cancelFloorInsulationSpatialSession();
+          } else {
+            useAppStore.getState().setActiveTool("select");
+          }
           return;
         }
         if (stEsc.roofSystemPlacementSession) {
@@ -1405,6 +1428,17 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         if (isSceneCoordinateModalBlocking(stEnt)) {
           return;
         }
+        if (
+          stEnt.activeTool === "floorInsulation" &&
+          stEnt.activeTab === "2d" &&
+          stEnt.floorInsulationSpatialSession?.kind === "polygon" &&
+          stEnt.floorInsulationSpatialSession.verticesMm.length >= 3
+        ) {
+          e.preventDefault();
+          stEnt.floorInsulationTryFinishPolygon();
+          paintWorkspaceRef.current?.();
+          return;
+        }
         const spEnt = stEnt.slabPlacementSession;
         if (
           spEnt &&
@@ -1491,7 +1525,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       floorBeamSplitSession ||
       roofContourJoinActive ||
       activeToolCrosshair === "line" ||
-      activeToolCrosshair === "ruler"
+      activeToolCrosshair === "ruler" ||
+      activeToolCrosshair === "floorInsulation"
     ) {
       el.style.cursor = "crosshair";
     } else {
@@ -1583,6 +1618,10 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
     const roofPlaneLabelsC = new Container();
     roofPlaneLabelsC.eventMode = "none";
     const wallsG = new Graphics();
+    const floorInsulationG = new Graphics();
+    floorInsulationG.eventMode = "none";
+    const floorInsulationSessionPreviewG = new Graphics();
+    floorInsulationSessionPreviewG.eventMode = "none";
     const floorBeamsG = new Graphics();
     floorBeamsG.eventMode = "none";
     const planLinesG = new Graphics();
@@ -2467,12 +2506,14 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         drawRoofPlanes2d(roofPlanesG, ctxRoof.roofPlanes, t, selected, {
           clear: firstRoofDraw,
           labelLayoutByPlaneId: roofLabelLayoutByPlaneId,
+          projectForRoofCoverOutline: currentProject,
         });
         firstRoofDraw = false;
       }
       drawRoofPlanes2d(roofPlanesG, layerView.roofPlanes, t, selected, {
         clear: firstRoofDraw,
         labelLayoutByPlaneId: roofLabelLayoutByPlaneId,
+        projectForRoofCoverOutline: currentProject,
       });
 
       roofSystemRidgesG.clear();
@@ -2554,6 +2595,29 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       appendDoorOpeningLabels2d(windowOpeningLabelsC, layerView, t, "active", {
         dimensionProject: currentProject,
       });
+
+      floorInsulationG.clear();
+      let firstFiDraw = true;
+      for (const lid of contextIds) {
+        const ctxFi = narrowProjectToLayerSet(currentProject, new Set([lid]));
+        drawFloorInsulation2d(floorInsulationG, currentProject, ctxFi.floorInsulationPieces, t, selected, {
+          clear: firstFiDraw,
+        });
+        firstFiDraw = false;
+      }
+      drawFloorInsulation2d(floorInsulationG, currentProject, layerView.floorInsulationPieces, t, selected, {
+        clear: firstFiDraw,
+      });
+
+      floorInsulationSessionPreviewG.clear();
+      const fiPreviewSt = useAppStore.getState();
+      if (
+        fiPreviewSt.activeTool === "floorInsulation" &&
+        fiPreviewSt.currentProject.viewState.editor2dPlanScope === "floorStructure" &&
+        fiPreviewSt.floorInsulationSpatialSession
+      ) {
+        drawFloorInsulationSessionPreview2d(floorInsulationSessionPreviewG, fiPreviewSt.floorInsulationSpatialSession, t);
+      }
 
       floorBeamsG.clear();
       const highlightBeamOverStock = currentProject.viewState.editor2dPlanScope === "floorStructure";
@@ -3810,7 +3874,9 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
       worldRoot.addChild(roofSystemRidgesG);
       worldRoot.addChild(roofPlanePreviewG);
       worldRoot.addChild(wallsG);
+      worldRoot.addChild(floorInsulationG);
       worldRoot.addChild(floorBeamsG);
+      worldRoot.addChild(floorInsulationSessionPreviewG);
       worldRoot.addChild(planLinesG);
       worldRoot.addChild(wallCalcG);
       worldRoot.addChild(wallCalcLabelC);
@@ -4051,6 +4117,16 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         const t = buildViewportTransform(w, h, viewport2d.panXMm, viewport2d.panYMm, viewport2d.zoomPixelsPerMm);
         const p = screenToWorld(ev.global.x, ev.global.y, t);
         const coordBlock = isSceneCoordinateModalBlocking(useAppStore.getState());
+        const stFiMove0 = useAppStore.getState();
+        if (
+          !coordBlock &&
+          stFiMove0.activeTool === "floorInsulation" &&
+          stFiMove0.activeTab === "2d" &&
+          stFiMove0.floorInsulationSpatialSession &&
+          stFiMove0.currentProject.viewState.editor2dPlanScope === "floorStructure"
+        ) {
+          stFiMove0.floorInsulationSessionPreviewMove(p, t);
+        }
         if (!coordBlock) {
           cursorCbRef.current({ x: p.x, y: p.y });
           const rectPtr = canvas.getBoundingClientRect();
@@ -5772,6 +5848,20 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           return;
         }
 
+        const floorInsulationSess = useAppStore.getState().floorInsulationSpatialSession;
+        const floorInsTool = useAppStore.getState().activeTool === "floorInsulation";
+        if (floorInsTool && floorInsulationSess && ev.button === 2) {
+          ev.preventDefault();
+          useAppStore.getState().cancelFloorInsulationSpatialSession();
+          paint();
+          return;
+        }
+        if (floorInsTool && floorInsulationSess && ev.button === 0) {
+          useAppStore.getState().floorInsulationPlacementPrimaryClick(worldMm, t, { clickDetail: ev.detail });
+          paint();
+          return;
+        }
+
         const slabPlacementSessionPtr = useAppStore.getState().slabPlacementSession;
         if (slabPlacementSessionPtr && ev.button === 2) {
           ev.preventDefault();
@@ -6604,6 +6694,26 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             paint();
             return;
           }
+          const insHit = pickFloorInsulationPieceAtPoint(worldMm, layerView.floorInsulationPieces, segTolSel);
+          if (insHit) {
+            const storeIns = useAppStore.getState();
+            if (ev.shiftKey) {
+              const s = new Set(storeIns.selectedEntityIds);
+              if (s.has(insHit.pieceId)) {
+                s.delete(insHit.pieceId);
+              } else {
+                s.add(insHit.pieceId);
+              }
+              storeIns.setSelectedEntityIds([...s]);
+            } else {
+              storeIns.setSelectedEntityIds([insHit.pieceId]);
+            }
+            lastWallClickRef.current = null;
+            lastFoundationStripClickRef.current = null;
+            lastSlabClickRef.current = null;
+            paint();
+            return;
+          }
           const fsHit = pickClosestFoundationStripAlongPoint(worldMm, layerView.foundationStrips, segTolSel);
           if (fsHit) {
             const storeFs = useAppStore.getState();
@@ -7101,6 +7211,16 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           >
             Переместить
           </button>
+          {trimUnderRoofAvailable ? (
+            <button
+              type="button"
+              className="ed2d-wall-ctx__item"
+              role="menuitem"
+              onClick={() => useAppStore.getState().trimWallUnderRoofFromContextMenu(wallContextMenu.wallId)}
+            >
+              Подрезать под крышу
+            </button>
+          ) : null}
           <button
             type="button"
             className="ed2d-wall-ctx__item"

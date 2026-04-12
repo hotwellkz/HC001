@@ -3,8 +3,14 @@ import { Matrix4, Quaternion, ShapeUtils, Vector2, Vector3 } from "three";
 import { computeAllRoofPlanesZAdjustMmByPlaneIdInProject } from "@/core/domain/roofGroupHeightAdjust";
 import { computeLayerVerticalStack } from "@/core/domain/layerVerticalStack";
 import type { Project } from "@/core/domain/project";
+import type { Point2D } from "@/core/geometry/types";
 import type { RoofPlaneEntity } from "@/core/domain/roofPlane";
-import { roofPlaneDrainUnitPlanMm, roofPlaneMaxDotAlongDrainMm, roofPlanePolygonMm } from "@/core/domain/roofPlane";
+import {
+  roofPlaneDrainUnitPlanMm,
+  roofPlaneMaxDotAlongDrainMm,
+  roofPlanePolygonMm,
+  roofPolygonExtendEaveEdgeForCoverMm,
+} from "@/core/domain/roofPlane";
 import type { RoofProfileAssembly } from "@/core/domain/roofProfileAssembly";
 
 const MM_TO_M = 0.001;
@@ -63,20 +69,20 @@ export function roofPlanVertexToThreeMm(pxMm: number, pyMm: number, zUpMm: numbe
  * Важно: в плане (x,y) точка (x,y) → Three (x, z, -y). Горизонтальный вектор стока (ux, uy)
  * в плане соответствует (ux, 0, -uy) в мм-пространстве Three — не (ux, 0, uy).
  */
-export function roofSlopeVerticesThreeMm(
+function roofSlopeVerticesThreeMmFromPolyWithMaxDotRef(
   rp: RoofPlaneEntity,
   layerBaseMm: number,
-  zAdjustMm = 0,
+  zAdjustMm: number,
+  poly: readonly Point2D[],
+  maxDotRef: number,
 ): { readonly verts: RoofThreeMm[]; readonly outwardNormal: RoofThreeMm } {
-  const poly = roofPlanePolygonMm(rp);
   const { uxn, uyn } = roofPlaneDrainUnitPlanMm(rp);
-  const maxDot = roofPlaneMaxDotAlongDrainMm(poly, uxn, uyn);
   const pitchRad = (rp.angleDeg * Math.PI) / 180;
   const tanP = Math.tan(pitchRad);
   const z0 = layerBaseMm + rp.levelMm + zAdjustMm;
   const verts: RoofThreeMm[] = poly.map((p) => {
     const d = p.x * uxn + p.y * uyn;
-    const rise = (maxDot - d) * tanP;
+    const rise = (maxDotRef - d) * tanP;
     const zUp = z0 + rise;
     return roofPlanVertexToThreeMm(p.x, p.y, zUp);
   });
@@ -93,6 +99,42 @@ export function roofSlopeVerticesThreeMm(
     n = scale3(n, -1);
   }
   return { verts, outwardNormal: n };
+}
+
+export function roofSlopeVerticesThreeMm(
+  rp: RoofPlaneEntity,
+  layerBaseMm: number,
+  zAdjustMm = 0,
+): { readonly verts: RoofThreeMm[]; readonly outwardNormal: RoofThreeMm } {
+  const poly = roofPlanePolygonMm(rp);
+  const { uxn, uyn } = roofPlaneDrainUnitPlanMm(rp);
+  const maxDot = roofPlaneMaxDotAlongDrainMm(poly, uxn, uyn);
+  return roofSlopeVerticesThreeMmFromPolyWithMaxDotRef(rp, layerBaseMm, zAdjustMm, poly, maxDot);
+}
+
+/**
+ * Поверхность слоя покрытия: как базовый скат, но контур удлинён по карнизу на `coverEaveProjectionMm` в плане.
+ * Опорная линия подъёма (`maxDotRef`) берётся с исходного контура ската, чтобы плоскость совпадала с кровельным пирогом.
+ */
+export function buildRoofCoveringSlopeSurfaceMeshMm(
+  rp: RoofPlaneEntity,
+  layerBaseMm: number,
+  zAdjustMm: number,
+  coverEaveProjectionMm: number,
+): RoofSlopeSurfaceMeshMm | null {
+  const poly0 = roofPlanePolygonMm(rp);
+  const { uxn, uyn } = roofPlaneDrainUnitPlanMm(rp);
+  const maxDotRef = roofPlaneMaxDotAlongDrainMm(poly0, uxn, uyn);
+  const poly =
+    coverEaveProjectionMm > 0
+      ? roofPolygonExtendEaveEdgeForCoverMm(poly0, uxn, uyn, coverEaveProjectionMm)
+      : poly0;
+  const { verts, outwardNormal } = roofSlopeVerticesThreeMmFromPolyWithMaxDotRef(rp, layerBaseMm, zAdjustMm, poly, maxDotRef);
+  if (verts.length < 3) {
+    return null;
+  }
+  const { positions, indices } = triangulateVerticesOnPlane(verts, outwardNormal);
+  return { positions, indices, outwardNormal };
 }
 
 function triangulateVerticesOnPlane(verts: RoofThreeMm[], outwardNormal: RoofThreeMm): { positions: Float32Array; indices: Uint32Array } {

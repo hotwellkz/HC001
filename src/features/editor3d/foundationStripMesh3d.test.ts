@@ -35,6 +35,30 @@ describe("foundationStripMesh3d", () => {
     expect(selectFoundationStripsForScene3d(p)).toHaveLength(0);
   });
 
+  it("selectFoundationStripsForScene3d: слой скрыт в панели 3D — лента не в сцене", () => {
+    let p = createEmptyProject();
+    const layerId = p.layers[0]!.id;
+    p = {
+      ...p,
+      viewState: { ...p.viewState, hidden3dProjectLayerIds: [layerId] },
+      foundationStrips: [
+        buildOrthoRectangleFoundationStripRingEntity({
+          layerId,
+          xmin: 0,
+          xmax: 2000,
+          ymin: 0,
+          ymax: 1000,
+          depthMm: 400,
+          sideOutMm: 50,
+          sideInMm: 250,
+          createdAt: "t",
+          newId: () => "fs1",
+        }),
+      ],
+    };
+    expect(selectFoundationStripsForScene3d(p)).toHaveLength(0);
+  });
+
   it("buildFoundationStripExtrudeGeometry: кольцо даёт геометрию с ненулевым объёмом", () => {
     const p = createEmptyProject();
     const layerId = p.activeLayerId;

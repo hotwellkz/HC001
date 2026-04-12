@@ -32,6 +32,7 @@ import {
   updateProfile as updateProfileInProject,
 } from "@/core/domain/profileMutations";
 import { getProfileById } from "@/core/domain/profileOps";
+import type { Wall } from "@/core/domain/wall";
 import { validateProfile } from "@/core/domain/profileValidation";
 import type { Project } from "@/core/domain/project";
 import {
@@ -71,6 +72,13 @@ import {
 } from "@/core/domain/openingWindowGeometry";
 import { editor3dPickSupportsContextDelete } from "@/core/domain/editor3dContextMenuPolicy";
 import { deleteEntitiesFromProject } from "@/core/domain/projectMutations";
+import type { FloorInsulationAreaMode, FloorInsulationLayoutMode } from "@/core/domain/floorInsulation";
+import { applyFloorInsulationToLayer } from "@/core/domain/floorInsulationApply";
+import { rectCornersFromTwoPointsMm } from "@/core/domain/floorInsulationGeometry";
+import { clearFloorInsulationForLayer } from "@/core/domain/floorInsulationOps";
+import { replaceWallInProject } from "@/core/domain/wallMutations";
+import { recalculateWallCalculationIfPresent } from "@/core/domain/wallCalculationRecalc";
+import { computeWallRoofUnderTrimDraft } from "@/core/domain/wallRoofUnderTrim";
 import {
   applyRoofCalculationToProject,
   refreshAllCalculatedRoofPlaneOverhangsInProject,
@@ -258,7 +266,7 @@ import {
   type ProjectHistoryStacks,
 } from "@/store/projectHistory";
 
-export type ActiveTool = "select" | "pan" | "ruler" | "changeLength" | "line";
+export type ActiveTool = "select" | "pan" | "ruler" | "changeLength" | "line" | "floorInsulation";
 
 export type FoundationStripBuildMode = "linear" | "rectangle";
 
@@ -326,6 +334,7 @@ export interface RoofSystemPlacementDraftPersisted {
   readonly profileId: string;
   readonly eaveOverhangMm: number;
   readonly sideOverhangMm: number;
+  readonly roofCoverEaveProjectionMm: number;
   readonly ridgeAlong: "short" | "long";
   readonly monoDrainCardinal: MonoCardinalDrain;
 }
@@ -444,6 +453,32 @@ interface AppState {
   readonly addSlabModalPurpose: SlabStructuralPurpose | null;
   readonly slabPlacementSession: SlabPlacementSession | null;
   readonly slabPlacementHistoryBaseline: Project | null;
+  /** Модалка параметров перед построением области утепления. */
+  readonly floorInsulationModalOpen: boolean;
+  /**
+   * Утепление перекрытия: прямоугольник двумя кликами или полигон по вершинам.
+   * Параметры листа — из выбранного профиля ({@link floorInsulationToolProfileId}).
+   */
+  readonly floorInsulationSpatialSession:
+    | null
+    | {
+        readonly kind: "rect";
+        readonly firstMm: Point2D | null;
+        readonly previewEndMm: Point2D | null;
+        readonly profileId: string;
+      }
+    | {
+        readonly kind: "polygon";
+        readonly verticesMm: Point2D[];
+        readonly previewEndMm: Point2D | null;
+        readonly profileId: string;
+      };
+  /** Профиль утеплителя для инструмента «Утепление между балками». */
+  readonly floorInsulationToolProfileId: string | null;
+  /** Режим раскладки в инструменте (переопределяет default в профиле при генерации). */
+  readonly floorInsulationToolLayoutMode: FloorInsulationLayoutMode;
+  /** Прямоугольник или полигон — задаётся в модалке. */
+  readonly floorInsulationAreaMode: FloorInsulationAreaMode;
   readonly slabCoordinateModalOpen: boolean;
   readonly slabEditModal: { readonly slabId: string } | null;
   readonly addFloorBeamModalOpen: boolean;
@@ -507,6 +542,8 @@ interface AppState {
   readonly roofCalculationModalOpen: boolean;
   readonly dirty: boolean;
   readonly lastError: string | null;
+  /** Краткое уведомление об успехе (не ошибка); показывается отдельным баннером. */
+  readonly infoMessage: string | null;
   readonly history: UndoRedoSkeleton;
   /** Снимок до начала постановки стены (модалка «Добавить стену») — один undo на завершённую стену. */
   readonly wallPlacementHistoryBaseline: Project | null;
@@ -611,14 +648,20 @@ interface AppActions {
         | "show3dFoundation"
         | "show3dPiles"
         | "show3dOverlap"
+        | "show3dFloorInsulation"
         | "show3dRoof"
         | "show3dRoofMembrane"
         | "show3dRoofBattens"
         | "show3dRoofCovering"
         | "show3dRoofSoffit"
+        | "hidden3dProjectLayerIds"
       >
     >,
   ) => void;
+  /** Скрытие слоя проекта только в 3D (не путать с видимостью слоя на плане). */
+  toggle3dProjectLayerHidden: (layerId: string) => void;
+  showAll3dProjectLayers: () => void;
+  hideAll3dProjectLayers: () => void;
   markClean: () => void;
   undo: () => void;
   redo: () => void;
@@ -680,6 +723,22 @@ interface AppActions {
   closeSlabEditModal: () => void;
   applySlabEditModal: (input: { readonly depthMm: number; readonly levelMm: number }) => void;
   setSlabBuildMode: (mode: SlabBuildMode) => void;
+  openFloorInsulationModal: () => void;
+  closeFloorInsulationModal: () => void;
+  applyFloorInsulationModal: (input: {
+    readonly profileId: string;
+    readonly layoutMode: FloorInsulationLayoutMode;
+    readonly areaMode: FloorInsulationAreaMode;
+  }) => void;
+  cancelFloorInsulationSpatialSession: () => void;
+  floorInsulationSessionPreviewMove: (worldMm: Point2D, viewport: ViewportTransform) => void;
+  floorInsulationPlacementPrimaryClick: (
+    worldMm: Point2D,
+    viewport: ViewportTransform,
+    opts?: { readonly clickDetail?: number },
+  ) => void;
+  floorInsulationTryFinishPolygon: () => void;
+  clearFloorInsulationActiveLayer: () => void;
   openAddFoundationStripModal: () => void;
   closeAddFoundationStripModal: () => void;
   applyAddFoundationStripModal: (input: {
@@ -858,6 +917,7 @@ interface AppActions {
     readonly profileId: string;
     readonly eaveOverhangMm: number;
     readonly sideOverhangMm: number;
+    readonly roofCoverEaveProjectionMm: number;
     readonly ridgeAlong: "short" | "long";
     readonly monoDrainCardinal: MonoCardinalDrain;
   }) => void;
@@ -870,6 +930,7 @@ interface AppActions {
     readonly profileId: string;
     readonly eaveOverhangMm: number;
     readonly sideOverhangMm: number;
+    readonly roofCoverEaveProjectionMm: number;
     readonly ridgeAlong: "short" | "long";
     readonly monoDrainCardinal: MonoCardinalDrain;
   }) => void;
@@ -942,6 +1003,7 @@ interface AppActions {
   deleteWallFromContextMenu: (wallId: string) => void;
   startWallMoveFromContextMenu: (wallId: string) => void;
   startWallCopyFromContextMenu: (wallId: string) => void;
+  trimWallUnderRoofFromContextMenu: (wallId: string) => void;
   openFoundationPileContextMenu: (input: {
     readonly pileId: string;
     readonly clientX: number;
@@ -1203,6 +1265,11 @@ function historyJumpClearTransientUi(s: AppStore, restored: Project): Partial<Ap
     addSlabModalPurpose: null,
     slabPlacementSession: null,
     slabPlacementHistoryBaseline: null,
+    floorInsulationSpatialSession: null,
+    floorInsulationModalOpen: false,
+    floorInsulationToolProfileId: null,
+    floorInsulationToolLayoutMode: "auto",
+    floorInsulationAreaMode: "rectangle",
     slabCoordinateModalOpen: false,
     slabEditModal: null,
     addFloorBeamModalOpen: false,
@@ -1419,6 +1486,32 @@ function runFoundationStripAutoPilesImpl(
   );
 }
 
+function buildFloorInsulationSessionAfterApply(
+  profileId: string | null,
+  areaMode: FloorInsulationAreaMode,
+):
+  | {
+      kind: "rect";
+      firstMm: null;
+      previewEndMm: null;
+      profileId: string;
+    }
+  | {
+      kind: "polygon";
+      verticesMm: Point2D[];
+      previewEndMm: null;
+      profileId: string;
+    }
+  | null {
+  if (!profileId) {
+    return null;
+  }
+  if (areaMode === "rectangle") {
+    return { kind: "rect", firstMm: null, previewEndMm: null, profileId };
+  }
+  return { kind: "polygon", verticesMm: [], previewEndMm: null, profileId };
+}
+
 function slabCloseToleranceMm(viewport: ViewportTransform): number {
   const z = viewport.zoomPixelsPerMm;
   return Math.max(20, 35 / Math.max(z, 1e-6));
@@ -1526,6 +1619,11 @@ export const useAppStore = create<AppStore>((set, get) => {
     addSlabModalPurpose: null,
     slabPlacementSession: null,
     slabPlacementHistoryBaseline: null,
+    floorInsulationSpatialSession: null,
+    floorInsulationModalOpen: false,
+    floorInsulationToolProfileId: null,
+    floorInsulationToolLayoutMode: "auto",
+    floorInsulationAreaMode: "rectangle",
     slabCoordinateModalOpen: false,
     slabEditModal: null,
     addFloorBeamModalOpen: false,
@@ -1566,6 +1664,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     roofCalculationModalOpen: false,
     dirty: false,
     lastError: null,
+    infoMessage: null,
     history: initialProjectHistory,
     wallPlacementHistoryBaseline: null,
     pendingOpeningPlacementHistoryBaseline: null,
@@ -1745,6 +1844,8 @@ export const useAppStore = create<AppStore>((set, get) => {
         };
         const mergeHist = (base: Partial<AppStore>): Partial<AppStore> =>
           projectMutated ? { ...base, ...buildProjectMutationState(s, proj, { dirty: true }) } : base;
+        const clearFloorIns =
+          tool === "floorInsulation" ? s.floorInsulationSpatialSession : null;
         if (tool === "select") {
           return mergeHist({
             activeTool: "select",
@@ -1754,6 +1855,7 @@ export const useAppStore = create<AppStore>((set, get) => {
             line2dSession: null,
             lengthChange2dSession: null,
             lengthChangeCoordinateModalOpen: false,
+            floorInsulationSpatialSession: clearFloorIns,
           });
         }
         if (tool === "ruler") {
@@ -1765,6 +1867,7 @@ export const useAppStore = create<AppStore>((set, get) => {
             line2dSession: null,
             lengthChange2dSession: null,
             lengthChangeCoordinateModalOpen: false,
+            floorInsulationSpatialSession: clearFloorIns,
           });
         }
         if (tool === "line") {
@@ -1776,6 +1879,7 @@ export const useAppStore = create<AppStore>((set, get) => {
             line2dSession: initialLine2dSession(),
             lengthChange2dSession: null,
             lengthChangeCoordinateModalOpen: false,
+            floorInsulationSpatialSession: clearFloorIns,
           });
         }
         if (tool === "changeLength") {
@@ -1787,6 +1891,19 @@ export const useAppStore = create<AppStore>((set, get) => {
             line2dSession: null,
             lengthChange2dSession: null,
             lengthChangeCoordinateModalOpen: false,
+            floorInsulationSpatialSession: clearFloorIns,
+          });
+        }
+        if (tool === "floorInsulation") {
+          return mergeHist({
+            activeTool: "floorInsulation",
+            ...commonClear,
+            openingMoveModeActive: false,
+            ruler2dSession: null,
+            line2dSession: null,
+            lengthChange2dSession: null,
+            lengthChangeCoordinateModalOpen: false,
+            floorInsulationSpatialSession: s.floorInsulationSpatialSession,
           });
         }
         return mergeHist({
@@ -1797,6 +1914,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           line2dSession: null,
           lengthChange2dSession: null,
           lengthChangeCoordinateModalOpen: false,
+          floorInsulationSpatialSession: clearFloorIns,
         });
       }),
 
@@ -1857,7 +1975,10 @@ export const useAppStore = create<AppStore>((set, get) => {
           activeTool:
             tab === "2d"
               ? s.activeTool
-              : s.activeTool === "ruler" || s.activeTool === "changeLength" || s.activeTool === "line"
+              : s.activeTool === "ruler" ||
+                  s.activeTool === "changeLength" ||
+                  s.activeTool === "line" ||
+                  s.activeTool === "floorInsulation"
                 ? "select"
                 : s.activeTool,
           wallPlacementSession: tab === "2d" ? s.wallPlacementSession : null,
@@ -1907,6 +2028,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           line2dSession: tab === "2d" ? s.line2dSession : null,
           lengthChange2dSession: tab === "2d" ? s.lengthChange2dSession : null,
           lengthChangeCoordinateModalOpen: tab === "2d" ? s.lengthChangeCoordinateModalOpen : false,
+          floorInsulationSpatialSession: tab === "2d" ? s.floorInsulationSpatialSession : null,
           openingMoveModeActive: tab === "2d" ? s.openingMoveModeActive : false,
           projectOriginMoveToolActive: tab === "2d" ? s.projectOriginMoveToolActive : false,
           projectOriginCoordinateModalOpen: tab === "2d" ? s.projectOriginCoordinateModalOpen : false,
@@ -1979,6 +2101,39 @@ export const useAppStore = create<AppStore>((set, get) => {
     set3dLayerVisibility: (patch) =>
       set((s) => ({
         currentProject: touchProjectMeta(mergeViewState(s.currentProject, patch)),
+        dirty: true,
+      })),
+
+    toggle3dProjectLayerHidden: (layerId) =>
+      set((s) => {
+        const cur = s.currentProject.viewState.hidden3dProjectLayerIds;
+        const nextHidden = new Set(cur);
+        if (nextHidden.has(layerId)) {
+          nextHidden.delete(layerId);
+        } else {
+          nextHidden.add(layerId);
+        }
+        return {
+          currentProject: touchProjectMeta(
+            mergeViewState(s.currentProject, { hidden3dProjectLayerIds: [...nextHidden] }),
+          ),
+          dirty: true,
+        };
+      }),
+
+    showAll3dProjectLayers: () =>
+      set((s) => ({
+        currentProject: touchProjectMeta(mergeViewState(s.currentProject, { hidden3dProjectLayerIds: [] })),
+        dirty: true,
+      })),
+
+    hideAll3dProjectLayers: () =>
+      set((s) => ({
+        currentProject: touchProjectMeta(
+          mergeViewState(s.currentProject, {
+            hidden3dProjectLayerIds: s.currentProject.layers.map((l) => l.id),
+          }),
+        ),
         dirty: true,
       })),
 
@@ -2787,6 +2942,203 @@ export const useAppStore = create<AppStore>((set, get) => {
         slabCoordinateModalOpen: false,
         lastError: null,
       }),
+
+    openFloorInsulationModal: () => {
+      const s = get();
+      if (s.activeTab !== "2d" || s.currentProject.viewState.editor2dPlanScope !== "floorStructure") {
+        set({ lastError: "Откройте 2D и режим «Перекрытие»." });
+        return;
+      }
+      const layer = getLayerById(s.currentProject, s.currentProject.activeLayerId);
+      if (!layer || layer.domain !== "slab") {
+        set({ lastError: "Выберите слой перекрытия (домен «перекрытие»)." });
+        return;
+      }
+      set({ floorInsulationModalOpen: true, lastError: null });
+    },
+
+    closeFloorInsulationModal: () => set({ floorInsulationModalOpen: false }),
+
+    applyFloorInsulationModal: ({ profileId, layoutMode, areaMode }) => {
+      const s0 = get();
+      const layer = getLayerById(s0.currentProject, s0.currentProject.activeLayerId);
+      if (!layer || layer.domain !== "slab") {
+        set({ lastError: "Выберите слой перекрытия." });
+        return;
+      }
+      const prof = getProfileById(s0.currentProject, profileId);
+      if (!prof || prof.category !== "insulation" || !prof.insulation) {
+        set({ lastError: "Выберите корректный профиль утеплителя." });
+        return;
+      }
+      const nextSess = buildFloorInsulationSessionAfterApply(profileId, areaMode);
+      if (!nextSess) {
+        return;
+      }
+      set({
+        floorInsulationModalOpen: false,
+        floorInsulationToolProfileId: profileId,
+        floorInsulationToolLayoutMode: layoutMode,
+        floorInsulationAreaMode: areaMode,
+        activeTool: "floorInsulation",
+        floorInsulationSpatialSession: nextSess,
+        lastError: null,
+      });
+    },
+
+    cancelFloorInsulationSpatialSession: () => set({ floorInsulationSpatialSession: null, lastError: null }),
+
+    floorInsulationSessionPreviewMove: (worldMm, viewport) => {
+      const sess = get().floorInsulationSpatialSession;
+      if (!sess || get().activeTool !== "floorInsulation" || get().activeTab !== "2d") {
+        return;
+      }
+      if (get().currentProject.viewState.editor2dPlanScope !== "floorStructure") {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      const p = snap.point;
+      if (sess.kind === "rect") {
+        set({
+          floorInsulationSpatialSession: {
+            ...sess,
+            previewEndMm: sess.firstMm != null ? p : null,
+          },
+        });
+        return;
+      }
+      set({
+        floorInsulationSpatialSession: {
+          ...sess,
+          previewEndMm: p,
+        },
+      });
+    },
+
+    floorInsulationPlacementPrimaryClick: (worldMm, viewport, opts) => {
+      const sess = get().floorInsulationSpatialSession;
+      if (!sess || get().activeTab !== "2d" || get().activeTool !== "floorInsulation") {
+        return;
+      }
+      if (get().currentProject.viewState.editor2dPlanScope !== "floorStructure") {
+        return;
+      }
+      const snap = resolvePlacementSnap(get, worldMm, viewport);
+      const p = snap.point;
+      const st0 = get();
+      const layerId = st0.currentProject.activeLayerId;
+      const layoutMode = st0.floorInsulationToolLayoutMode;
+      const profileId = st0.floorInsulationToolProfileId;
+      const areaMode = st0.floorInsulationAreaMode;
+      const detail = opts?.clickDetail ?? 1;
+      const minLen = 10;
+
+      if (sess.kind === "rect") {
+        if (sess.firstMm == null) {
+          set({
+            floorInsulationSpatialSession: { ...sess, firstMm: p, previewEndMm: p },
+            lastError: null,
+          });
+          return;
+        }
+        const corners = rectCornersFromTwoPointsMm(sess.firstMm, p);
+        const xs = corners.map((c) => c.x);
+        const ys = corners.map((c) => c.y);
+        const w = Math.max(...xs) - Math.min(...xs);
+        const h = Math.max(...ys) - Math.min(...ys);
+        if (w < minLen || h < minLen) {
+          set({ lastError: "Область слишком мала." });
+          return;
+        }
+        const r = applyFloorInsulationToLayer(
+          st0.currentProject,
+          layerId,
+          sess.profileId,
+          layoutMode,
+          { kind: "rectangle", cornersMm: corners },
+          null,
+        );
+        const nextSess = buildFloorInsulationSessionAfterApply(profileId, areaMode);
+        set((st) =>
+          buildProjectMutationState(st, r.project, {
+            floorInsulationSpatialSession: nextSess,
+            lastError: r.errorMessage,
+            infoMessage: r.errorMessage
+              ? null
+              : "Утеплитель в области добавлен. Можно указать ещё одну область или нажать Esc.",
+            dirty: true,
+          }),
+        );
+        return;
+      }
+
+      if (detail >= 2 && sess.verticesMm.length >= 3) {
+        get().floorInsulationTryFinishPolygon();
+        return;
+      }
+      if (sess.verticesMm.length > 0) {
+        const last = sess.verticesMm[sess.verticesMm.length - 1]!;
+        if (Math.hypot(p.x - last.x, p.y - last.y) < minLen) {
+          set({ lastError: "Точка слишком близко к предыдущей." });
+          return;
+        }
+      }
+      set({
+        floorInsulationSpatialSession: {
+          ...sess,
+          verticesMm: [...sess.verticesMm, p],
+          previewEndMm: p,
+        },
+        lastError: null,
+      });
+    },
+
+    floorInsulationTryFinishPolygon: () => {
+      const st0 = get();
+      const sess = st0.floorInsulationSpatialSession;
+      if (!sess || sess.kind !== "polygon") {
+        return;
+      }
+      if (sess.verticesMm.length < 3) {
+        set({ lastError: "Для полигона нужно минимум три вершины." });
+        return;
+      }
+      const layerId = st0.currentProject.activeLayerId;
+      const layoutMode = st0.floorInsulationToolLayoutMode;
+      const profileId = st0.floorInsulationToolProfileId;
+      const areaMode = st0.floorInsulationAreaMode;
+      const r = applyFloorInsulationToLayer(
+        st0.currentProject,
+        layerId,
+        sess.profileId,
+        layoutMode,
+        { kind: "polygon", ringMm: sess.verticesMm },
+        null,
+      );
+      const nextSess = buildFloorInsulationSessionAfterApply(profileId, areaMode);
+      set((st) =>
+        buildProjectMutationState(st, r.project, {
+          floorInsulationSpatialSession: nextSess,
+          lastError: r.errorMessage,
+          infoMessage: r.errorMessage
+            ? null
+            : "Утеплитель в контуре добавлен. Можно задать ещё область или нажать Esc.",
+          dirty: true,
+        }),
+      );
+    },
+
+    clearFloorInsulationActiveLayer: () => {
+      const st0 = get();
+      const next = touchProjectMeta(clearFloorInsulationForLayer(st0.currentProject, st0.currentProject.activeLayerId));
+      set((st) =>
+        buildProjectMutationState(st, next, {
+          lastError: null,
+          infoMessage: "Утепление на активном слое удалено.",
+          dirty: true,
+        }),
+      );
+    },
 
     slabPlacementBackOrExit: () => {
       const session = get().slabPlacementSession;
@@ -4725,6 +5077,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           line2dSession: null,
           lengthChange2dSession: null,
           lengthChangeCoordinateModalOpen: false,
+          floorInsulationSpatialSession: null,
         };
 
         if (prev !== scope && s.addSlabModalOpen) {
@@ -4770,6 +5123,9 @@ export const useAppStore = create<AppStore>((set, get) => {
             patch.floorBeamSplitSession = null;
             patch.floorBeamSplitModalOpen = false;
             patch.floorBeamPlacementCoordinateModalOpen = false;
+          }
+          if (s.floorInsulationSpatialSession != null) {
+            patch.floorInsulationSpatialSession = null;
           }
         }
 
@@ -4972,12 +5328,17 @@ export const useAppStore = create<AppStore>((set, get) => {
       const baseLevelMm = Number(input.baseLevelMm);
       const eaveOverhangMm = Number(input.eaveOverhangMm);
       const sideOverhangMm = Number(input.sideOverhangMm);
+      const roofCoverEaveProjectionMm = Number(input.roofCoverEaveProjectionMm);
       if (!Number.isFinite(pitchDeg) || !Number.isFinite(baseLevelMm)) {
         set({ lastError: "Угол и уровень должны быть числами." });
         return;
       }
       if (!Number.isFinite(eaveOverhangMm) || !Number.isFinite(sideOverhangMm) || eaveOverhangMm < 0 || sideOverhangMm < 0) {
         set({ lastError: "Свесы должны быть неотрицательными числами (мм)." });
+        return;
+      }
+      if (!Number.isFinite(roofCoverEaveProjectionMm) || roofCoverEaveProjectionMm < 0) {
+        set({ lastError: "Выпуск покрытия по карнизу должен быть неотрицательным числом (мм)." });
         return;
       }
       const draft: RoofSystemPlacementDraftPersisted = {
@@ -4987,6 +5348,7 @@ export const useAppStore = create<AppStore>((set, get) => {
         profileId,
         eaveOverhangMm,
         sideOverhangMm,
+        roofCoverEaveProjectionMm,
         ridgeAlong: input.ridgeAlong,
         monoDrainCardinal: input.monoDrainCardinal,
       };
@@ -5100,6 +5462,7 @@ export const useAppStore = create<AppStore>((set, get) => {
             profileId: d.profileId,
             eaveOverhangMm: d.eaveOverhangMm,
             sideOverhangMm: d.sideOverhangMm,
+            roofCoverEaveProjectionMm: d.roofCoverEaveProjectionMm,
             ridgeAlong: d.ridgeAlong,
             monoDrainCardinal: d.monoDrainCardinal,
           });
@@ -5195,12 +5558,17 @@ export const useAppStore = create<AppStore>((set, get) => {
       const baseLevelMm = Number(input.baseLevelMm);
       const eaveOverhangMm = Number(input.eaveOverhangMm);
       const sideOverhangMm = Number(input.sideOverhangMm);
+      const roofCoverEaveProjectionMm = Number(input.roofCoverEaveProjectionMm);
       if (!Number.isFinite(pitchDeg) || !Number.isFinite(baseLevelMm)) {
         set({ lastError: "Угол и уровень должны быть числами." });
         return;
       }
       if (!Number.isFinite(eaveOverhangMm) || !Number.isFinite(sideOverhangMm) || eaveOverhangMm < 0 || sideOverhangMm < 0) {
         set({ lastError: "Свесы должны быть неотрицательными числами (мм)." });
+        return;
+      }
+      if (!Number.isFinite(roofCoverEaveProjectionMm) || roofCoverEaveProjectionMm < 0) {
+        set({ lastError: "Выпуск покрытия по карнизу должен быть неотрицательным числом (мм)." });
         return;
       }
       let nextProject: Project;
@@ -5212,6 +5580,7 @@ export const useAppStore = create<AppStore>((set, get) => {
           profileId,
           eaveOverhangMm,
           sideOverhangMm,
+          roofCoverEaveProjectionMm,
           ridgeAlong: input.ridgeAlong,
           monoDrainCardinal: input.monoDrainCardinal,
         });
@@ -6879,6 +7248,41 @@ export const useAppStore = create<AppStore>((set, get) => {
 
     startWallCopyFromContextMenu: (wallId) => {
       get().startEntityCopyMode({ kind: "wall", id: wallId });
+    },
+
+    trimWallUnderRoofFromContextMenu: (wallId) => {
+      set((s) => {
+        const w = s.currentProject.walls.find((x) => x.id === wallId);
+        if (!w) {
+          return { lastError: "Стена не найдена." };
+        }
+        const draft = computeWallRoofUnderTrimDraft(w, s.currentProject);
+        if (!draft) {
+          return {
+            lastError: "Пересечения с крышей не найдено или подрезка не требуется.",
+            wallContextMenu: null,
+          };
+        }
+        const hMax = Math.max(...draft.topProfileMm.map((p) => p.heightMm));
+        const nextWall: Wall = {
+          ...w,
+          heightMm: Math.round(Math.max(hMax, 1)),
+          roofUnderTrim: {
+            roofPlaneId: draft.roofPlaneId,
+            heightAtStartMm: draft.heightAtStartMm,
+            heightAtEndMm: draft.heightAtEndMm,
+            topProfileMm: draft.topProfileMm,
+          },
+        };
+        let p = replaceWallInProject(s.currentProject, wallId, nextWall);
+        p = recalculateWallCalculationIfPresent(p, wallId);
+        return buildProjectMutationState(s, p, {
+          wallContextMenu: null,
+          dirty: true,
+          lastError: null,
+          infoMessage: "Элемент подрезан по крыше",
+        });
+      });
     },
 
     cancelWallMoveCopy: () => {
@@ -8558,6 +8962,12 @@ export const useAppStore = create<AppStore>((set, get) => {
           textureApply3dParamsModal: null,
           editor3dContextMenu: null,
           editor3dContextDeleteEpoch: 0,
+          floorInsulationSpatialSession: null,
+          floorInsulationModalOpen: false,
+          floorInsulationToolProfileId: null,
+          floorInsulationToolLayoutMode: "auto",
+          floorInsulationAreaMode: "rectangle",
+          activeTool: "select",
         });
       })();
     },
@@ -8640,6 +9050,12 @@ export const useAppStore = create<AppStore>((set, get) => {
           textureApply3dParamsModal: null,
           editor3dContextMenu: null,
           editor3dContextDeleteEpoch: 0,
+          floorInsulationSpatialSession: null,
+          floorInsulationModalOpen: false,
+          floorInsulationToolProfileId: null,
+          floorInsulationToolLayoutMode: "auto",
+          floorInsulationAreaMode: "rectangle",
+          activeTool: "select",
         });
       })();
     },
@@ -8717,6 +9133,12 @@ export const useAppStore = create<AppStore>((set, get) => {
         textureApply3dParamsModal: null,
         editor3dContextMenu: null,
         editor3dContextDeleteEpoch: 0,
+        floorInsulationSpatialSession: null,
+        floorInsulationModalOpen: false,
+        floorInsulationToolProfileId: null,
+        floorInsulationToolLayoutMode: "auto",
+        floorInsulationAreaMode: "rectangle",
+        activeTool: "select",
       });
       try {
         await syncProjectToFirestore(loaded);
@@ -8827,6 +9249,12 @@ export const useAppStore = create<AppStore>((set, get) => {
           textureApply3dParamsModal: null,
           editor3dContextMenu: null,
           editor3dContextDeleteEpoch: 0,
+          floorInsulationSpatialSession: null,
+          floorInsulationModalOpen: false,
+          floorInsulationToolProfileId: null,
+          floorInsulationToolLayoutMode: "auto",
+          floorInsulationAreaMode: "rectangle",
+          activeTool: "select",
         });
         void (async () => {
           try {

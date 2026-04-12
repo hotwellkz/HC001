@@ -24,6 +24,7 @@ import type { Wall } from "./wall";
 import type { WallCalculationResult } from "./wallCalculation";
 import type { WallJoint } from "./wallJoint";
 import type { FloorBeamEntity } from "./floorBeam";
+import type { FloorInsulationPiece } from "./floorInsulation";
 
 export interface Project {
   readonly meta: ProjectMeta;
@@ -44,6 +45,8 @@ export interface Project {
   readonly slabs: readonly SlabEntity[];
   /** Балки/доски перекрытия (линейные элементы по профилю). */
   readonly floorBeams: readonly FloorBeamEntity[];
+  /** Утеплитель перекрытия (EPS и др.) между балками — отдельные куски по контуру. */
+  readonly floorInsulationPieces: readonly FloorInsulationPiece[];
   /** Плоскости скатов крыши на плане (режим «Крыша»). */
   readonly roofPlanes: readonly RoofPlaneEntity[];
   /** Логические крыши из генератора (простые типы); скаты — в `roofPlanes` с `roofSystemId`. */

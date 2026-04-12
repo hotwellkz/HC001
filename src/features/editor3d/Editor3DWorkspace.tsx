@@ -34,6 +34,7 @@ import { ProjectSipSeamLines } from "./ProjectSipSeamLines";
 import { ProjectSlabs } from "./ProjectSlabs";
 import { ProjectWalls } from "./ProjectWalls";
 import { ProjectFloorBeams } from "./ProjectFloorBeams";
+import { ProjectFloorInsulation } from "./ProjectFloorInsulation";
 import { ProjectRoofAssembly } from "./ProjectRoofAssembly";
 import { useEditor3dThemeColors } from "./useEditor3dThemeColors";
 
@@ -72,6 +73,7 @@ function editorOverlaySnapshot() {
     activeTab: s.activeTab,
     layerManagerOpen: s.layerManagerOpen,
     layerParamsModalOpen: s.layerParamsModalOpen,
+    floorInsulationModalOpen: s.floorInsulationModalOpen,
     profilesModalOpen: s.profilesModalOpen,
     addWallModalOpen: s.addWallModalOpen,
     addFloorBeamModalOpen: s.addFloorBeamModalOpen,
@@ -129,6 +131,8 @@ function SceneFromProject({
   texturePickLocked,
   selectedRoofBattenEntityId,
   selectedRoofPlaneEntityId,
+  selectedFloorInsulationEntityId,
+  hoverFloorInsulationEntityId,
 }: {
   readonly selectedWallEntityId: string | null;
   readonly selectedFloorBeamEntityId: string | null;
@@ -138,6 +142,8 @@ function SceneFromProject({
   readonly selectedSlabEntityId: string | null;
   readonly selectedRoofBattenEntityId: string | null;
   readonly selectedRoofPlaneEntityId: string | null;
+  readonly selectedFloorInsulationEntityId: string | null;
+  readonly hoverFloorInsulationEntityId: string | null;
   readonly calcFocus: CalcFocus | null;
   readonly hoverWallEntityId: string | null;
   readonly hoverFloorBeamEntityId: string | null;
@@ -176,6 +182,11 @@ function SceneFromProject({
         project={project}
         selectedBeamEntityId={selectedFloorBeamEntityId}
         hoverBeamEntityId={hoverFloorBeamEntityId}
+      />
+      <ProjectFloorInsulation
+        project={project}
+        selectedPieceId={selectedFloorInsulationEntityId}
+        hoverPieceId={hoverFloorInsulationEntityId}
       />
       <ProjectFoundationPiles
         project={project}
@@ -231,6 +242,7 @@ function Editor3dCanvasScene({
   hoverPileEntityId,
   hoverStripEntityId,
   hoverSlabEntityId,
+  hoverFloorInsulationEntityId,
   hoverRoofBattenEntityId,
   hoverRoofPlaneEntityId,
   hoverCalcReactKey,
@@ -262,6 +274,7 @@ function Editor3dCanvasScene({
   readonly hoverPileEntityId: string | null;
   readonly hoverStripEntityId: string | null;
   readonly hoverSlabEntityId: string | null;
+  readonly hoverFloorInsulationEntityId: string | null;
   readonly hoverRoofBattenEntityId: string | null;
   readonly hoverRoofPlaneEntityId: string | null;
   readonly hoverCalcReactKey: string | null;
@@ -331,6 +344,14 @@ function Editor3dCanvasScene({
     const id = selectedEntityIds[0]!;
     return project.floorBeams.some((b) => b.id === id) ? id : null;
   }, [project.floorBeams, selectedEntityIds]);
+
+  const selectedFloorInsulationEntityId = useMemo(() => {
+    if (selectedEntityIds.length !== 1) {
+      return null;
+    }
+    const id = selectedEntityIds[0]!;
+    return project.floorInsulationPieces.some((p) => p.id === id) ? id : null;
+  }, [project.floorInsulationPieces, selectedEntityIds]);
 
   const selectedRoofBattenEntityId = useMemo(() => {
     if (selectedEntityIds.length !== 1) {
@@ -404,6 +425,7 @@ function Editor3dCanvasScene({
           selectedSlabEntityId={selectedSlabEntityId}
           selectedRoofBattenEntityId={selectedRoofBattenEntityId}
           selectedRoofPlaneEntityId={selectedRoofPlaneEntityId}
+          selectedFloorInsulationEntityId={selectedFloorInsulationEntityId}
           calcFocus={calcFocus}
           hoverWallEntityId={hoverWallEntityId}
           hoverFloorBeamEntityId={hoverFloorBeamEntityId}
@@ -413,6 +435,7 @@ function Editor3dCanvasScene({
           hoverSlabEntityId={hoverSlabEntityId}
           hoverRoofBattenEntityId={hoverRoofBattenEntityId}
           hoverRoofPlaneEntityId={hoverRoofPlaneEntityId}
+          hoverFloorInsulationEntityId={hoverFloorInsulationEntityId}
           hoverCalcReactKey={hoverCalcReactKey}
           texturePickHover={texturePickHover}
           texturePickLocked={texturePickLocked}
@@ -510,6 +533,7 @@ export function Editor3DWorkspace() {
   const hoverPileEntityId = hoverPick?.kind === "foundationPile" ? hoverPick.entityId : null;
   const hoverStripEntityId = hoverPick?.kind === "foundationStrip" ? hoverPick.entityId : null;
   const hoverSlabEntityId = hoverPick?.kind === "slab" ? hoverPick.entityId : null;
+  const hoverFloorInsulationEntityId = hoverPick?.kind === "floorInsulation" ? hoverPick.entityId : null;
   const hoverRoofBattenEntityId = hoverPick?.kind === "roofBatten" ? hoverPick.entityId : null;
   const hoverRoofPlaneEntityId = hoverPick?.kind === "roofPlane" ? hoverPick.entityId : null;
   const hoverCalcReactKey = hoverPick?.kind === "calc" ? hoverPick.reactKey : null;
@@ -977,6 +1001,7 @@ export function Editor3DWorkspace() {
           hoverPileEntityId={hoverPileEntityId}
           hoverStripEntityId={hoverStripEntityId}
           hoverSlabEntityId={hoverSlabEntityId}
+          hoverFloorInsulationEntityId={hoverFloorInsulationEntityId}
           hoverRoofBattenEntityId={hoverRoofBattenEntityId}
           hoverRoofPlaneEntityId={hoverRoofPlaneEntityId}
           hoverCalcReactKey={hoverCalcReactKey}

@@ -60,6 +60,7 @@ describe("applyManualRoofPlaneParamsInProject", () => {
       profileId: prof.id,
       eaveOverhangMm: 300,
       sideOverhangMm: 150,
+      roofCoverEaveProjectionMm: 0,
       ridgeAlong: "short",
       monoDrainCardinal: "s",
     });

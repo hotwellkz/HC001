@@ -9,6 +9,18 @@ function layerOn(v: boolean | undefined): boolean {
   return v !== false;
 }
 
+/**
+ * Слой проекта включён в 3D (панель «Видимость»).
+ * Не путать с `Layer.isVisible` (2D) и `visibleLayerIds`.
+ */
+export function isProjectLayerVisibleIn3d(layerId: string | undefined | null, project: Project): boolean {
+  const id = typeof layerId === "string" ? layerId.trim() : "";
+  if (!id) {
+    return true;
+  }
+  return !project.viewState.hidden3dProjectLayerIds.includes(id);
+}
+
 /** ГКЛ в модели профиля: `ProfileLayer.materialType === "gypsum"`. */
 export function isProfileMaterialGypsumBoard(mt: ProfileMaterialType | "default"): boolean {
   return mt === "gypsum";
@@ -16,6 +28,10 @@ export function isProfileMaterialGypsumBoard(mt: ProfileMaterialType | "default"
 
 /** Слой оболочки стены (послойный профиль): OSB / EPS-подобные. */
 export function isWallMeshSpecVisible(spec: WallRenderMeshSpec, project: Project): boolean {
+  const wall = project.walls.find((w) => w.id === spec.wallId);
+  if (!isProjectLayerVisibleIn3d(wall?.layerId, project)) {
+    return false;
+  }
   const vs = project.viewState;
   const mt = spec.materialType;
   if (isProfileMaterialGypsumBoard(mt)) {
@@ -35,6 +51,10 @@ export function isWallMeshSpecVisible(spec: WallRenderMeshSpec, project: Project
 
 /** Расчётные объёмы: SIP/EPS — слой утеплителя; пиломатериал — каркас. */
 export function isCalculationSolidVisible(spec: CalculationSolidSpec, project: Project): boolean {
+  const wall = project.walls.find((w) => w.id === spec.wallId);
+  if (!isProjectLayerVisibleIn3d(wall?.layerId, project)) {
+    return false;
+  }
   const vs = project.viewState;
   switch (spec.source) {
     case "sip":
@@ -56,6 +76,10 @@ export function hasWindowGeometry3d(_project: Project): boolean {
 
 /** Видимость мешей из opening3dAssemblySpecs. */
 export function isOpening3dMeshVisible(spec: Opening3dMeshSpec, project: Project): boolean {
+  const wall = project.walls.find((w) => w.id === spec.wallId);
+  if (!isProjectLayerVisibleIn3d(wall?.layerId, project)) {
+    return false;
+  }
   const vs = project.viewState;
   if (spec.kind === "opening_framing") {
     return vs.show3dLayerFrame !== false;

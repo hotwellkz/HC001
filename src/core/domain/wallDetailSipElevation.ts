@@ -6,6 +6,8 @@
 import type { Opening } from "./opening";
 import type { SipPanelRegion } from "./wallCalculation";
 import type { Wall } from "./wall";
+import { wallLengthMm } from "./wallCalculationGeometry";
+import { resolveRoofUnderTrimTopProfileMm, wallTopHeightAboveBaseAtAlongMm } from "./wallRoofUnderTrim";
 import { openingStripVerticalCutXsMm } from "./sipWallLayout";
 
 export { openingStripVerticalCutXsMm };
@@ -27,6 +29,11 @@ export interface WallDetailSipFacadeSliceColumn {
   readonly drawY1: number;
   readonly specWidthMm: number;
   readonly specHeightMm: number;
+  /**
+   * Подрезка под крышу: контур листа в мм листа (x — вдоль стены, y — вниз), пересечение полосы [drawX0, drawX1] с полигоном фронтона.
+   * Если задан — рисуется polygon, а не прямоугольник drawY0…drawY1.
+   */
+  readonly trimPolygonSheetMm?: readonly { readonly x: number; readonly y: number }[];
 }
 
 /** Сегмент полосы SIP над световым проёмом (ширина — кусок по модульной сетке, не целиком проём). */
@@ -103,6 +110,35 @@ export interface BuildWallDetailSipFacadeSlicesOptions {
 }
 
 /**
+ * Полигон листа на фасаде после подрезки под крышу: нижняя кромка прямая, верх — линия кровли на [s0, s1].
+ */
+export function buildSheetColumnTrimPolygonSheetMm(
+  wall: Wall,
+  s0: number,
+  s1: number,
+  wallBottomSheetMm: number,
+  lengthMm: number,
+): { readonly x: number; readonly y: number }[] {
+  const lo = Math.min(s0, s1);
+  const hi = Math.max(s0, s1);
+  const hAt = (u: number) => wallTopHeightAboveBaseAtAlongMm(wall, u, lengthMm);
+  const pts = resolveRoofUnderTrimTopProfileMm(wall, lengthMm);
+  const topRight = { x: hi, y: wallBottomSheetMm - hAt(hi) };
+  const topLeft = { x: lo, y: wallBottomSheetMm - hAt(lo) };
+  const interior = pts
+    .filter((p) => p.alongMm > lo + 0.5 && p.alongMm < hi - 0.5)
+    .sort((a, b) => b.alongMm - a.alongMm)
+    .map((p) => ({ x: p.alongMm, y: wallBottomSheetMm - p.heightMm }));
+  return [
+    { x: lo, y: wallBottomSheetMm },
+    { x: hi, y: wallBottomSheetMm },
+    topRight,
+    ...interior,
+    topLeft,
+  ];
+}
+
+/**
  * Слева направо: колонки sipRegions до проёма → сегменты полосы над проёмом → колонки после.
  * spec* совпадает с draw* (мм листа).
  */
@@ -136,17 +172,40 @@ export function buildWallDetailSipFacadeSlices(
   let ri = 0;
   const eps = 0.5;
 
+  let L =
+    wall.start != null && wall.end != null
+      ? wallLengthMm(wall)
+      : sortedRegs.length > 0
+        ? Math.max(...sortedRegs.map((r) => r.endOffsetMm))
+        : 0;
+  if (!Number.isFinite(L) || L <= 0) {
+    L = sortedRegs.length > 0 ? Math.max(...sortedRegs.map((r) => r.endOffsetMm)) : 0;
+  }
+
   const pushColumn = (r: SipPanelRegion) => {
     const w = r.endOffsetMm - r.startOffsetMm;
+    /** Без подрезки под крышу полноразмерная колонка на фасаде = высота стены (spec = draw); при подрезке — по расчёту региона. */
+    const colH =
+      wall.roofUnderTrim != null
+        ? Math.min(H, Math.max(1, Math.round(r.heightMm)))
+        : H;
+    const s0 = r.startOffsetMm;
+    const s1 = r.endOffsetMm;
+    const trimPoly =
+      wall.roofUnderTrim != null
+        ? buildSheetColumnTrimPolygonSheetMm(wall, s0, s1, wallBottom, L)
+        : undefined;
+    /** Низ листа у низа стены; при подрезке под крышу высота колонки может быть меньше H. */
     out.push({
       kind: "column",
       region: r,
-      drawX0: r.startOffsetMm,
-      drawX1: r.endOffsetMm,
-      drawY0: wallTop,
+      drawX0: s0,
+      drawX1: s1,
+      drawY0: wallBottom - colH,
       drawY1: wallBottom,
       specWidthMm: w,
-      specHeightMm: H,
+      specHeightMm: colH,
+      trimPolygonSheetMm: trimPoly,
     });
   };
 

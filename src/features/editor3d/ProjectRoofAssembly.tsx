@@ -6,10 +6,12 @@ import { getProfileById } from "@/core/domain/profileOps";
 import type { Project } from "@/core/domain/project";
 import type { RoofPlaneEntity } from "@/core/domain/roofPlane";
 import { resolveRoofProfileAssembly } from "@/core/domain/roofProfileAssembly";
+import { roofCoverEaveProjectionMmForPlane } from "@/core/domain/roofSystem";
 import { roofBattenPickEntityId, roofBattenPickReactKey } from "@/core/domain/roofBattenPick3d";
 import type { RoofBattenBoxSpecMm } from "@/core/geometry/roofAssemblyGeometry3d";
 import {
   buildRoofBattenBoxSpecsMm,
+  buildRoofCoveringSlopeSurfaceMeshMm,
   buildRoofSlopeSurfaceMeshMm,
   offsetRoofMeshMm,
   roofAssemblyZAdjustMmByPlaneIdForProject,
@@ -26,6 +28,7 @@ import {
 import { editor3dPickUserData } from "./editor3dPick";
 import { ExactBoxSelectionOutline } from "./ExactBoxSelectionOutline";
 import { meshStandardPresetForMaterialType } from "./materials3d";
+import { isProjectLayerVisibleIn3d } from "./view3dVisibility";
 
 function parseHexColor(hex: string): number {
   const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
@@ -133,6 +136,7 @@ function CalculatedRoofPlaneMeshes({
     () => buildRoofSlopeSurfaceMeshMm(rp, layerBase, zAdjustMm),
     [rp, layerBase, zAdjustMm],
   );
+  const coverEaveMm = useMemo(() => roofCoverEaveProjectionMmForPlane(project, rp), [project, rp]);
   const membraneGeom = useMemo(() => {
     if (!baseMesh || !asm.membraneUse) {
       return null;
@@ -148,9 +152,25 @@ function CalculatedRoofPlaneMeshes({
     const mem = asm.membraneUse ? asm.membraneThicknessMm : 0;
     const batt = asm.battenUse ? asm.battenHeightMm : 0;
     const off = mem + batt + asm.coveringThicknessMm * 0.5;
-    const m = offsetRoofMeshMm(baseMesh, off);
+    const slopeForCover =
+      coverEaveMm > 0 ? buildRoofCoveringSlopeSurfaceMeshMm(rp, layerBase, zAdjustMm, coverEaveMm) : baseMesh;
+    if (!slopeForCover) {
+      return null;
+    }
+    const m = offsetRoofMeshMm(slopeForCover, off);
     return roofMeshToWorldMeters(m);
-  }, [baseMesh, asm.membraneUse, asm.membraneThicknessMm, asm.battenUse, asm.battenHeightMm, asm.coveringThicknessMm]);
+  }, [
+    baseMesh,
+    rp,
+    layerBase,
+    zAdjustMm,
+    coverEaveMm,
+    asm.membraneUse,
+    asm.membraneThicknessMm,
+    asm.battenUse,
+    asm.battenHeightMm,
+    asm.coveringThicknessMm,
+  ]);
 
   const battenSpecs = useMemo(
     () => (baseMesh && asm.battenUse ? buildRoofBattenBoxSpecsMm(rp, layerBase, asm, zAdjustMm) : []),
@@ -187,7 +207,8 @@ function CalculatedRoofPlaneMeshes({
   }, [membraneThree, coveringThree]);
 
   const vs = project.viewState;
-  const roofOn = vs.show3dRoof !== false;
+  const layer3dOn = isProjectLayerVisibleIn3d(rp.layerId, project);
+  const roofOn = layer3dOn && vs.show3dRoof !== false;
   const showMem = roofOn && vs.show3dRoofMembrane !== false && asm.membraneUse;
   const showBat = roofOn && vs.show3dRoofBattens !== false && asm.battenUse;
   const showCov = roofOn && vs.show3dRoofCovering !== false;

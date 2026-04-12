@@ -2,7 +2,7 @@ import type { Project } from "@/core/domain/project";
 import { narrowProjectToActiveLayer } from "@/core/domain/projectLayerSlice";
 
 /** Согласовано с {@link import("@/store/useAppStore").ActiveTool}. */
-export type SelectAllActiveTool = "select" | "pan" | "ruler" | "changeLength" | "line";
+export type SelectAllActiveTool = "select" | "pan" | "ruler" | "changeLength" | "line" | "floorInsulation";
 
 export interface SelectAllEditorSnapshot {
   readonly activeTool: SelectAllActiveTool;

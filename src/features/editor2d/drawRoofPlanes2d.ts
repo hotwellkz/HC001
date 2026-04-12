@@ -1,7 +1,14 @@
 import { Graphics } from "pixi.js";
 
+import type { Project } from "@/core/domain/project";
 import type { RoofPlaneEntity } from "@/core/domain/roofPlane";
-import { roofPlanePerpCcWMm, roofPlanePolygonMm } from "@/core/domain/roofPlane";
+import {
+  roofPlaneDrainUnitPlanMm,
+  roofPlanePerpCcWMm,
+  roofPlanePolygonMm,
+  roofPolygonExtendEaveEdgeForCoverMm,
+} from "@/core/domain/roofPlane";
+import { roofCoverEaveProjectionMmForPlane } from "@/core/domain/roofSystem";
 import type { Point2D } from "@/core/geometry/types";
 import type { ViewportTransform } from "@/core/geometry/viewportTransform";
 import { worldToScreen } from "@/core/geometry/viewportTransform";
@@ -17,6 +24,8 @@ const SEL_ALPHA = 0.95;
 
 const PREVIEW = 0x0ea5e9;
 const ARROW = 0x475569;
+/** Контур выпуска кровельного покрытия за карниз (отдельно от контура ската). */
+const COVER_EAVE_STROKE = 0xb45309;
 
 function drawArrowOnSegmentPx(
   g: Graphics,
@@ -133,6 +142,8 @@ export function drawRoofPlanes2d(
     readonly clear?: boolean;
     /** Общая раскладка подписей/стрелок по id плоскости (стрелка совпадает с текстовым блоком). */
     readonly labelLayoutByPlaneId?: ReadonlyMap<string, RoofLabelLayout2d>;
+    /** Для второго контура — выпуск покрытия по карнизу (только слой покрытия). */
+    readonly projectForRoofCoverOutline?: Pick<Project, "roofSystems"> | null;
   },
 ): void {
   if (opts?.clear !== false) {
@@ -155,6 +166,32 @@ export function drawRoofPlanes2d(
     }
     g.closePath();
     g.stroke({ width: w, color: col, alpha: al, cap: "round", join: "round" });
+
+    const covMm = opts?.projectForRoofCoverOutline
+      ? roofCoverEaveProjectionMmForPlane(opts.projectForRoofCoverOutline, rp)
+      : 0;
+    if (covMm > 0) {
+      const base = roofPlanePolygonMm(rp);
+      const { uxn, uyn } = roofPlaneDrainUnitPlanMm(rp);
+      const cov = roofPolygonExtendEaveEdgeForCoverMm(base, uxn, uyn, covMm);
+      if (cov.length >= 3) {
+        const pC0 = worldToScreen(cov[0]!.x, cov[0]!.y, t);
+        g.moveTo(pC0.x, pC0.y);
+        for (let i = 1; i < cov.length; i++) {
+          const p = worldToScreen(cov[i]!.x, cov[i]!.y, t);
+          g.lineTo(p.x, p.y);
+        }
+        g.closePath();
+        g.stroke({
+          width: Math.max(0.85, w * 0.88),
+          color: COVER_EAVE_STROKE,
+          alpha: al * 0.94,
+          cap: "round",
+          join: "round",
+        });
+      }
+    }
+
     const layout = opts?.labelLayoutByPlaneId?.get(rp.id) ?? null;
     drawRoofPlaneSlopeArrowPx(g, rp, t, undefined, layout);
   }

@@ -15,6 +15,9 @@ export function getProfilesByCategory(project: Project, category: ProfileCategor
  * layered — сумма слоёв; solid — один слой или defaultThicknessMm.
  */
 export function computeProfileTotalThicknessMm(profile: Profile): number {
+  if (profile.category === "insulation" && profile.insulation) {
+    return Math.max(0, profile.insulation.thicknessMm);
+  }
   if (profile.compositionMode === "layered") {
     return profile.layers.reduce((s, l) => s + l.thicknessMm, 0);
   }
@@ -28,6 +31,10 @@ export function computeProfileTotalThicknessMm(profile: Profile): number {
 }
 
 export function formatProfileSummary(profile: Profile): string {
+  if (profile.category === "insulation" && profile.insulation) {
+    const u = profile.insulation;
+    return `${Math.round(u.sheetLengthMm)}×${Math.round(u.sheetWidthMm)}×${Math.round(u.thicknessMm)} мм`;
+  }
   if (profile.category === "roof") {
     const ra = resolveRoofProfileAssembly(profile);
     const labels: Record<string, string> = {
@@ -54,6 +61,9 @@ export function sortProfileLayersByOrder(layers: readonly ProfileLayer[]): Profi
 export function defaultCompositionModeForCategory(category: ProfileCategory): ProfileCompositionMode {
   if (category === "wall" || category === "slab" || category === "roof") {
     return "layered";
+  }
+  if (category === "insulation") {
+    return "solid";
   }
   return "solid";
 }

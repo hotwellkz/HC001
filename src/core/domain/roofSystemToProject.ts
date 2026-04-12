@@ -20,6 +20,8 @@ export interface AddRectangleRoofSystemArgs {
   readonly profileId: string;
   readonly eaveOverhangMm: number;
   readonly sideOverhangMm: number;
+  /** Выпуск покрытия за карниз (мм), только для визуализации/геометрии слоя покрытия. */
+  readonly roofCoverEaveProjectionMm: number;
   readonly ridgeAlong: RidgeAlongChoice;
   readonly monoDrainCardinal: MonoCardinalDrain;
 }
@@ -55,6 +57,7 @@ function insertRectangleRoofSystemIntoProject(
     baseLevelMm: args.baseLevelMm,
     eaveOverhangMm: args.eaveOverhangMm,
     sideOverhangMm: args.sideOverhangMm,
+    roofCoverEaveProjectionMm: Math.max(0, args.roofCoverEaveProjectionMm),
     ridgeUnitPlan: geom.ridgeUnitPlan,
     drainUnitPlan: geom.drainUnitPlan,
     ridgeAlong: args.ridgeAlong,

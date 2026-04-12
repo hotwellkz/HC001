@@ -5,6 +5,7 @@ import { buildSipSeamVerticalLineSegmentsForProject } from "@/core/domain/sipSea
 import type { Project } from "@/core/domain/project";
 
 import { CALC_SEAM_VISUAL } from "./calculationSeamVisual3d";
+import { isProjectLayerVisibleIn3d } from "./view3dVisibility";
 
 interface ProjectSipSeamLinesProps {
   readonly project: Project;
@@ -16,7 +17,11 @@ interface ProjectSipSeamLinesProps {
  * (см. `SIP_SEAM_LINE_FACE_OFFSET_MM`), без z-fighting с объёмом EPS расчёта.
  */
 export function ProjectSipSeamLines({ project, visible }: ProjectSipSeamLinesProps) {
-  const segments = useMemo(() => buildSipSeamVerticalLineSegmentsForProject(project), [project]);
+  const segments = useMemo(() => {
+    const raw = buildSipSeamVerticalLineSegmentsForProject(project);
+    const wallById = new Map(project.walls.map((w) => [w.id, w]));
+    return raw.filter((s) => isProjectLayerVisibleIn3d(wallById.get(s.wallId)?.layerId, project));
+  }, [project]);
   const v = CALC_SEAM_VISUAL.sipLine;
 
   if (!visible || segments.length === 0) {

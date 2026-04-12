@@ -1,5 +1,6 @@
 import {
   Hand,
+  LayoutGrid,
   MoreHorizontal,
   MousePointer2,
   PenLine,
@@ -76,14 +77,21 @@ export function Editor2DToolbarMobile() {
 /** Полный список инструментов для bottom sheet. */
 export function Editor2DToolbarMobileSheet() {
   const activeTool = useAppStore((s) => s.activeTool);
+  const planScope = useAppStore((s) => s.currentProject.viewState.editor2dPlanScope);
   const selectedCount = useAppStore((s) => s.selectedEntityIds.length);
   const setActiveTool = useAppStore((s) => s.setActiveTool);
   const closeMobileSheet = useAppStore((s) => s.closeMobileSheet);
+  const openFloorInsulationModal = useAppStore((s) => s.openFloorInsulationModal);
 
   const deleteDisabled = selectedCount === 0;
   const editDisabled = selectedCount !== 1;
 
   const pick = (tool: typeof activeTool) => {
+    if (tool === "floorInsulation") {
+      openFloorInsulationModal();
+      closeMobileSheet();
+      return;
+    }
     setActiveTool(tool);
     closeMobileSheet();
   };
@@ -105,6 +113,14 @@ export function Editor2DToolbarMobileSheet() {
       />
       <ToolBtn label="Линейка" pressed={activeTool === "ruler"} icon={Ruler} onClick={() => pick("ruler")} />
       <ToolBtn label="Линия" pressed={activeTool === "line"} icon={PenLine} onClick={() => pick("line")} />
+      {planScope === "floorStructure" ? (
+        <ToolBtn
+          label="Утепление"
+          pressed={activeTool === "floorInsulation"}
+          icon={LayoutGrid}
+          onClick={() => pick("floorInsulation")}
+        />
+      ) : null}
       <ToolBtn
         label="Редактировать"
         disabled={editDisabled}

@@ -30,6 +30,7 @@ import { SlabEditModal } from "@/features/ui/SlabEditModal";
 import { LayerManagerModal } from "@/features/ui/LayerManagerModal";
 import { LayerParamsModal } from "@/features/ui/LayerParamsModal";
 import { ProfilesModal } from "@/features/ui/ProfilesModal";
+import { FloorInsulationModal } from "@/features/ui/FloorInsulationModal";
 import { EditorHotkeysModal } from "@/features/ui/EditorHotkeysModal";
 
 import { MobileChrome } from "./MobileChrome";
@@ -105,6 +106,7 @@ export function AppShell() {
       <LayerManagerHost />
       <LayerParamsHost />
       <ProfilesHost />
+      <FloorInsulationModal />
       <AddWallModal />
       <AddFloorBeamModal />
       <FloorBeamSplitModal />

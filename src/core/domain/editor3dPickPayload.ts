@@ -8,6 +8,7 @@ export type Editor3dPickKind =
   | "slab"
   | "wall"
   | "floorBeam"
+  | "floorInsulation"
   | "roofPlane"
   | "roofBatten"
   | "calc";

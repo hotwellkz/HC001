@@ -55,6 +55,7 @@ export function createEmptyProject(): Project {
     foundationPiles: [],
     slabs: [],
     floorBeams: [],
+    floorInsulationPieces: [],
     roofPlanes: [],
     roofSystems: [],
     roofAssemblyCalculations: [],
@@ -104,11 +105,13 @@ export function createEmptyProject(): Project {
       show3dFoundation: true,
       show3dPiles: true,
       show3dOverlap: true,
+      show3dFloorInsulation: true,
       show3dRoof: true,
       show3dRoofMembrane: true,
       show3dRoofBattens: true,
       show3dRoofCovering: true,
       show3dRoofSoffit: false,
+      hidden3dProjectLayerIds: [],
     },
   };
 }

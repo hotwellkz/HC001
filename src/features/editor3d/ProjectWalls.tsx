@@ -1,5 +1,14 @@
 import { useEffect, useMemo } from "react";
-import { DoubleSide } from "three";
+import { DoubleSide, EdgesGeometry, FrontSide } from "three";
+import type { BufferGeometry } from "three";
+
+import { roofTrimMeshPolylineMm } from "@/core/domain/wallRoofUnderTrim";
+
+import {
+  buildWallSlopedPrismGeometry,
+  buildWallSlopedProfilePrismGeometry,
+  MM_TO_M,
+} from "@/features/editor3d/wallSlopedPrismGeometry";
 
 import type { Editor3dPickPayload } from "@/core/domain/editor3dPickPayload";
 import type { Project } from "@/core/domain/project";
@@ -23,6 +32,46 @@ import { buildTexturedBoxMaterials, disposeOwnedMaterials } from "./surfaceTextu
 import { isWallMeshSpecVisible } from "./view3dVisibility";
 import type { WallRenderMeshSpec } from "./wallMeshSpec";
 import { wallsToMeshSpecs } from "./wallMeshSpec";
+
+/** Контур выбора по рёбрам призмы подрезки (не AABB «ящика» по hMax). */
+function SlopedWallEdgeOutline({
+  geometry,
+  position,
+  rotationY,
+  color,
+  opacity,
+}: {
+  readonly geometry: BufferGeometry;
+  readonly position: readonly [number, number, number];
+  readonly rotationY: number;
+  readonly color: number;
+  readonly opacity: number;
+}) {
+  /** Только заметные изломы: не подсвечивать диагонали разбиения почти плоских граней. */
+  const edges = useMemo(() => new EdgesGeometry(geometry, 62), [geometry]);
+  useEffect(() => () => edges.dispose(), [edges]);
+  return (
+    <lineSegments
+      position={position}
+      rotation={[0, rotationY, 0]}
+      geometry={edges}
+      raycast={() => null}
+      frustumCulled={false}
+      renderOrder={32}
+    >
+      <lineBasicMaterial
+        color={color}
+        transparent
+        opacity={opacity}
+        depthTest
+        depthWrite={false}
+        polygonOffset
+        polygonOffsetFactor={1}
+        polygonOffsetUnits={1}
+      />
+    </lineSegments>
+  );
+}
 
 interface ProjectWallsProps {
   readonly project: Project;
@@ -50,6 +99,34 @@ function WallSegmentMesh3d({
 }) {
   const wall = useMemo(() => project.walls.find((w) => w.id === s.wallId), [project.walls, s.wallId]);
   const layerId = wall?.layerId ?? "";
+
+  const slopedGeo = useMemo(() => {
+    if (s.slopedTopProfileMm && s.slopedTopProfileMm.length >= 2 && wall) {
+      const Lmm = s.depth / MM_TO_M;
+      if (Lmm < 1e-6) {
+        return null;
+      }
+      const poly = roofTrimMeshPolylineMm(wall, Lmm);
+      if (poly.length < 2) {
+        return null;
+      }
+      const depthM = s.depth;
+      const zM = poly.map((p) => (p.alongMm / Lmm) * depthM - depthM * 0.5);
+      const hM = poly.map((p) => p.heightMm * MM_TO_M);
+      return buildWallSlopedProfilePrismGeometry(s.width, depthM, zM, hM);
+    }
+    if (!s.slopedTopHeightsMm) {
+      return null;
+    }
+    const { h0, h1 } = s.slopedTopHeightsMm;
+    return buildWallSlopedPrismGeometry(s.width, s.depth, h0 * MM_TO_M, h1 * MM_TO_M);
+  }, [s, wall]);
+
+  useEffect(() => {
+    return () => {
+      slopedGeo?.dispose();
+    };
+  }, [slopedGeo]);
 
   const texturedMaterials = useMemo(() => {
     if (!wall) {
@@ -95,9 +172,12 @@ function WallSegmentMesh3d({
   const texHover =
     !texLocked && editor3dTextureHighlightMatches("wall", s.wallId, s.reactKey, texturePickHover);
 
+  const outlinePos = s.selectionPosition ?? s.position;
+  const useSlopedOutline = slopedGeo != null;
+
   return (
     <group>
-      {texturedMaterials ? (
+      {texturedMaterials && !slopedGeo ? (
         <mesh
           userData={pick}
           material={texturedMaterials}
@@ -115,59 +195,113 @@ function WallSegmentMesh3d({
           rotation={[0, s.rotationY, 0]}
           castShadow
           receiveShadow
+          geometry={slopedGeo ?? undefined}
         >
-          <boxGeometry args={[s.width, s.height, s.depth]} />
-          <meshStandardMaterial
-            color={preset.color}
-            roughness={preset.roughness}
-            metalness={preset.metalness}
-            side={DoubleSide}
-          />
+          {!slopedGeo ? (
+            <>
+              <boxGeometry args={[s.width, s.height, s.depth]} />
+              <meshStandardMaterial
+                color={preset.color}
+                roughness={preset.roughness}
+                metalness={preset.metalness}
+                side={DoubleSide}
+              />
+            </>
+          ) : (
+            <meshStandardMaterial
+              color={preset.color}
+              roughness={preset.roughness}
+              metalness={preset.metalness}
+              side={FrontSide}
+              depthWrite
+              depthTest
+            />
+          )}
         </mesh>
       )}
       {shellSelected ? (
-        <ExactBoxSelectionOutline
-          width={s.width}
-          height={s.height}
-          depth={s.depth}
-          position={s.position}
-          rotationY={s.rotationY}
-          color={SELECTION_BOX_OUTLINE_3D.color}
-          opacity={SELECTION_BOX_OUTLINE_3D.opacity}
-        />
+        useSlopedOutline && slopedGeo ? (
+          <SlopedWallEdgeOutline
+            geometry={slopedGeo}
+            position={s.position}
+            rotationY={s.rotationY}
+            color={SELECTION_BOX_OUTLINE_3D.color}
+            opacity={SELECTION_BOX_OUTLINE_3D.opacity}
+          />
+        ) : (
+          <ExactBoxSelectionOutline
+            width={s.width}
+            height={s.height}
+            depth={s.depth}
+            position={outlinePos}
+            rotationY={s.rotationY}
+            color={SELECTION_BOX_OUTLINE_3D.color}
+            opacity={SELECTION_BOX_OUTLINE_3D.opacity}
+          />
+        )
       ) : null}
       {hoverThis ? (
-        <ExactBoxSelectionOutline
-          width={s.width}
-          height={s.height}
-          depth={s.depth}
-          position={s.position}
-          rotationY={s.rotationY}
-          color={HOVER_BOX_OUTLINE_3D.color}
-          opacity={HOVER_BOX_OUTLINE_3D.opacity}
-        />
+        useSlopedOutline && slopedGeo ? (
+          <SlopedWallEdgeOutline
+            geometry={slopedGeo}
+            position={s.position}
+            rotationY={s.rotationY}
+            color={HOVER_BOX_OUTLINE_3D.color}
+            opacity={HOVER_BOX_OUTLINE_3D.opacity}
+          />
+        ) : (
+          <ExactBoxSelectionOutline
+            width={s.width}
+            height={s.height}
+            depth={s.depth}
+            position={outlinePos}
+            rotationY={s.rotationY}
+            color={HOVER_BOX_OUTLINE_3D.color}
+            opacity={HOVER_BOX_OUTLINE_3D.opacity}
+          />
+        )
       ) : null}
       {texLocked ? (
-        <ExactBoxSelectionOutline
-          width={s.width}
-          height={s.height}
-          depth={s.depth}
-          position={s.position}
-          rotationY={s.rotationY}
-          color={TEXTURE_TOOL_LOCKED_OUTLINE_3D.color}
-          opacity={TEXTURE_TOOL_LOCKED_OUTLINE_3D.opacity}
-        />
+        useSlopedOutline && slopedGeo ? (
+          <SlopedWallEdgeOutline
+            geometry={slopedGeo}
+            position={s.position}
+            rotationY={s.rotationY}
+            color={TEXTURE_TOOL_LOCKED_OUTLINE_3D.color}
+            opacity={TEXTURE_TOOL_LOCKED_OUTLINE_3D.opacity}
+          />
+        ) : (
+          <ExactBoxSelectionOutline
+            width={s.width}
+            height={s.height}
+            depth={s.depth}
+            position={outlinePos}
+            rotationY={s.rotationY}
+            color={TEXTURE_TOOL_LOCKED_OUTLINE_3D.color}
+            opacity={TEXTURE_TOOL_LOCKED_OUTLINE_3D.opacity}
+          />
+        )
       ) : null}
       {texHover ? (
-        <ExactBoxSelectionOutline
-          width={s.width}
-          height={s.height}
-          depth={s.depth}
-          position={s.position}
-          rotationY={s.rotationY}
-          color={TEXTURE_TOOL_HOVER_OUTLINE_3D.color}
-          opacity={TEXTURE_TOOL_HOVER_OUTLINE_3D.opacity}
-        />
+        useSlopedOutline && slopedGeo ? (
+          <SlopedWallEdgeOutline
+            geometry={slopedGeo}
+            position={s.position}
+            rotationY={s.rotationY}
+            color={TEXTURE_TOOL_HOVER_OUTLINE_3D.color}
+            opacity={TEXTURE_TOOL_HOVER_OUTLINE_3D.opacity}
+          />
+        ) : (
+          <ExactBoxSelectionOutline
+            width={s.width}
+            height={s.height}
+            depth={s.depth}
+            position={outlinePos}
+            rotationY={s.rotationY}
+            color={TEXTURE_TOOL_HOVER_OUTLINE_3D.color}
+            opacity={TEXTURE_TOOL_HOVER_OUTLINE_3D.opacity}
+          />
+        )
       ) : null}
     </group>
   );

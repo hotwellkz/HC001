@@ -22,6 +22,11 @@ export interface RoofSystemEntity {
   /** Боковой свес (мм) — подставляется вместо side из профиля. */
   readonly sideOverhangMm: number;
   /**
+   * Дополнительный выпуск кровельного покрытия за линию карниза (мм), только для слоя покрытия в 2D/3D.
+   * Не увеличивает конструктивный свес и не смещает остальные слои кровельного пирога.
+   */
+  readonly roofCoverEaveProjectionMm: number;
+  /**
    * Направление конька: ось «вдоль конька» на плане (единичный вектор).
    * Для односкатной — ортогонально линии стока (вдоль «верхней» стороны прямоугольника).
    */
@@ -43,4 +48,20 @@ export interface RoofRidgeSegmentMm {
   readonly ay: number;
   readonly bx: number;
   readonly by: number;
+}
+
+/** Выпуск покрытия по карнизу из записи крыши-генератора (мм); для прочих скатов — 0. */
+export function roofCoverEaveProjectionMmForPlane(
+  project: { readonly roofSystems: readonly RoofSystemEntity[] },
+  rp: { readonly roofSystemId?: string },
+): number {
+  if (!rp.roofSystemId) {
+    return 0;
+  }
+  const sys = project.roofSystems.find((s) => s.id === rp.roofSystemId);
+  if (!sys) {
+    return 0;
+  }
+  const v = sys.roofCoverEaveProjectionMm;
+  return typeof v === "number" && Number.isFinite(v) ? Math.max(0, v) : 0;
 }

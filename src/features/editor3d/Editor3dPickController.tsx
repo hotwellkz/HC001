@@ -18,6 +18,7 @@ function editorHotkeySnapshot() {
     activeTab: s.activeTab,
     layerManagerOpen: s.layerManagerOpen,
     layerParamsModalOpen: s.layerParamsModalOpen,
+    floorInsulationModalOpen: s.floorInsulationModalOpen,
     profilesModalOpen: s.profilesModalOpen,
     addWallModalOpen: s.addWallModalOpen,
     addFloorBeamModalOpen: s.addFloorBeamModalOpen,
@@ -85,6 +86,11 @@ function applyPickToStore(
     return;
   }
   if (payload.kind === "floorBeam") {
+    setCalcFocus(null);
+    store.setSelectedEntityIds([payload.entityId]);
+    return;
+  }
+  if (payload.kind === "floorInsulation") {
     setCalcFocus(null);
     store.setSelectedEntityIds([payload.entityId]);
     return;

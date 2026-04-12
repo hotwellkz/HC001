@@ -103,6 +103,8 @@ export interface ViewState {
   readonly show3dPiles: boolean;
   /** Перекрытие в 3D: балки пола + плиты перекрытия (`structuralPurpose: overlap` или без тега). */
   readonly show3dOverlap: boolean;
+  /** Утеплитель между балками перекрытия (EPS и др.). */
+  readonly show3dFloorInsulation: boolean;
   /** Вся расчётная крыша в 3D (подслои ниже — только если эта опция включена). */
   readonly show3dRoof: boolean;
   readonly show3dRoofMembrane: boolean;
@@ -110,6 +112,11 @@ export interface ViewState {
   readonly show3dRoofCovering: boolean;
   /** Подшивка свесов — заготовка (геометрия позже). */
   readonly show3dRoofSoffit: boolean;
+  /**
+   * ID слоёв проекта, скрытых только в 3D (панель «Видимость»).
+   * Не совпадает с layer.isVisible (2D) и с visibleLayerIds.
+   */
+  readonly hidden3dProjectLayerIds: readonly string[];
 }
 
 /** Нормализация viewState из файла (старые проекты без поля). */
@@ -132,17 +139,31 @@ export function normalizeViewState(
     readonly show3dFoundation?: boolean;
     readonly show3dPiles?: boolean;
     readonly show3dOverlap?: boolean;
+    readonly show3dFloorInsulation?: boolean;
     readonly show3dRoof?: boolean;
     readonly show3dRoofMembrane?: boolean;
     readonly show3dRoofBattens?: boolean;
     readonly show3dRoofCovering?: boolean;
     readonly show3dRoofSoffit?: boolean;
+    readonly hidden3dProjectLayerIds?: readonly string[];
   },
 ): ViewState {
   const tab = VALID_TABS.includes(input.activeTab as EditorTab) ? input.activeTab : "2d";
   const rawScope = input.editor2dPlanScope;
   const scope: Editor2dPlanScope =
     rawScope === "floorStructure" || rawScope === "foundation" || rawScope === "roof" ? rawScope : "main";
+  const hiddenRaw = input.hidden3dProjectLayerIds;
+  const hidden3dProjectLayerIds: string[] = [];
+  if (Array.isArray(hiddenRaw)) {
+    const seen = new Set<string>();
+    for (const x of hiddenRaw) {
+      if (typeof x !== "string" || x.length === 0 || seen.has(x)) {
+        continue;
+      }
+      seen.add(x);
+      hidden3dProjectLayerIds.push(x);
+    }
+  }
   return {
     activeTab: tab,
     editor2dPlanScope: scope,
@@ -162,10 +183,12 @@ export function normalizeViewState(
     show3dFoundation: input.show3dFoundation !== false,
     show3dPiles: input.show3dPiles !== false,
     show3dOverlap: input.show3dOverlap !== false,
+    show3dFloorInsulation: input.show3dFloorInsulation !== false,
     show3dRoof: input.show3dRoof !== false,
     show3dRoofMembrane: input.show3dRoofMembrane !== false,
     show3dRoofBattens: input.show3dRoofBattens !== false,
     show3dRoofCovering: input.show3dRoofCovering !== false,
     show3dRoofSoffit: input.show3dRoofSoffit === true,
+    hidden3dProjectLayerIds,
   };
 }

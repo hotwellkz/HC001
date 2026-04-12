@@ -12,6 +12,7 @@ import {
   isInsulationCoreMaterial,
   resolveWallProfileLayerStripsForWallVisualization,
 } from "@/core/domain/wallProfileLayers";
+import { resolveRoofUnderTrimTopProfileMm } from "@/core/domain/wallRoofUnderTrim";
 
 const MM_TO_M = 0.001;
 const MIN_LEN_MM = 1;
@@ -25,11 +26,23 @@ export interface WallRenderMeshSpec {
   readonly wallId: string;
   readonly layerId?: string;
   readonly position: readonly [number, number, number];
+  /**
+   * Центр AABB для выделения/обводки (BoxGeometry центрирована).
+   * Для призмы подрезки `position` — привязка низа (локальный y=0), тогда задаётся отдельно.
+   */
+  readonly selectionPosition?: readonly [number, number, number];
   readonly rotationY: number;
   readonly width: number;
   readonly height: number;
   readonly depth: number;
   readonly materialType: ProfileMaterialType | "default";
+  /** Высоты верха (мм над низом стены) у −depth/2 и +depth/2 по локальной Z; иначе прямоугольный блок. */
+  readonly slopedTopHeightsMm?: { readonly h0: number; readonly h1: number };
+  /**
+   * Подрезка под крышу: полный профиль вдоль стены (мм от старта → высота над низом).
+   * Если задан и длина ≥ 2 — 3D-меш строится по этому контуру, а не по одной плоскости h0/h1.
+   */
+  readonly slopedTopProfileMm?: readonly { readonly alongMm: number; readonly heightMm: number }[];
 }
 
 /** Нормаль к толщине и единичный вектор вдоль стены в плане XZ. */
@@ -125,6 +138,59 @@ function singleSolidSpecs(
     });
   }
   return out;
+}
+
+/** Стена с подрезкой под крышу: одна призма вдоль оси, проёмы в 3D не вырезаются (ограничение этапа 1). */
+function slopedRoofTrimSolidSpecs(
+  wall: Wall,
+  project: Project,
+  materialType: ProfileMaterialType | "default",
+  verticalById: ReturnType<typeof computeLayerVerticalStack>,
+): WallRenderMeshSpec[] {
+  if (!(wall.thicknessMm > 0) || !wall.roofUnderTrim) {
+    return [];
+  }
+  const sx = wall.start.x;
+  const sy = wall.start.y;
+  const ex = wall.end.x;
+  const ey = wall.end.y;
+  const { lenMm, ux, uy } = thicknessNormalUnit(sx, sy, ex, ey);
+  if (lenMm < MIN_LEN_MM) {
+    return [];
+  }
+  const dxMm = ex - sx;
+  const dyMm = ey - sy;
+  const dxM = dxMm * MM_TO_M;
+  const dzM = -dyMm * MM_TO_M;
+  const bottomMm = wallWorldBottomMmFromMap(wall, verticalById, project);
+  const bottomM = bottomMm * MM_TO_M;
+  const rotationY = Math.atan2(dxM, dzM);
+  const profileMm = resolveRoofUnderTrimTopProfileMm(wall, lenMm);
+  const hMaxMm = Math.max(...profileMm.map((p) => p.heightMm));
+  const hMaxM = hMaxMm * MM_TO_M;
+  const uMid = lenMm / 2;
+  const px = sx + ux * uMid;
+  const py = sy + uy * uMid;
+  const cx = px * MM_TO_M;
+  const cz = -py * MM_TO_M;
+  /** Вершины призмы: y от 0 (низ стены) вверх — как у нецентрированного меша, не как у BoxGeometry. */
+  const cy = bottomM;
+  const selectionY = bottomM + hMaxM / 2;
+  const depthM = lenMm * MM_TO_M;
+  return [
+    {
+      reactKey: `${wall.id}-roof-trim`,
+      wallId: wall.id,
+      position: [cx, cy, cz],
+      selectionPosition: [cx, selectionY, cz],
+      rotationY,
+      width: wall.thicknessMm * MM_TO_M,
+      height: hMaxM,
+      depth: depthM,
+      materialType,
+      slopedTopProfileMm: profileMm,
+    },
+  ];
 }
 
 /**
@@ -268,6 +334,13 @@ export function wallToRenderSpecs(
   const vMap = verticalById ?? computeLayerVerticalStack(project);
   const profile = wall.profileId ? getProfileById(project, wall.profileId) : undefined;
   const solidMat = resolveSolidMaterialType(profile);
+
+  if (wall.roofUnderTrim) {
+    const sloped = slopedRoofTrimSolidSpecs(wall, project, solidMat, vMap);
+    if (sloped.length > 0) {
+      return sloped;
+    }
+  }
 
   if (showProfileLayers && profile?.compositionMode === "layered" && profile.layers.length >= 2) {
     const layered = layeredSpecsFromProfile(wall, project, profile, vMap);

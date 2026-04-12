@@ -13,6 +13,7 @@ import {
   type WallCalculationResult,
 } from "./wallCalculation";
 import { distanceAlongWallFromStartMm, wallLengthMm } from "./wallCalculationGeometry";
+import { effectiveWallLayoutHeightMm, minWallTopHeightAboveBaseInAlongSpanMm } from "./wallRoofUnderTrim";
 import { subtractIntervalsFromRange } from "./wallCalculationIntervals";
 import { numberAndSortLumberPieces, type LumberPieceDraftInput } from "./wallCalculationNormalize";
 import { computeProfileTotalThicknessMm } from "./profileOps";
@@ -513,10 +514,12 @@ export function buildWallCalculationForWall(
     );
   }
 
+  const Hlay = effectiveWallLayoutHeightMm(wall);
+
   /** Вертикальные доски между верхней и нижней обвязкой. */
   const verticalBetweenPlatesMm = Math.max(
     0,
-    Math.round(wall.heightMm - m.plateBoardThicknessMm - m.plateBoardThicknessMm),
+    Math.round(Hlay - m.plateBoardThicknessMm - m.plateBoardThicknessMm),
   );
   const nominalH = m.panelNominalHeightMm;
   const sipPanelHeightMm =
@@ -524,7 +527,7 @@ export function buildWallCalculationForWall(
       ? Math.min(verticalBetweenPlatesMm, Math.round(nominalH))
       : verticalBetweenPlatesMm;
   /** Каркас/ГКЛ: длина вертикалей в спецификации = высота стены (профиль входит в П-образные направляющие). */
-  const frameVerticalMemberLengthMm = usesSheetModuleWidths ? wall.heightMm : verticalBetweenPlatesMm;
+  const frameVerticalMemberLengthMm = usesSheetModuleWidths ? Hlay : verticalBetweenPlatesMm;
 
   const calculationId = newEntityId();
   const generatedAt = new Date().toISOString();
@@ -579,6 +582,10 @@ export function buildWallCalculationForWall(
       const s0 = p;
       const s1 = p + wi;
       const sipIdx = sipIndex++;
+      const sheetColHeightMm =
+        usesSheetModuleWidths && wall.roofUnderTrim
+          ? Math.round(minWallTopHeightAboveBaseInAlongSpanMm(wall, s0, s1, L))
+          : Hlay;
       sipRegions.push({
         id: newEntityId(),
         wallId: wall.id,
@@ -588,7 +595,7 @@ export function buildWallCalculationForWall(
         endOffsetMm: s1,
         widthMm: wi,
         pieceMark: buildSipPanelPieceMark(wallMark, sipIdx),
-        heightMm: usesSheetModuleWidths ? wall.heightMm : sipPanelHeightMm,
+        heightMm: usesSheetModuleWidths ? sheetColHeightMm : sipPanelHeightMm,
         thicknessMm: sipThicknessMm,
       });
       p = s1;
@@ -783,7 +790,7 @@ export function buildWallCalculationForWall(
 
         if (steelDoor) {
           /** Высота полосы листа П2 над проёмом: от низа светового проёма до верха стены. */
-          const crippleLen = Math.max(0, Math.round(wall.heightMm - o.heightMm));
+          const crippleLen = Math.max(0, Math.round(Hlay - o.heightMm));
           if (crippleLen > EPS) {
             const wClear = o.widthMm;
             const halfAlong = studAlong / 2;
@@ -833,7 +840,7 @@ export function buildWallCalculationForWall(
        * (`wall.heightMm − horT`). Эквивалентно `verticalBetweenPlatesMm − openTop` при равной толщине плит и шапки (`horT`).
        */
       const upperSegLen = isDoor
-        ? Math.max(0, Math.round(wall.heightMm - horT - openTop - horT))
+        ? Math.max(0, Math.round(Hlay - horT - openTop - horT))
         : Math.max(0, verticalBetweenPlatesMm - lowerSegLen - middleSegLen - horT - topGap);
 
       const pushStudSegment = (

@@ -78,6 +78,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/floorBeamEntity" }
     },
+    "floorInsulationPieces": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/floorInsulationPieceEntity" }
+    },
     "roofPlanes": {
       "type": "array",
       "items": { "$ref": "#/$defs/roofPlaneEntity" }
@@ -396,7 +400,29 @@
         "placementGroupId": { "type": "string" },
         "markPrefix": { "type": "string" },
         "markSequenceNumber": { "type": "number" },
-        "markLabel": { "type": "string" }
+        "markLabel": { "type": "string" },
+        "roofUnderTrim": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["roofPlaneId", "heightAtStartMm", "heightAtEndMm"],
+          "properties": {
+            "roofPlaneId": { "type": "string", "minLength": 1 },
+            "heightAtStartMm": { "type": "number", "minimum": 0 },
+            "heightAtEndMm": { "type": "number", "minimum": 0 },
+            "topProfileMm": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["alongMm", "heightMm"],
+                "properties": {
+                  "alongMm": { "type": "number", "minimum": 0 },
+                  "heightMm": { "type": "number", "minimum": 0 }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "profileMaterialType": {
@@ -405,7 +431,38 @@
     },
     "profileCategory": {
       "type": "string",
-      "enum": ["wall", "slab", "roof", "beam", "pipe", "board", "custom"]
+      "enum": ["wall", "slab", "roof", "beam", "pipe", "board", "insulation", "custom"]
+    },
+    "insulationMaterialKind": {
+      "type": "string",
+      "enum": ["eps", "xps", "mineralWool", "other"]
+    },
+    "insulationDefaultLayoutMode": {
+      "type": "string",
+      "enum": ["alongBeams", "acrossBeams", "auto"]
+    },
+    "insulationProfileSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "materialKind",
+        "sheetLengthMm",
+        "sheetWidthMm",
+        "thicknessMm",
+        "technologicalGapMm",
+        "defaultLayoutMode"
+      ],
+      "properties": {
+        "materialKind": { "$ref": "#/$defs/insulationMaterialKind" },
+        "customMaterialLabel": { "type": "string" },
+        "sheetLengthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "sheetWidthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "thicknessMm": { "type": "number", "exclusiveMinimum": 0 },
+        "technologicalGapMm": { "type": "number", "minimum": 0 },
+        "defaultLayoutMode": { "$ref": "#/$defs/insulationDefaultLayoutMode" },
+        "fillColorHex2d": { "type": "string" },
+        "note": { "type": "string" }
+      }
     },
     "profileCompositionMode": {
       "type": "string",
@@ -455,6 +512,7 @@
           "items": { "$ref": "#/$defs/profileLayer" }
         },
         "roofAssembly": { "$ref": "#/$defs/roofProfileAssembly" },
+        "insulation": { "$ref": "#/$defs/insulationProfileSpec" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       }
@@ -960,6 +1018,93 @@
         "updatedAt": { "type": "string", "minLength": 1 }
       }
     },
+    "floorInsulationTemplateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "materialLabel",
+        "sheetLengthMm",
+        "sheetWidthMm",
+        "thicknessMm",
+        "mountGapMm",
+        "layoutMode"
+      ],
+      "properties": {
+        "materialLabel": { "type": "string", "minLength": 1 },
+        "sheetLengthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "sheetWidthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "thicknessMm": { "type": "number", "exclusiveMinimum": 0 },
+        "mountGapMm": { "type": "number", "minimum": 0 },
+        "layoutMode": {
+          "type": "string",
+          "enum": ["alongBeams", "acrossBeams", "auto"]
+        }
+      }
+    },
+    "floorInsulationSpecSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profileName",
+        "profileId",
+        "materialLabel",
+        "sheetLengthMm",
+        "sheetWidthMm",
+        "thicknessMm",
+        "technologicalGapMm",
+        "layoutMode"
+      ],
+      "properties": {
+        "profileName": { "type": "string", "minLength": 1 },
+        "profileId": { "type": ["string", "null"] },
+        "materialLabel": { "type": "string", "minLength": 1 },
+        "sheetLengthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "sheetWidthMm": { "type": "number", "exclusiveMinimum": 0 },
+        "thicknessMm": { "type": "number", "exclusiveMinimum": 0 },
+        "technologicalGapMm": { "type": "number", "minimum": 0 },
+        "layoutMode": {
+          "type": "string",
+          "enum": ["alongBeams", "acrossBeams", "auto"]
+        },
+        "fillColorHex2d": { "type": "string" }
+      }
+    },
+    "floorInsulationPieceEntity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "layerId",
+        "outlineRingMm",
+        "thicknessMm",
+        "baseElevationMm",
+        "specSnapshot",
+        "isFullSheet",
+        "areaMm2",
+        "volumeMm3",
+        "geometryFingerprint",
+        "createdAt",
+        "updatedAt"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "layerId": { "type": "string", "minLength": 1 },
+        "outlineRingMm": {
+          "type": "array",
+          "minItems": 3,
+          "items": { "$ref": "#/$defs/point2d" }
+        },
+        "thicknessMm": { "type": "number", "exclusiveMinimum": 0 },
+        "baseElevationMm": { "type": "number" },
+        "specSnapshot": { "$ref": "#/$defs/floorInsulationSpecSnapshot" },
+        "isFullSheet": { "type": "boolean" },
+        "areaMm2": { "type": "number", "minimum": 0 },
+        "volumeMm3": { "type": "number", "minimum": 0 },
+        "geometryFingerprint": { "type": "string", "minLength": 1 },
+        "createdAt": { "type": "string", "minLength": 1 },
+        "updatedAt": { "type": "string", "minLength": 1 }
+      }
+    },
     "roofPlaneEntity": {
       "type": "object",
       "additionalProperties": false,
@@ -1019,6 +1164,7 @@
         "baseLevelMm",
         "eaveOverhangMm",
         "sideOverhangMm",
+        "roofCoverEaveProjectionMm",
         "ridgeUnitPlan",
         "drainUnitPlan",
         "ridgeAlong",
@@ -1042,6 +1188,7 @@
         "baseLevelMm": { "type": "number" },
         "eaveOverhangMm": { "type": "number", "minimum": 0 },
         "sideOverhangMm": { "type": "number", "minimum": 0 },
+        "roofCoverEaveProjectionMm": { "type": "number", "minimum": 0 },
         "ridgeUnitPlan": { "$ref": "#/$defs/point2d" },
         "drainUnitPlan": { "$ref": "#/$defs/point2d" },
         "ridgeAlong": { "type": "string", "enum": ["short", "long"] },
@@ -1142,11 +1289,16 @@
         "show3dFoundation": { "type": "boolean" },
         "show3dPiles": { "type": "boolean" },
         "show3dOverlap": { "type": "boolean" },
+        "show3dFloorInsulation": { "type": "boolean" },
         "show3dRoof": { "type": "boolean" },
         "show3dRoofMembrane": { "type": "boolean" },
         "show3dRoofBattens": { "type": "boolean" },
         "show3dRoofCovering": { "type": "boolean" },
         "show3dRoofSoffit": { "type": "boolean" },
+        "hidden3dProjectLayerIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
         "activeTab": { "type": "string", "enum": ["2d", "3d", "spec", "wall"] },
         "editor2dPlanScope": {
           "type": "string",

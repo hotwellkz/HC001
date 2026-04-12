@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import {
   Hand,
+  LayoutGrid,
   MousePointer2,
   PenLine,
   Ruler,
@@ -42,8 +43,10 @@ export function Editor2DToolbar() {
   }
 
   const activeTool = useAppStore((s) => s.activeTool);
+  const planScope = useAppStore((s) => s.currentProject.viewState.editor2dPlanScope);
   const selectedCount = useAppStore((s) => s.selectedEntityIds.length);
   const setActiveTool = useAppStore((s) => s.setActiveTool);
+  const openFloorInsulationModal = useAppStore((s) => s.openFloorInsulationModal);
   const customCodes = useEditorShortcutsStore((s) => s.customCodes);
 
   const sk = (id: Parameters<typeof getResolvedShortcutCodes>[0]) => shortcutHint(id, customCodes);
@@ -120,6 +123,19 @@ export function Editor2DToolbar() {
         <LucideToolIcon icon={PenLine} className="ed2d-icon ed2d-icon--stroke" />
         <Kbd codes={getResolvedShortcutCodes("toolLine", customCodes)} />
       </button>
+      {planScope === "floorStructure" ? (
+        <button
+          type="button"
+          className="ed2d-toolbtn"
+          title="Утепление между балками — выбор профиля и область на плане"
+          aria-label="Утепление между балками"
+          aria-pressed={activeTool === "floorInsulation"}
+          data-active={activeTool === "floorInsulation"}
+          onClick={() => openFloorInsulationModal()}
+        >
+          <LucideToolIcon icon={LayoutGrid} className="ed2d-icon ed2d-icon--stroke" />
+        </button>
+      ) : null}
       <button
         type="button"
         className="ed2d-toolbtn"

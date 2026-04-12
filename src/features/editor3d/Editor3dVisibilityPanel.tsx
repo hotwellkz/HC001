@@ -1,6 +1,7 @@
-import { type CSSProperties, useEffect, useId, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useId, useMemo, useRef, useState } from "react";
 import { Layers } from "lucide-react";
 
+import { sortLayersByOrder } from "@/core/domain/layerOps";
 import { LucideToolIcon } from "@/shared/ui/LucideToolIcon";
 import { useAppStore } from "@/store/useAppStore";
 
@@ -18,6 +19,15 @@ export function Editor3dVisibilityPanel() {
   const project = useAppStore((s) => s.currentProject);
   const vs = project.viewState;
   const set3dLayerVisibility = useAppStore((s) => s.set3dLayerVisibility);
+  const toggle3dProjectLayerHidden = useAppStore((s) => s.toggle3dProjectLayerHidden);
+  const showAll3dProjectLayers = useAppStore((s) => s.showAll3dProjectLayers);
+  const hideAll3dProjectLayers = useAppStore((s) => s.hideAll3dProjectLayers);
+
+  const sortedProjectLayers = useMemo(() => sortLayersByOrder(project.layers), [project.layers]);
+  const hidden3dLayerSet = useMemo(
+    () => new Set(project.viewState.hidden3dProjectLayerIds),
+    [project.viewState.hidden3dProjectLayerIds],
+  );
 
   const windowsReady = hasWindowGeometry3d(project);
   const doorsReady = hasDoorGeometry3d(project);
@@ -61,6 +71,27 @@ export function Editor3dVisibilityPanel() {
       {open ? (
         <div id={`${idBase}-panel`} className="ed3-vis-popover" role="region" aria-label="Видимость слоёв 3D">
           <p className="ed3-vis-hint">Показать или скрыть части модели. Настройки камеры и вида сохраняются.</p>
+          <p className="ed3-vis-section-title">Слои проекта</p>
+          <div className="ed3-vis-actions">
+            <button type="button" className="ed3-vis-action-btn" onClick={() => showAll3dProjectLayers()}>
+              Включить все слои
+            </button>
+            <button type="button" className="ed3-vis-action-btn" onClick={() => hideAll3dProjectLayers()}>
+              Выключить все слои
+            </button>
+          </div>
+          {sortedProjectLayers.map((layer) => (
+            <div key={layer.id} className="ed3-vis-row">
+              <label htmlFor={`${idBase}-pl-${layer.id}`}>{layer.name}</label>
+              <input
+                id={`${idBase}-pl-${layer.id}`}
+                type="checkbox"
+                checked={!hidden3dLayerSet.has(layer.id)}
+                onChange={() => toggle3dProjectLayerHidden(layer.id)}
+              />
+            </div>
+          ))}
+          <p className="ed3-vis-section-title">Материалы и элементы</p>
           <div className="ed3-vis-row">
             <label htmlFor={`${idBase}-osb`}>OSB</label>
             <input
@@ -151,6 +182,15 @@ export function Editor3dVisibilityPanel() {
               type="checkbox"
               checked={vs.show3dOverlap !== false}
               onChange={(e) => set3dLayerVisibility({ show3dOverlap: e.target.checked })}
+            />
+          </div>
+          <div className="ed3-vis-row">
+            <label htmlFor={`${idBase}-floor-ins`}>Утеплитель перекрытия (EPS)</label>
+            <input
+              id={`${idBase}-floor-ins`}
+              type="checkbox"
+              checked={vs.show3dFloorInsulation !== false}
+              onChange={(e) => set3dLayerVisibility({ show3dFloorInsulation: e.target.checked })}
             />
           </div>
           <p className="ed3-vis-hint" style={{ marginTop: 10, marginBottom: 4 }}>

@@ -16,6 +16,31 @@ export function validateProfile(p: Profile): string[] {
     return errors;
   }
 
+  if (p.category === "insulation") {
+    const ins = p.insulation;
+    if (!ins) {
+      errors.push("Заполните параметры утеплителя.");
+      return errors;
+    }
+    if (!(ins.sheetLengthMm > 0) || !(ins.sheetWidthMm > 0) || !(ins.thicknessMm > 0)) {
+      errors.push("Длина, ширина и толщина листа должны быть больше 0.");
+    }
+    if (!Number.isFinite(ins.technologicalGapMm) || ins.technologicalGapMm < 0) {
+      errors.push("Технологический зазор должен быть неотрицательным числом.");
+    }
+    if (ins.materialKind === "other" && !String(ins.customMaterialLabel ?? "").trim()) {
+      errors.push("Укажите название материала для типа «Другое».");
+    }
+    const lm = ins.defaultLayoutMode;
+    if (lm !== "alongBeams" && lm !== "acrossBeams" && lm !== "auto") {
+      errors.push("Некорректный режим раскладки по умолчанию.");
+    }
+    if (ins.fillColorHex2d != null && ins.fillColorHex2d !== "" && !/^#[0-9a-fA-F]{6}$/.test(ins.fillColorHex2d)) {
+      errors.push("Цвет 2D: формат #rrggbb или оставьте поле пустым.");
+    }
+    return errors;
+  }
+
   if (p.compositionMode === "layered") {
     if (p.layers.length < 1) {
       errors.push("Для составного профиля нужен хотя бы один слой.");

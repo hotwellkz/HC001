@@ -64,6 +64,7 @@ describe("RoofSystem gable rectangle", () => {
       profileId: prof.id,
       eaveOverhangMm: 300,
       sideOverhangMm: 150,
+      roofCoverEaveProjectionMm: 0,
       ridgeAlong: "short",
       monoDrainCardinal: "s",
     });
@@ -86,6 +87,31 @@ describe("RoofSystem gable rectangle", () => {
     expect(spanA).toBeCloseTo(spanB, 3);
   });
 
+  it("сохраняет выпуск покрытия по карнизу в сущности крыши", () => {
+    let p = createEmptyProject();
+    const prof = minimalRoofProfile("rp-cov");
+    p = addProfileToProject(p, prof);
+    const rect = [
+      { x: 0, y: 0 },
+      { x: 4000, y: 0 },
+      { x: 4000, y: 3000 },
+      { x: 0, y: 3000 },
+    ] as const;
+    p = addRectangleRoofSystemToProject(p, {
+      footprintCcWMm: rect,
+      roofKind: "gable",
+      pitchDeg: 20,
+      baseLevelMm: 0,
+      profileId: prof.id,
+      eaveOverhangMm: 400,
+      sideOverhangMm: 200,
+      roofCoverEaveProjectionMm: 55,
+      ridgeAlong: "short",
+      monoDrainCardinal: "s",
+    });
+    expect(p.roofSystems[0]!.roofCoverEaveProjectionMm).toBe(55);
+  });
+
   it("overhang merge does not break ridge: internal edge stays zero-offset", () => {
     let p = createEmptyProject();
     const prof = minimalRoofProfile("rp-o");
@@ -104,6 +130,7 @@ describe("RoofSystem gable rectangle", () => {
       profileId: prof.id,
       eaveOverhangMm: 500,
       sideOverhangMm: 250,
+      roofCoverEaveProjectionMm: 0,
       ridgeAlong: "short",
       monoDrainCardinal: "s",
     });

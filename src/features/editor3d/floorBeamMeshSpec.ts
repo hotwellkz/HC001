@@ -7,6 +7,8 @@ import { beamPlanThicknessAndVerticalMm } from "@/core/domain/floorBeamSection";
 import { resolveFloorBeamCenterlineInPlan } from "@/core/domain/floorBeamGeometry";
 import { getLayerById } from "@/core/domain/layerOps";
 
+import { isProjectLayerVisibleIn3d } from "./view3dVisibility";
+
 const MM_TO_M = 0.001;
 const MIN_LEN_MM = 1;
 
@@ -41,6 +43,9 @@ export function floorBeamsForScene3d(project: Project): readonly FloorBeamEntity
   return project.floorBeams.filter((b) => {
     const layer = getLayerById(project, b.layerId);
     if (layer?.isVisible === false) {
+      return false;
+    }
+    if (!isProjectLayerVisibleIn3d(b.layerId, project)) {
       return false;
     }
     return true;

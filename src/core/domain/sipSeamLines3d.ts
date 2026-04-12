@@ -1,9 +1,10 @@
 import { doorAlongWallOccupiedIntervalMm } from "./frameGklDoorAlongGeometry";
-import { computeLayerVerticalStack, wallWorldBottomMmFromMap } from "./layerVerticalStack";
 import { openingSillLevelMm, openingTopLevelMmForShell } from "./doorGeometry";
+import { computeLayerVerticalStack, wallWorldBottomMmFromMap } from "./layerVerticalStack";
 import type { Opening } from "./opening";
 import type { Project } from "./project";
 import type { Wall } from "./wall";
+import { wallTopHeightAboveBaseAtAlongMm } from "./wallRoofUnderTrim";
 
 function openingAlongSpanForSeamCutsMm(o: Opening, wall: Wall, project: Project): { readonly o0: number; readonly o1: number } {
   if (o.kind === "door" && o.offsetFromStartMm != null) {
@@ -17,6 +18,14 @@ const MM_TO_M = 0.001;
 
 /** Отступ линии шва от номинальной наружной плоскости оболочки (мм), чтобы не теряться в z-fighting с OSB/EPS. */
 export const SIP_SEAM_LINE_FACE_OFFSET_MM = 2.8;
+
+/** Верх стены в мм от низа в точке вдоль оси: с подрезкой под крышу — по профилю, иначе габарит стены. */
+function wallHeightCapAlongMm(wall: Wall, alongMm: number, lenMm: number): number {
+  if (!wall.roofUnderTrim) {
+    return wall.heightMm;
+  }
+  return Math.min(wall.heightMm, wallTopHeightAboveBaseAtAlongMm(wall, alongMm, lenMm));
+}
 
 function subtractYIntervals(baseLo: number, baseHi: number, cuts: readonly { lo: number; hi: number }[]): [number, number][] {
   let segments: [number, number][] = [[baseLo, baseHi]];
@@ -131,7 +140,11 @@ export function buildSipSeamVerticalLineSegmentsForProject(project: Project): re
         const sill = openingSillLevelMm(o);
         cuts.push({ lo: Math.max(0, sill), hi: Math.min(wall.heightMm, openingTopLevelMmForShell(o)) });
       }
-      const ySegments = subtractYIntervals(0, wall.heightMm, cuts);
+      const hCap = wallHeightCapAlongMm(wall, s, L);
+      const cutsCapped = cuts
+        .map((c) => ({ lo: Math.max(c.lo, 0), hi: Math.min(c.hi, hCap) }))
+        .filter((c) => c.hi - c.lo > 1e-3);
+      const ySegments = subtractYIntervals(0, hCap, cutsCapped);
       pushVerticalAt(s, ySegments, `j-${i}`);
     }
 
@@ -140,18 +153,22 @@ export function buildSipSeamVerticalLineSegmentsForProject(project: Project): re
         continue;
       }
       const sill = openingSillLevelMm(o);
-      const ySegs: [number, number][] = [];
-      if (sill > 1e-3) {
-        ySegs.push([0, Math.min(wall.heightMm, sill)]);
-      }
       const top = openingTopLevelMmForShell(o);
-      if (top < wall.heightMm - 1e-3) {
-        ySegs.push([Math.max(0, top), wall.heightMm]);
-      }
       const { o0: a0, o1: a1 } = openingAlongSpanForSeamCutsMm(o, wall, project);
       for (const s of [a0, a1]) {
         if (seamAlongSeen.some((v) => Math.abs(v - s) < 0.6)) {
           continue;
+        }
+        const hCap = wallHeightCapAlongMm(wall, s, L);
+        const ySegs: [number, number][] = [];
+        if (sill > 1e-3) {
+          const hi = Math.min(sill, hCap);
+          if (hi > 1e-3) {
+            ySegs.push([0, hi]);
+          }
+        }
+        if (top < hCap - 1e-3) {
+          ySegs.push([Math.max(0, top), hCap]);
         }
         pushVerticalAt(s, ySegs, `op-${o.id}-${Math.round(s)}`);
       }

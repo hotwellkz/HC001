@@ -41,6 +41,7 @@ export function EditRoofSystemModal() {
   const [roofKind, setRoofKind] = useState<RoofSystemKind>("gable");
   const [eaveMm, setEaveMm] = useState(450);
   const [sideMm, setSideMm] = useState(450);
+  const [coverEaveMm, setCoverEaveMm] = useState(50);
   const [ridgeAlong, setRidgeAlong] = useState<"short" | "long">("short");
   const [monoDrain, setMonoDrain] = useState<MonoCardinalDrain>("s");
 
@@ -54,6 +55,7 @@ export function EditRoofSystemModal() {
     setProfileId(system.profileId);
     setEaveMm(system.eaveOverhangMm);
     setSideMm(system.sideOverhangMm);
+    setCoverEaveMm(typeof system.roofCoverEaveProjectionMm === "number" ? system.roofCoverEaveProjectionMm : 0);
     setRidgeAlong(system.ridgeAlong);
     if (system.roofKind === "mono") {
       const d = system.drainUnitPlan;
@@ -89,6 +91,7 @@ export function EditRoofSystemModal() {
         profileId: profileId.trim(),
         eaveOverhangMm: Number(eaveMm),
         sideOverhangMm: Number(sideMm),
+        roofCoverEaveProjectionMm: Math.max(0, Number(coverEaveMm)),
         ridgeAlong,
         monoDrainCardinal: monoDrain,
       });
@@ -158,6 +161,17 @@ export function EditRoofSystemModal() {
         <label className="lm-field">
           <span className="lm-label">Боковой свес (мм)</span>
           <input className="lm-input" type="number" step={1} min={0} value={sideMm} onChange={(e) => setSideMm(Number(e.target.value))} />
+        </label>
+        <label className="lm-field">
+          <span className="lm-label">Выпуск покрытия по карнизу (мм)</span>
+          <input
+            className="lm-input"
+            type="number"
+            step={1}
+            min={0}
+            value={coverEaveMm}
+            onChange={(e) => setCoverEaveMm(Number(e.target.value))}
+          />
         </label>
         {roofKind === "mono" ? (
           <label className="lm-field">

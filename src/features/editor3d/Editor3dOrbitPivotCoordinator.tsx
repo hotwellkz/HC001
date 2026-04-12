@@ -16,6 +16,7 @@ function editorOverlaySnapshot() {
     activeTab: s.activeTab,
     layerManagerOpen: s.layerManagerOpen,
     layerParamsModalOpen: s.layerParamsModalOpen,
+    floorInsulationModalOpen: s.floorInsulationModalOpen,
     profilesModalOpen: s.profilesModalOpen,
     addWallModalOpen: s.addWallModalOpen,
     addFloorBeamModalOpen: s.addFloorBeamModalOpen,

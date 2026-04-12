@@ -82,6 +82,7 @@ export function migrateWireV0ToProject(data: Record<string, unknown>): Project {
     foundationPiles: [],
     slabs: [],
     floorBeams: [],
+    floorInsulationPieces: [],
     roofPlanes: [],
     roofSystems: [],
     roofAssemblyCalculations: [],

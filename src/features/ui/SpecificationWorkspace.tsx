@@ -3,6 +3,10 @@ import { useMemo, useState } from "react";
 import { buildCutListCandidates } from "@/core/domain/cutListCandidates";
 import { formatLumberDisplayMark, formatSipPanelDisplayMark } from "@/core/domain/pieceDisplayMark";
 import {
+  buildFloorInsulationSpecificationRows,
+  summarizeFloorInsulationSpec,
+} from "@/core/domain/floorInsulationSpecification";
+import {
   buildOpeningFramingSpecificationRows,
   buildOpeningSpecificationRows,
   buildProjectLumberSummary,
@@ -23,6 +27,8 @@ export function SpecificationWorkspace() {
   const openingFramingRows = useMemo(() => buildOpeningFramingSpecificationRows(project), [project]);
   const lumberSummary = useMemo(() => buildProjectLumberSummary(project), [project]);
   const cutCount = useMemo(() => buildCutListCandidates(project).length, [project]);
+  const floorInsRows = useMemo(() => buildFloorInsulationSpecificationRows(project), [project]);
+  const floorInsSum = useMemo(() => summarizeFloorInsulationSpec(project), [project]);
 
   return (
     <div className="spec-workspace">
@@ -33,6 +39,61 @@ export function SpecificationWorkspace() {
           под раскрой: <strong>{cutCount}</strong>.
         </p>
       </header>
+
+      <section className="spec-workspace__section" aria-labelledby="spec-floor-ins-heading">
+        <h3 id="spec-floor-ins-heading" className="spec-workspace__h3">
+          Утеплитель перекрытия (по профилю)
+        </h3>
+        {floorInsRows.length === 0 ? (
+          <p className="spec-workspace__empty">Нет кусков утеплителя перекрытия. Заполните в режиме «Перекрытие».</p>
+        ) : (
+          <>
+            <p className="spec-workspace__intro">
+              Целых листов: <strong>{floorInsSum.fullSheets}</strong>, подрезок: <strong>{floorInsSum.cuts}</strong>,
+              суммарная площадь: <strong>{(floorInsSum.totalAreaMm2 / 1_000_000).toFixed(3)} м²</strong>, объём:{" "}
+              <strong>{(floorInsSum.totalVolumeMm3 / 1e9).toFixed(3)} м³</strong>
+              {floorInsSum.staleCount > 0 ? (
+                <>
+                  . <span style={{ color: "var(--color-warning, #b45309)" }}>Устаревших: {floorInsSum.staleCount}</span> —
+                  пересчитайте утепление после изменения балок.
+                </>
+              ) : null}
+            </p>
+            <div className="spec-workspace__table-wrap">
+              <table className="spec-workspace__table spec-workspace__table--compact">
+                <thead>
+                  <tr>
+                    <th>Слой</th>
+                    <th>Профиль / марка</th>
+                    <th>Материал</th>
+                    <th>Тип куска</th>
+                    <th>Габарит контура, мм</th>
+                    <th>Толщина</th>
+                    <th>Площадь, м²</th>
+                    <th>Объём, м³</th>
+                    <th>Статус</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {floorInsRows.map((r) => (
+                    <tr key={r.pieceId}>
+                      <td>{r.layerName}</td>
+                      <td>{r.profileName}</td>
+                      <td>{r.materialLabel}</td>
+                      <td>{r.isFullSheet ? "лист" : "подрезка"}</td>
+                      <td>{r.outlineBoundsLabel}</td>
+                      <td>{r.thicknessMm}</td>
+                      <td>{(r.areaMm2 / 1_000_000).toFixed(3)}</td>
+                      <td>{(r.volumeMm3 / 1e9).toFixed(4)}</td>
+                      <td>{r.isStale ? "устарело" : "актуально"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
 
       <section className="spec-workspace__section" aria-labelledby="spec-walls-heading">
         <h3 id="spec-walls-heading" className="spec-workspace__h3">

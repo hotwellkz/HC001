@@ -197,6 +197,31 @@ export function roofPlanePreferredEaveEdgeVertexIndicesMm(
 }
 
 /**
+ * Удлиняет контур ската только на карнизном ребре: сдвиг вершин этого ребра вдоль +направления стока (мм в плане).
+ * Используется для выпуска кровельного покрытия за линию карниза без изменения конструктивного свеса.
+ */
+export function roofPolygonExtendEaveEdgeForCoverMm(
+  contourCcW: readonly Point2D[],
+  uxn: number,
+  uyn: number,
+  projectionMm: number,
+): Point2D[] {
+  if (!(projectionMm > 0)) {
+    return contourCcW.map((p) => ({ x: p.x, y: p.y }));
+  }
+  const edge = roofPlanePreferredEaveEdgeVertexIndicesMm(contourCcW, uxn, uyn);
+  if (!edge) {
+    return contourCcW.map((p) => ({ x: p.x, y: p.y }));
+  }
+  const ox = uxn * projectionMm;
+  const oy = uyn * projectionMm;
+  const out = contourCcW.map((p) => ({ x: p.x, y: p.y }));
+  out[edge.i0] = { x: contourCcW[edge.i0]!.x + ox, y: contourCcW[edge.i0]!.y + oy };
+  out[edge.i1] = { x: contourCcW[edge.i1]!.x + ox, y: contourCcW[edge.i1]!.y + oy };
+  return out;
+}
+
+/**
  * Обновляет сущность ската по 4 вершинам плана: p1,p2, глубина и slopeDirection согласованы с ребром «глубины».
  */
 export function roofPlaneEntityApplyPlanQuadMm(rp: RoofPlaneEntity, quad: RoofQuad4): RoofPlaneEntity {
