@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { DoubleSide, EdgesGeometry, FrontSide } from "three";
+import { DoubleSide, EdgesGeometry } from "three";
 import type { BufferGeometry } from "three";
 
 import { roofTrimMeshPolylineMm } from "@/core/domain/wallRoofUnderTrim";
@@ -212,7 +212,8 @@ function WallSegmentMesh3d({
               color={preset.color}
               roughness={preset.roughness}
               metalness={preset.metalness}
-              side={FrontSide}
+              /** Замкнутая призма по толщине листа; DoubleSide — обе большие грани видны с любого ракурса (FrontSide отсекал «тыл» при несовпадении нормали/камеры). */
+              side={DoubleSide}
               depthWrite
               depthTest
             />
