@@ -79,6 +79,16 @@
   --color-drawing-dimension-line: var(--color-dimension-line);
   --color-drawing-dimension-label: var(--color-dimension-text);
   --color-drawing-grid-line: var(--color-grid-line-pixi-major);
+  /**
+   * Балка перекрытия длиннее max заготовки — мягкий rose/coral (Pixi 2D, только режим «Перекрытие»).
+   * Тонкий контур + лёгкий tint; без оранжевого маркера.
+   */
+  --color-drawing-floor-beam-over-stock-stroke: #e4a8b0;
+  --color-drawing-floor-beam-over-stock-fill: #e4a8b0;
+  --floor-beam-over-stock-fill-alpha-active: 0.14;
+  --floor-beam-over-stock-fill-alpha-context: 0.09;
+  --floor-beam-over-stock-stroke-alpha-active: 0.78;
+  --floor-beam-over-stock-stroke-alpha-context: 0.4;
   --color-input-bg: rgba(12, 16, 28, 0.75);
   --color-ghost-layer: rgba(100, 155, 235, 0.22);
   --color-editor3d-bg: #0a0f1a;
@@ -270,6 +280,12 @@ html[data-theme="light"] {
   --color-drawing-dimension-line: var(--color-dimension-line);
   --color-drawing-dimension-label: var(--color-dimension-text);
   --color-drawing-grid-line: var(--color-grid-line-pixi-major);
+  --color-drawing-floor-beam-over-stock-stroke: #b84858;
+  --color-drawing-floor-beam-over-stock-fill: #b84858;
+  --floor-beam-over-stock-fill-alpha-active: 0.12;
+  --floor-beam-over-stock-fill-alpha-context: 0.08;
+  --floor-beam-over-stock-stroke-alpha-active: 0.86;
+  --floor-beam-over-stock-stroke-alpha-context: 0.44;
   --color-input-bg: rgba(255, 255, 255, 0.88);
   --color-ghost-layer: rgba(70, 120, 200, 0.16);
   --color-editor3d-bg: #dce3ee;

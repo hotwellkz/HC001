@@ -111,6 +111,7 @@ import {
 import { rectangleCornersFromDiagonalMm } from "@/core/domain/slabPolygon";
 import { drawSlabPlacementPreview2d, drawSlabs2d } from "./drawSlabs2d";
 import { pickClosestSlabAtPoint } from "./slabPick2d";
+import { readFloorBeamOverStockPaintFromTheme } from "./floorBeamOverStock2dTheme";
 import { drawFloorBeams2d } from "./floorBeams2dPixi";
 import { pickFloorBeamAtPlanPoint } from "./floorBeamPick2d";
 import { drawEntityCopyGhost2d } from "./entityCopyGhost2d";
@@ -1874,6 +1875,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
 
       floorBeamsG.clear();
       const highlightBeamOverStock = currentProject.viewState.editor2dPlanScope === "floorStructure";
+      const overStockPaint = highlightBeamOverStock ? readFloorBeamOverStockPaintFromTheme() : null;
       let firstBeamDraw = true;
       for (const lid of contextIds) {
         const ctxBeams = narrowProjectToLayerSet(currentProject, new Set([lid]));
@@ -1881,6 +1883,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           appearance: "context",
           clear: firstBeamDraw,
           highlightOverLinearStock: highlightBeamOverStock,
+          overStockPaint,
         });
         firstBeamDraw = false;
       }
@@ -1888,6 +1891,7 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
         appearance: "active",
         clear: firstBeamDraw,
         highlightOverLinearStock: highlightBeamOverStock,
+        overStockPaint,
       });
 
       planLinesG.clear();
@@ -2318,6 +2322,8 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
           drawFloorBeams2d(previewG, currentProject, [ghostBeam], t, new Set(), {
             appearance: "context",
             clear: false,
+            highlightOverLinearStock: highlightBeamOverStock,
+            overStockPaint,
           });
           const prevMm =
             fbMcPaint.previewTargetMm ??
@@ -2443,7 +2449,11 @@ export function Editor2DWorkspace({ onWorldCursorMm }: Editor2DWorkspaceProps) {
             if (bLc) {
               const bPrev = floorBeamWithMovedRefEndAtLength(bLc, lcPaint.movingEnd, Lcur);
               if (bPrev) {
-                drawFloorBeams2d(previewG, currentProject, [bPrev], t, new Set(), { clear: false });
+                drawFloorBeams2d(previewG, currentProject, [bPrev], t, new Set(), {
+                  clear: false,
+                  highlightOverLinearStock: highlightBeamOverStock,
+                  overStockPaint,
+                });
               }
               const origMoving =
                 lcPaint.movingEnd === "end"
