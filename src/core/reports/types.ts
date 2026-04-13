@@ -31,9 +31,23 @@ export type ReportPrimitive =
   | ReportPrimPolyline
   | ReportPrimRect
   | ReportPrimText
+  | ReportPrimTextBlock
   | ReportPrimImage
   | ReportPrimDimensionLine
   | ReportPrimTableBlock;
+
+/** Несколько строк с общим выравниванием (мир, мм, Y вверх до compileReport). */
+export interface ReportPrimTextBlock {
+  readonly kind: "textBlock";
+  readonly xMm: number;
+  readonly yMm: number;
+  readonly lines: readonly string[];
+  readonly fontSizeMm: number;
+  /** Интервал по базовым линиям (мм). */
+  readonly lineHeightMm: number;
+  readonly anchor: "start" | "middle" | "end";
+  readonly rotationDeg?: number;
+}
 
 /** Вставка растрового изображения в координатах листа (мм, Y вниз). */
 export interface ReportPrimImage {
@@ -87,6 +101,8 @@ export interface ReportPrimText {
   readonly text: string;
   readonly fontSizeMm: number;
   readonly anchor: "start" | "middle" | "end";
+  /** Поворот подписи (градусы, лист Y вниз), как в 2D-подписях проёмов. */
+  readonly rotationDeg?: number;
 }
 
 /** Размерная линия в координатах листа (мм). */

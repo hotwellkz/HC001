@@ -61,7 +61,7 @@ export function ReportsTree({ project, selectedId, onSelect }: ReportsTreeProps)
   const groupTitle: Record<string, string> = {
     cover: "ОБЛОЖКА",
     foundation: "Фундамент",
-    walls: "Стены",
+    walls: "СТЕНЫ",
   };
 
   return (

@@ -1,19 +1,56 @@
 import type { ReactNode } from "react";
 
-import type { ReportPrimDimensionLine, ReportPrimitive, ReportRenderModel } from "@/core/reports/types";
+import type { ReportPrimDimensionLine, ReportPrimTextBlock, ReportPrimitive, ReportRenderModel } from "@/core/reports/types";
 
 const PRINT_STROKE = "#050505";
 /** Сплошной контур ленты фундамента (без пунктира / без muted). */
 const PRINT_FOUNDATION_STRIP = "#000000";
 /** Размерные линии — отдельно от основной геометрии (печать Ч/Б даст более светлый серый). */
-const PRINT_DIM_MAIN = "#1565c0";
-const PRINT_DIM_EXT = "#5c9bd1";
+const PRINT_DIM_MAIN = "#0d47a1";
+const PRINT_DIM_EXT = "#1976d2";
 const PRINT_MUTED = "#1a1a1a";
 const PAPER = "#ffffff";
 const PRINT_POLY_MUTED = "#959595";
 const PRINT_AXIS = "#383838";
+const PRINT_ROOM_LABEL = "#141414";
 /** Пунктир (вспомогательные линии) — отдельно от сплошного контура. */
 const PRINT_DASH = "#795548";
+
+function TextBlockPrim({ p }: { readonly p: ReportPrimTextBlock }) {
+  const n = p.lines.length;
+  if (n === 0) {
+    return null;
+  }
+  const lh = p.lineHeightMm;
+  const fs = p.fontSizeMm;
+  const anchor = p.anchor === "middle" ? "middle" : p.anchor === "end" ? "end" : "start";
+  /** Центр блока: первая строка выше (меньше Y в координатах листа). */
+  const yTop = p.yMm - ((n - 1) * lh) / 2;
+  const rot = p.rotationDeg ?? 0;
+  const inner = (
+    <>
+      {p.lines.map((line, i) => (
+        <text
+          key={i}
+          x={p.xMm}
+          y={yTop + i * lh}
+          fontSize={fs}
+          fontWeight={500}
+          textAnchor={anchor}
+          dominantBaseline="middle"
+          fill={PRINT_ROOM_LABEL}
+          style={{ fontFamily: "system-ui, sans-serif" }}
+        >
+          {line}
+        </text>
+      ))}
+    </>
+  );
+  if (rot === 0) {
+    return <g>{inner}</g>;
+  }
+  return <g transform={`rotate(${rot} ${p.xMm} ${p.yMm})`}>{inner}</g>;
+}
 
 function DimensionPrim({ p }: { readonly p: ReportPrimDimensionLine }) {
   const swMain = p.strokeMm ?? 0.12;
@@ -118,12 +155,14 @@ function Prim({ p }: { readonly p: ReportPrimitive }) {
         : p.muted
           ? PRINT_POLY_MUTED
           : PRINT_FOUNDATION_STRIP;
+      const hasFill = Boolean(p.closed && p.fill);
+      const noStroke = p.strokeMm <= 1e-9;
       return (
         <path
           d={d + closed}
-          fill="none"
-          stroke={stroke}
-          strokeWidth={p.strokeMm}
+          fill={hasFill ? (p.fill ?? "none") : "none"}
+          stroke={noStroke ? "none" : stroke}
+          strokeWidth={noStroke ? 0 : p.strokeMm}
           strokeDasharray={p.dashMm?.join(" ")}
           vectorEffect="non-scaling-stroke"
         />
@@ -157,7 +196,8 @@ function Prim({ p }: { readonly p: ReportPrimitive }) {
       );
     case "text": {
       const anchor = p.anchor === "middle" ? "middle" : p.anchor === "end" ? "end" : "start";
-      return (
+      const rot = p.rotationDeg ?? 0;
+      const txt = (
         <text
           x={p.xMm}
           y={p.yMm}
@@ -171,7 +211,13 @@ function Prim({ p }: { readonly p: ReportPrimitive }) {
           {p.text}
         </text>
       );
+      if (rot === 0) {
+        return txt;
+      }
+      return <g transform={`rotate(${rot} ${p.xMm} ${p.yMm})`}>{txt}</g>;
     }
+    case "textBlock":
+      return <TextBlockPrim p={p} />;
     case "dimensionLine":
       return <DimensionPrim p={p} />;
     case "tableBlock": {

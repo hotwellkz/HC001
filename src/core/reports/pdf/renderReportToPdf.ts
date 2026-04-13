@@ -58,6 +58,31 @@ export async function renderReportModelToPdfBytes(model: ReportRenderModel): Pro
         if (pts.length < 2) {
           break;
         }
+        const fillRgb = p.fill != null ? hexToRgb01(p.fill) : undefined;
+        if (p.closed && fillRgb != null) {
+          const parts: string[] = [];
+          for (let i = 0; i < pts.length; i++) {
+            const q = pts[i]!;
+            const px = mmToPt(q.x);
+            const py = sheetYDownToPdfY(h, q.y);
+            parts.push(`${i === 0 ? "M" : "L"} ${px} ${py}`);
+          }
+          const path = `${parts.join(" ")} Z`;
+          const hasStroke = p.strokeMm > 1e-9;
+          const hasDash = p.dashMm != null && p.dashMm.length >= 2;
+          const strokeInk = hasDash
+            ? rgb(0.475, 0.329, 0.282)
+            : p.muted
+              ? rgb(0.58, 0.58, 0.58)
+              : rgb(0, 0, 0);
+          page.drawSvgPath(path, {
+            color: fillRgb,
+            borderWidth: hasStroke ? mmToPt(p.strokeMm) : 0,
+            borderColor: hasStroke ? strokeInk : undefined,
+            borderDashArray: hasStroke && hasDash ? p.dashMm!.map((d) => mmToPt(d)) : undefined,
+          });
+          break;
+        }
         const strokeW = mmToPt(p.strokeMm);
         const n = p.closed ? pts.length : pts.length - 1;
         const hasDash = p.dashMm != null && p.dashMm.length >= 2;
@@ -139,12 +164,41 @@ export async function renderReportModelToPdfBytes(model: ReportRenderModel): Pro
           size,
           font,
           color: rgb(0.05, 0.05, 0.05),
+          rotate: p.rotationDeg != null ? degrees(p.rotationDeg) : undefined,
+        });
+        break;
+      }
+      case "textBlock": {
+        const n = Math.max(1, p.lines.length);
+        const lh = p.lineHeightMm;
+        const fs = p.fontSizeMm;
+        const size = mmToPt(fs);
+        const lineHeightPt = mmToPt(lh);
+        const yTop = p.yMm - ((n - 1) * lh) / 2;
+        const ink = rgb(0.08, 0.08, 0.08);
+        const text = p.lines.join("\n");
+        const yPdf = sheetYDownToPdfY(h, yTop);
+        let drawX = mmToPt(p.xMm);
+        const widest = Math.max(...p.lines.map((line) => font.widthOfTextAtSize(line, size)));
+        if (p.anchor === "middle") {
+          drawX -= widest / 2;
+        } else if (p.anchor === "end") {
+          drawX -= widest;
+        }
+        page.drawText(text, {
+          x: drawX,
+          y: yPdf - size * 0.85,
+          size,
+          font,
+          color: ink,
+          lineHeight: lineHeightPt,
+          rotate: p.rotationDeg != null ? degrees(p.rotationDeg) : undefined,
         });
         break;
       }
       case "dimensionLine": {
-        const strokeExt = rgb(0.36, 0.61, 0.82);
-        const strokeMain = rgb(0.08, 0.4, 0.75);
+        const strokeExt = rgb(0.098, 0.463, 0.824);
+        const strokeMain = rgb(0.051, 0.278, 0.631);
         const swExt = mmToPt(Math.max(0.07, (p.strokeMm ?? 0.12) * 0.72));
         const swMain = mmToPt(p.strokeMm ?? 0.12);
         page.drawLine({

@@ -20,8 +20,8 @@ export const REPORT_DEFINITIONS: readonly ReportDefinition[] = [
   {
     id: "wall_plan",
     groupId: "walls",
-    title: "План стен",
-    implemented: false,
+    title: "План этажа",
+    implemented: true,
     viewKind: "wall_plan",
     sheetTemplateId: "a4_landscape",
   },

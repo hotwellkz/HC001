@@ -1,5 +1,6 @@
 import type { Project } from "../domain/project";
 import { buildFoundationPlanWorld } from "./viewDefinitions/foundationPlan";
+import { buildWallPlanWorld } from "./viewDefinitions/wallPlan";
 import {
   A4_LANDSCAPE_HEIGHT_MM,
   A4_LANDSCAPE_WIDTH_MM,
@@ -51,6 +52,16 @@ function boundsOfPrimitives(primitives: readonly ReportPrimitive[]): {
       case "text":
         up(p.xMm, p.yMm);
         break;
+      case "textBlock": {
+        const n = Math.max(1, p.lines.length);
+        const lh = p.lineHeightMm;
+        const fs = p.fontSizeMm;
+        const halfH = ((n - 1) * lh + fs) * 0.52;
+        const halfW = Math.max(...p.lines.map((l) => l.length), 1) * fs * 0.42;
+        up(p.xMm - halfW, p.yMm - halfH);
+        up(p.xMm + halfW, p.yMm + halfH);
+        break;
+      }
       case "dimensionLine":
         up(p.anchor1Xmm, p.anchor1Ymm);
         up(p.anchor2Xmm, p.anchor2Ymm);
@@ -95,7 +106,7 @@ function transformPrimitive(p: ReportPrimitive, minX: number, maxY: number, s: n
       return {
         ...p,
         pointsMm: p.pointsMm.map((q) => mx(q.x, q.y)),
-        strokeMm: Math.max(0.12, p.strokeMm * s),
+        strokeMm: p.strokeMm <= 1e-12 ? 0 : Math.max(0.12, p.strokeMm * s),
       };
     case "rect":
       return {
@@ -112,6 +123,16 @@ function transformPrimitive(p: ReportPrimitive, minX: number, maxY: number, s: n
         xMm: mx(p.xMm, p.yMm).x,
         yMm: mx(p.xMm, p.yMm).y,
         fontSizeMm: clamp(p.fontSizeMm * s, 1.45, 7),
+        rotationDeg: p.rotationDeg,
+      };
+    case "textBlock":
+      return {
+        ...p,
+        xMm: mx(p.xMm, p.yMm).x,
+        yMm: mx(p.xMm, p.yMm).y,
+        fontSizeMm: clamp(p.fontSizeMm * s, 1.45, 7),
+        lineHeightMm: Math.max(1.2, p.lineHeightMm * s),
+        rotationDeg: p.rotationDeg,
       };
     case "dimensionLine": {
       const d1 = mx(p.dimLineX1mm, p.dimLineY1mm);
@@ -242,6 +263,10 @@ export function compileReport(
   let worldPrimitives: readonly ReportPrimitive[] = [];
   if (definition.viewKind === "foundation_plan") {
     const built = buildFoundationPlanWorld(project);
+    worldPrimitives = built.primitives;
+    messages.push(...built.messages);
+  } else if (definition.viewKind === "wall_plan") {
+    const built = buildWallPlanWorld(project);
     worldPrimitives = built.primitives;
     messages.push(...built.messages);
   } else {

@@ -1,6 +1,7 @@
 import type { Project } from "../domain/project";
 import type { ReportDefinition, ReportReadiness, ReportStatus } from "./types";
 import { buildFoundationPlanWorld } from "./viewDefinitions/foundationPlan";
+import { buildWallPlanWorld } from "./viewDefinitions/wallPlan";
 
 function hasMinimal3dCoverContent(project: Project): boolean {
   return (
@@ -63,7 +64,21 @@ export function evaluateReportReadiness(project: Project, definition: ReportDefi
   }
 
   if (definition.viewKind === "wall_plan") {
-    return { status: "soon", messages: ["Отчёт в разработке."] };
+    const built = buildWallPlanWorld(project);
+    if (built.worldBounds == null) {
+      return {
+        status: "blocked",
+        messages:
+          built.messages.length > 0 ? built.messages : ["Нет данных для плана этажа: добавьте стены или проверьте контур."],
+      };
+    }
+    if (built.roomCount === 0) {
+      return {
+        status: "warning",
+        messages: [...built.messages],
+      };
+    }
+    return { status: "ready", messages: built.messages };
   }
 
   if (definition.viewKind === "project_cover_3d") {
