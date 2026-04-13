@@ -136,6 +136,22 @@ describe("buildWallCalculationForWall", () => {
     expect(uppers[uppers.length - 1]!.endOffsetMm).toBeCloseTo(L, 2);
   });
 
+  it("нижняя стартовая доска режется по maxBoardLengthMm тем же splitLengthMm, что и верхняя обвязка", () => {
+    const p = createDemoProject();
+    const L = 12000;
+    const wall = { ...p.walls[0]!, end: { x: L, y: 0 } };
+    const profile = p.profiles[0]!;
+    const maxStock = profile.wallManufacturing?.maxBoardLengthMm ?? 6000;
+    const calc = buildWallCalculationForWall(wall, profile);
+    const uppers = calc.lumberPieces.filter((x) => x.role === "upper_plate").sort((a, b) => a.startOffsetMm - b.startOffsetMm);
+    const lowers = calc.lumberPieces.filter((x) => x.role === "lower_plate").sort((a, b) => a.startOffsetMm - b.startOffsetMm);
+    expect(uppers.length).toBeGreaterThan(1);
+    expect(lowers.length).toBe(uppers.length);
+    expect(lowers.every((x) => x.lengthMm <= maxStock + 1)).toBe(true);
+    expect(lowers.reduce((s, x) => s + x.lengthMm, 0)).toBe(L);
+    expect(uppers.map((x) => Math.round(x.lengthMm))).toEqual(lowers.map((x) => Math.round(x.lengthMm)));
+  });
+
   it("длина вертикальных досок (JB/EB) = высота стены минус верхняя и нижняя обвязка", () => {
     const p = createDemoProject();
     const wall = p.walls[0]!;

@@ -1005,25 +1005,39 @@ export function buildWallCalculationForWall(
       })
       .filter((b) => b.hi - b.lo > EPS);
     const lowerRanges = subtractIntervalsFromRange(0, L, doorBlocks);
-    for (let i = 0; i < lowerRanges.length; i++) {
-      const [a, b] = lowerRanges[i]!;
-      const len = Math.round(Math.max(0, b - a));
-      if (len < 1) {
+    for (let ri = 0; ri < lowerRanges.length; ri++) {
+      const [rangeLo, rangeHi] = lowerRanges[ri]!;
+      const spanMm = rangeHi - rangeLo;
+      if (spanMm < EPS) {
         continue;
       }
-      verticalDrafts.push({
-        id: newEntityId(),
-        wallId: wall.id,
-        calculationId,
-        role: "lower_plate",
-        sectionThicknessMm: m.plateBoardThicknessMm,
-        sectionDepthMm: m.plateBoardDepthMm,
-        startOffsetMm: a,
-        endOffsetMm: b,
-        lengthMm: len,
-        orientation: "along_wall",
-        metadata: { segmentIndex: i, splitByDoor: true },
-      });
+      /** Та же раскладка по maxBoardLengthMm, что и для верхней обвязки (единый splitLengthMm). */
+      const lowerChunks = splitLengthMm(spanMm, m.maxBoardLengthMm);
+      let pos = rangeLo;
+      for (let ci = 0; ci < lowerChunks.length; ci++) {
+        const chunkLen = lowerChunks[ci]!;
+        const isLast = ci === lowerChunks.length - 1;
+        const segLo = pos;
+        const segHi = isLast ? rangeHi : pos + chunkLen;
+        const pieceLen = Math.round(segHi - segLo);
+        if (pieceLen < 1) {
+          continue;
+        }
+        verticalDrafts.push({
+          id: newEntityId(),
+          wallId: wall.id,
+          calculationId,
+          role: "lower_plate",
+          sectionThicknessMm: m.plateBoardThicknessMm,
+          sectionDepthMm: m.plateBoardDepthMm,
+          startOffsetMm: segLo,
+          endOffsetMm: segHi,
+          lengthMm: pieceLen,
+          orientation: "along_wall",
+          metadata: { rangeIndex: ri, chunkIndex: ci, splitByDoor: true },
+        });
+        pos = segHi;
+      }
     }
   }
 

@@ -1,6 +1,7 @@
 import type { Project } from "../domain/project";
 import type { ReportDefinition, ReportReadiness, ReportStatus } from "./types";
 import { buildFoundationPlanWorld } from "./viewDefinitions/foundationPlan";
+import { buildSipStartingBoardPlanWorld } from "./viewDefinitions/sipStartingBoardPlan";
 import { buildWallPlanWorld } from "./viewDefinitions/wallPlan";
 
 function hasMinimal3dCoverContent(project: Project): boolean {
@@ -79,6 +80,27 @@ export function evaluateReportReadiness(project: Project, definition: ReportDefi
       };
     }
     return { status: "ready", messages: built.messages };
+  }
+
+  if (definition.viewKind === "sip_starting_board_plan") {
+    const built = buildSipStartingBoardPlanWorld(project);
+    if (built.worldBounds == null) {
+      return {
+        status: "blocked",
+        messages:
+          built.messages.length > 0
+            ? built.messages
+            : ["Нет SIP-стен с нижней обвязкой: добавьте несущие SIP-стены или проверьте расчёт."],
+      };
+    }
+    let st: ReportStatus = "ready";
+    if (built.usedFallbackCalculation) {
+      st = mergeStatus(st, "warning");
+    }
+    if (built.missingCalculationWallCount > 0) {
+      st = mergeStatus(st, "warning");
+    }
+    return { status: st, messages: built.messages };
   }
 
   if (definition.viewKind === "project_cover_3d") {

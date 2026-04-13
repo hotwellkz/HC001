@@ -1,5 +1,6 @@
 import type { Project } from "../domain/project";
 import { buildFoundationPlanWorld } from "./viewDefinitions/foundationPlan";
+import { buildSipStartingBoardPlanWorld } from "./viewDefinitions/sipStartingBoardPlan";
 import { buildWallPlanWorld } from "./viewDefinitions/wallPlan";
 import {
   A4_LANDSCAPE_HEIGHT_MM,
@@ -222,6 +223,10 @@ function scaleTextFromDenominator(den: number): string {
   return `1 : ${den}`;
 }
 
+function reportStampTitle(definition: ReportDefinition): string {
+  return definition.sheetStampTitle ?? definition.title;
+}
+
 export function compileReport(
   project: Project,
   definition: ReportDefinition,
@@ -237,7 +242,7 @@ export function compileReport(
   if (!definition.implemented) {
     const chrome = buildA4LandscapeChrome({
       projectName: project.meta.name,
-      reportTitle: definition.title,
+      reportTitle: reportStampTitle(definition),
       scaleText: "—",
       dateText: params.reportDateIso.slice(0, 10),
       sheetLabel: `Лист ${params.sheetIndex}/${params.sheetCount}`,
@@ -269,6 +274,10 @@ export function compileReport(
     const built = buildWallPlanWorld(project);
     worldPrimitives = built.primitives;
     messages.push(...built.messages);
+  } else if (definition.viewKind === "sip_starting_board_plan") {
+    const built = buildSipStartingBoardPlanWorld(project);
+    worldPrimitives = built.primitives;
+    messages.push(...built.messages);
   } else {
     return {
       templateId: definition.sheetTemplateId,
@@ -278,7 +287,7 @@ export function compileReport(
       primitives: [
         ...buildA4LandscapeChrome({
           projectName: project.meta.name,
-          reportTitle: definition.title,
+          reportTitle: reportStampTitle(definition),
           scaleText: "—",
           dateText: params.reportDateIso.slice(0, 10),
           sheetLabel: `Лист ${params.sheetIndex}/${params.sheetCount}`,
@@ -300,7 +309,7 @@ export function compileReport(
   if (wb == null) {
     const chrome = buildA4LandscapeChrome({
       projectName: project.meta.name,
-      reportTitle: definition.title,
+      reportTitle: reportStampTitle(definition),
       scaleText: scaleTextFromDenominator(params.scaleDenominator),
       dateText: params.reportDateIso.slice(0, 10),
       sheetLabel: `Лист ${params.sheetIndex}/${params.sheetCount}`,
@@ -334,7 +343,7 @@ export function compileReport(
 
   const chrome = buildA4LandscapeChrome({
     projectName: project.meta.name,
-    reportTitle: definition.title,
+    reportTitle: reportStampTitle(definition),
     scaleText: `≈ ${scaleTextFromDenominator(effectiveDen)}`,
     dateText: params.reportDateIso.slice(0, 10),
     sheetLabel: `Лист ${params.sheetIndex}/${params.sheetCount}`,

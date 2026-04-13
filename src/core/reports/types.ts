@@ -163,12 +163,27 @@ export interface ReportRenderModel {
   readonly messages: readonly string[];
 }
 
-export type ReportViewKind = "foundation_plan" | "wall_plan" | "project_cover_3d" | "placeholder";
+export type ReportViewKind =
+  | "foundation_plan"
+  | "wall_plan"
+  | "sip_starting_board_plan"
+  | "project_cover_3d"
+  | "placeholder";
 
 export interface ReportDefinition {
   readonly id: string;
   readonly groupId: string;
+  /** Заголовок в дереве отчётов (если задан treeLabel — он предпочтительнее). */
   readonly title: string;
+  /** Короткая подпись в дереве (например при длинном заголовке листа). */
+  readonly treeLabel?: string;
+  /**
+   * Подгруппа внутри раздела (одинаковый ключ — общий подзаголовок перед пунктами).
+   * Например «Стартовая доска» внутри «СТЕНЫ».
+   */
+  readonly subgroupKey?: string;
+  /** Заголовок в штампе листа; по умолчанию — title. */
+  readonly sheetStampTitle?: string;
   /** Если false — в дереве как «Скоро», без компиляции. */
   readonly implemented: boolean;
   readonly viewKind: ReportViewKind;

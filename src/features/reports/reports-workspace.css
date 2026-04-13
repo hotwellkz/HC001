@@ -192,6 +192,13 @@
   margin: 10px 0 6px;
 }
 
+.reports-tree__subgroup-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-muted, #555);
+  margin: 8px 0 4px 10px;
+}
+
 .reports-tree__list {
   list-style: none;
   margin: 0;

@@ -25,6 +25,16 @@ export const REPORT_DEFINITIONS: readonly ReportDefinition[] = [
     viewKind: "wall_plan",
     sheetTemplateId: "a4_landscape",
   },
+  {
+    id: "sip_starting_board_plan",
+    groupId: "walls",
+    title: "Стены — Стартовая доска",
+    subgroupKey: "starting_board",
+    sheetStampTitle: "Стены — Стартовая доска",
+    implemented: true,
+    viewKind: "sip_starting_board_plan",
+    sheetTemplateId: "a4_landscape",
+  },
 ];
 
 export const REPORT_DEFINITION_MAP: ReadonlyMap<string, ReportDefinition> = new Map(
