@@ -10,6 +10,91 @@ import { floorBeamWorldBottomMmFromMap, type LayerVerticalSlice } from "./layerV
 import { getProfileById } from "./profileOps";
 import type { Project } from "./project";
 
+/** Попадание в полигон или близко к ребру (мм) — для клипа, когда отрезок лежит на границе. */
+function pointInPolygonOrNearBoundaryClipMm(
+  px: number,
+  py: number,
+  poly: readonly Point2D[],
+  epsMm: number,
+): boolean {
+  if (pointInPolygonMm(px, py, poly)) {
+    return true;
+  }
+  const n = poly.length;
+  for (let i = 0; i < n; i++) {
+    const a = poly[i]!;
+    const b = poly[(i + 1) % n]!;
+    const abx = b.x - a.x;
+    const aby = b.y - a.y;
+    const len2 = abx * abx + aby * aby;
+    if (len2 < 1e-18) {
+      continue;
+    }
+    let u = ((px - a.x) * abx + (py - a.y) * aby) / len2;
+    u = Math.max(0, Math.min(1, u));
+    const zx = a.x + u * abx;
+    const zy = a.y + u * aby;
+    if (Math.hypot(px - zx, py - zy) <= epsMm) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Пересечение двух коллинеарных отрезков на одной прямой (балка совпадает с ребром контура после свесов).
+ */
+function overlapCollinearSegments2dMm(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  dx: number,
+  dy: number,
+  epsParallelMm: number,
+  epsDistMm: number,
+): { readonly sx: number; readonly sy: number; readonly ex: number; readonly ey: number } | null {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const abLen = Math.hypot(abx, aby);
+  if (abLen < 1e-9) {
+    return null;
+  }
+  const cdx = dx - cx;
+  const cdy = dy - cy;
+  const cdLen = Math.hypot(cdx, cdy);
+  if (cdLen < 1e-9) {
+    return null;
+  }
+  const cross = abx * cdy - aby * cdx;
+  if (Math.abs(cross) > epsParallelMm * Math.max(abLen, cdLen)) {
+    return null;
+  }
+  const distLine = Math.abs((cx - ax) * aby - (cy - ay) * abx) / abLen;
+  if (distLine > epsDistMm) {
+    return null;
+  }
+  const ux = abx / abLen;
+  const uy = aby / abLen;
+  const tc = (cx - ax) * ux + (cy - ay) * uy;
+  const td = (dx - ax) * ux + (dy - ay) * uy;
+  const teMin = Math.min(tc, td);
+  const teMax = Math.max(tc, td);
+  const lo = Math.max(0, teMin);
+  const hi = Math.min(abLen, teMax);
+  if (hi - lo < 1e-6) {
+    return null;
+  }
+  return {
+    sx: ax + ux * lo,
+    sy: ay + uy * lo,
+    ex: ax + ux * hi,
+    ey: ay + uy * hi,
+  };
+}
+
 /**
  * Отсечение отрезка выпуклым/простым полигоном: возвращает подотрезок внутри полигона
  * (первая найденная нетривиальная компонента), либо null.
@@ -50,25 +135,32 @@ export function clipSegmentToPolygon2dMm(
     }
   }
   ts.sort((a, b) => a - b);
-  if (ts.length < 2) {
-    return null;
-  }
-  for (let k = 0; k < ts.length - 1; k++) {
-    const t0 = ts[k]!;
-    const t1 = ts[k + 1]!;
-    if (t1 - t0 < 1e-7) {
-      continue;
+  if (ts.length >= 2) {
+    for (let k = 0; k < ts.length - 1; k++) {
+      const t0 = ts[k]!;
+      const t1 = ts[k + 1]!;
+      if (t1 - t0 < 1e-7) {
+        continue;
+      }
+      const tm = (t0 + t1) * 0.5;
+      const mx = ax + (bx - ax) * tm;
+      const my = ay + (by - ay) * tm;
+      if (pointInPolygonOrNearBoundaryClipMm(mx, my, poly, 3)) {
+        return {
+          sx: ax + (bx - ax) * t0,
+          sy: ay + (by - ay) * t0,
+          ex: ax + (bx - ax) * t1,
+          ey: ay + (by - ay) * t1,
+        };
+      }
     }
-    const tm = (t0 + t1) * 0.5;
-    const mx = ax + (bx - ax) * tm;
-    const my = ay + (by - ay) * tm;
-    if (pointInPolygonMm(mx, my, poly)) {
-      return {
-        sx: ax + (bx - ax) * t0,
-        sy: ay + (by - ay) * t0,
-        ex: ax + (bx - ax) * t1,
-        ey: ay + (by - ay) * t1,
-      };
+  }
+  for (let i = 0; i < n; i++) {
+    const p0 = poly[i]!;
+    const p1 = poly[(i + 1) % n]!;
+    const ov = overlapCollinearSegments2dMm(ax, ay, bx, by, p0.x, p0.y, p1.x, p1.y, 1e-4, 1.5);
+    if (ov) {
+      return ov;
     }
   }
   return null;
@@ -218,6 +310,100 @@ function roofZUpAtPlanPointAdjustedMm(
   py: number,
 ): number {
   return rawRoofZUpAtPlanPointMm(rp, baseMm, px, py) + zAdjMm;
+}
+
+/**
+ * Пересечение луча O + t·D (t > 0) с отрезком [A,B]. D не обязан быть нормирован.
+ */
+function raySegmentIntersectionPositiveTMm(
+  ox: number,
+  oy: number,
+  dx: number,
+  dy: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+): { readonly tRay: number } | null {
+  const sx = bx - ax;
+  const sy = by - ay;
+  const denom = dx * sy - dy * sx;
+  if (Math.abs(denom) < 1e-12) {
+    return null;
+  }
+  const qpx = ax - ox;
+  const qpy = ay - oy;
+  const t = (qpx * sy - qpy * sx) / denom;
+  const u = (qpx * dy - qpy * dx) / denom;
+  if (t < 1e-6) {
+    return null;
+  }
+  if (u < -1e-5 || u > 1 + 1e-5) {
+    return null;
+  }
+  return { tRay: t };
+}
+
+/**
+ * Точка на коньке в плане: луч из «ступни» вверх по скату (против стока) до первого пересечения с полилинией конька.
+ */
+export function ridgePlanHitFromFootUphillMm(
+  rp: RoofPlaneEntity,
+  footX: number,
+  footY: number,
+  ridgeSegments: readonly { readonly ax: number; readonly ay: number; readonly bx: number; readonly by: number }[],
+): { readonly x: number; readonly y: number } | null {
+  const { uxn, uyn } = roofPlaneDrainUnitPlanMm(rp);
+  const dx = -uxn;
+  const dy = -uyn;
+  let bestT = Number.POSITIVE_INFINITY;
+  let best: { readonly x: number; readonly y: number } | null = null;
+  for (const s of ridgeSegments) {
+    const hit = raySegmentIntersectionPositiveTMm(footX, footY, dx, dy, s.ax, s.ay, s.bx, s.by);
+    if (hit && hit.tRay < bestT) {
+      bestT = hit.tRay;
+      best = {
+        x: footX + dx * hit.tRay,
+        y: footY + dy * hit.tRay,
+      };
+    }
+  }
+  return best;
+}
+
+/**
+ * Точка на оси балки в плане, где высота кровли на заданном скате равна zTarget (верх перекрытия).
+ * Вдоль отрезка оси z аффинна — решаем по концам отсечённого участка.
+ */
+export function footOnCenterlineAtRoofPlaneElevationMm(
+  rp: RoofPlaneEntity,
+  baseMm: number,
+  zAdjMm: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  zTargetMm: number,
+): { readonly x: number; readonly y: number } | null {
+  const zAt = (px: number, py: number) => roofZUpAtPlanPointAdjustedMm(rp, baseMm, zAdjMm, px, py);
+  const za = zAt(ax, ay);
+  const zb = zAt(bx, by);
+  const denom = zb - za;
+  if (Math.abs(denom) < 1e-6) {
+    if (Math.abs(za - zTargetMm) <= 1.5) {
+      return { x: (ax + bx) * 0.5, y: (ay + by) * 0.5 };
+    }
+    return null;
+  }
+  const tRaw = (zTargetMm - za) / denom;
+  if (tRaw < -1e-5 || tRaw > 1 + 1e-5) {
+    return null;
+  }
+  const t = Math.max(0, Math.min(1, tRaw));
+  return {
+    x: ax + (bx - ax) * t,
+    y: ay + (by - ay) * t,
+  };
 }
 
 /**

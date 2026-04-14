@@ -7,7 +7,6 @@ import type { Project } from "@/core/domain/project";
 import type { RoofPurlinEntity } from "@/core/domain/roofPurlin";
 import type { RoofPostEntity } from "@/core/domain/roofPost";
 import type { RoofStrutEntity } from "@/core/domain/roofStrut";
-import { getLayerById } from "@/core/domain/layerOps";
 
 import { isProjectLayerVisibleIn3d } from "./view3dVisibility";
 
@@ -62,13 +61,7 @@ function boxAlongSegmentMm(
 }
 
 export function roofPostsForScene3d(project: Project): readonly RoofPostEntity[] {
-  return project.roofPosts.filter((p) => {
-    const layer = getLayerById(project, p.layerId);
-    if (layer?.isVisible === false) {
-      return false;
-    }
-    return isProjectLayerVisibleIn3d(p.layerId, project);
-  });
+  return project.roofPosts.filter((p) => isProjectLayerVisibleIn3d(p.layerId, project));
 }
 
 export function roofPostsToMeshSpecs(project: Project, posts: readonly RoofPostEntity[]): RoofFramingBoxMeshSpec[] {
@@ -96,13 +89,7 @@ export function roofPostsToMeshSpecs(project: Project, posts: readonly RoofPostE
 }
 
 export function roofPurlinsForScene3d(project: Project): readonly RoofPurlinEntity[] {
-  return project.roofPurlins.filter((p) => {
-    const layer = getLayerById(project, p.layerId);
-    if (layer?.isVisible === false) {
-      return false;
-    }
-    return isProjectLayerVisibleIn3d(p.layerId, project);
-  });
+  return project.roofPurlins.filter((p) => isProjectLayerVisibleIn3d(p.layerId, project));
 }
 
 export function roofPurlinsToMeshSpecs(project: Project, purlins: readonly RoofPurlinEntity[]): RoofFramingBoxMeshSpec[] {
@@ -135,13 +122,7 @@ export function roofPurlinsToMeshSpecs(project: Project, purlins: readonly RoofP
 }
 
 export function roofStrutsForScene3d(project: Project): readonly RoofStrutEntity[] {
-  return project.roofStruts.filter((p) => {
-    const layer = getLayerById(project, p.layerId);
-    if (layer?.isVisible === false) {
-      return false;
-    }
-    return isProjectLayerVisibleIn3d(p.layerId, project);
-  });
+  return project.roofStruts.filter((p) => isProjectLayerVisibleIn3d(p.layerId, project));
 }
 
 export function roofStrutsToMeshSpecs(project: Project, struts: readonly RoofStrutEntity[]): RoofFramingBoxMeshSpec[] {

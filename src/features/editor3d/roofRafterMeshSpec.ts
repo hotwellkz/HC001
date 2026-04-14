@@ -5,7 +5,6 @@ import { getProfileById } from "@/core/domain/profileOps";
 import type { ProfileMaterialType } from "@/core/domain/profile";
 import type { Project } from "@/core/domain/project";
 import { resolveRoofRafterSectionOrientation, type RoofRafterEntity } from "@/core/domain/roofRafter";
-import { getLayerById } from "@/core/domain/layerOps";
 import { roofSlopeOutwardUnitNormalThreeMm } from "@/core/geometry/roofAssemblyGeometry3d";
 
 import { isProjectLayerVisibleIn3d } from "./view3dVisibility";
@@ -63,17 +62,12 @@ function offsetRafterCenterBelowRoofPlaneMm(
   centerM.addScaledVector(outward, -offsetAlongInwardNormalMm * MM_TO_M);
 }
 
+/**
+ * Как у узла кровли в 3D: только `hidden3dProjectLayerIds`, без `Layer.isVisible` (2D).
+ * Иначе при скрытом на плане слое крыши скаты остаются в 3D, а стропила пропадали бы.
+ */
 export function roofRaftersForScene3d(project: Project): readonly RoofRafterEntity[] {
-  return project.roofRafters.filter((r) => {
-    const layer = getLayerById(project, r.layerId);
-    if (layer?.isVisible === false) {
-      return false;
-    }
-    if (!isProjectLayerVisibleIn3d(r.layerId, project)) {
-      return false;
-    }
-    return true;
-  });
+  return project.roofRafters.filter((r) => isProjectLayerVisibleIn3d(r.layerId, project));
 }
 
 export function roofRaftersToMeshSpecs(project: Project, rafters: readonly RoofRafterEntity[]): RoofRafterRenderMeshSpec[] {

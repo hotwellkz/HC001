@@ -15,6 +15,7 @@ import type { RoofPurlinEntity } from "@/core/domain/roofPurlin";
 import type { RoofPostEntity } from "@/core/domain/roofPost";
 import type { RoofRafterEntity } from "@/core/domain/roofRafter";
 import type { RoofStrutEntity } from "@/core/domain/roofStrut";
+import type { RoofSystemEntity } from "@/core/domain/roofSystem";
 import { generateRoofPurlinAndPosts } from "@/core/domain/roofPurlinPostGenerator";
 import { generateRoofStrutsForPosts } from "@/core/domain/roofStrutGenerator";
 
@@ -23,8 +24,9 @@ import {
   closestPointOnRidgePolylineMm,
   distancePointToSegmentMm,
   floorBeamTopElevationMm,
-  footPlanAlongDrainToRoofElevationMm,
+  footOnCenterlineAtRoofPlaneElevationMm,
   pointInPolygonOrNearBoundaryMm,
+  ridgePlanHitFromFootUphillMm,
 } from "./roofRafterGeometry";
 
 /** Шаг расстановки по балкам перекрытия. */
@@ -107,6 +109,58 @@ function passesBeamStep(index: number, mode: RoofRafterBeamStepMode): boolean {
 }
 
 /**
+ * Два ската двускатной крыши: сначала по `generatedPlaneIds`, при рассинхроне после правок — по `roofSystemId`.
+ * Иначе генератор не находит два ската, возвращает пустой список, а UI заменяет старые стропила «ничем».
+ */
+function resolveGableRoofPlanesForSystem(
+  project: Project,
+  sys: { readonly id: string; readonly generatedPlaneIds: readonly string[] },
+  warnings: string[],
+): readonly RoofPlaneEntity[] | null {
+  const fromIds = sys.generatedPlaneIds
+    .map((id) => project.roofPlanes.find((p) => p.id === id))
+    .filter((p): p is RoofPlaneEntity => p != null);
+  if (fromIds.length >= 2) {
+    return fromIds.slice(0, 2);
+  }
+
+  const fromRef = project.roofPlanes
+    .filter((p) => p.roofSystemId === sys.id)
+    .slice()
+    .sort((a, b) => a.slopeIndex - b.slopeIndex);
+  if (fromRef.length >= 2) {
+    warnings.push(
+      "Связь скатов с крышей по id устарела (после правок контуров) — использованы плоскости с тем же roofSystemId.",
+    );
+    return fromRef.slice(0, 2);
+  }
+
+  return null;
+}
+
+/**
+ * Приводит `generatedPlaneIds` к двум актуальным `roofPlane`, если список устарел (после правок контуров).
+ * Без сообщений в warnings — для сохранения в проекте перед генерацией.
+ */
+export function repairRoofSystemGeneratedPlaneIds(project: Project, sys: RoofSystemEntity): RoofSystemEntity {
+  const w: string[] = [];
+  const planes = resolveGableRoofPlanesForSystem(project, sys, w);
+  if (planes == null || planes.length < 2) {
+    return sys;
+  }
+  const a = planes[0]!.id;
+  const b = planes[1]!.id;
+  if (sys.generatedPlaneIds.length === 2 && sys.generatedPlaneIds[0] === a && sys.generatedPlaneIds[1] === b) {
+    return sys;
+  }
+  const setOld = new Set(sys.generatedPlaneIds);
+  if (setOld.has(a) && setOld.has(b) && sys.generatedPlaneIds.length === 2) {
+    return sys;
+  }
+  return { ...sys, generatedPlaneIds: [a, b] as const };
+}
+
+/**
  * Генерирует стропила для двускатной крыши по выбранной `RoofSystemEntity` и доскам перекрытия проекта.
  */
 export function generateRoofRaftersForProject(
@@ -121,11 +175,11 @@ export function generateRoofRaftersForProject(
     return { entities: [], purlins: [], posts: [], struts: [], warnings };
   }
 
-  const planes = sys.generatedPlaneIds
-    .map((id) => project.roofPlanes.find((p) => p.id === id))
-    .filter((p): p is RoofPlaneEntity => p != null);
-  if (planes.length < 2) {
-    warnings.push("У крыши должно быть два ската (generatedPlaneIds).");
+  const planes = resolveGableRoofPlanesForSystem(project, sys, warnings);
+  if (planes == null || planes.length < 2) {
+    warnings.push(
+      "У крыши должно быть два ската: проверьте связь системы со скатами (roofSystemId / контур после правок).",
+    );
     return { entities: [], purlins: [], posts: [], struts: [], warnings };
   }
   const planeA = planes[0]!;
@@ -242,17 +296,40 @@ export function generateRoofRaftersForProject(
       plane: RoofPlaneEntity,
       base: number,
       zAdj: number,
-      zRidgeAtPlane: number,
     ): { readonly rafter: RoofRafterEntity; readonly distBeamMm: number } | null => {
-      const foot = footPlanAlongDrainToRoofElevationMm(plane, base, zAdj, q.x, q.y, zBeam);
+      const poly = roofPlanePolygonMm(plane);
+      const clipPl = clipSegmentToPolygon2dMm(
+        cl.centerStart.x,
+        cl.centerStart.y,
+        cl.centerEnd.x,
+        cl.centerEnd.y,
+        poly,
+      );
+      if (!clipPl) {
+        return null;
+      }
+      const foot = footOnCenterlineAtRoofPlaneElevationMm(
+        plane,
+        base,
+        zAdj,
+        clipPl.sx,
+        clipPl.sy,
+        clipPl.ex,
+        clipPl.ey,
+        zBeam,
+      );
       if (!foot) {
         return null;
       }
-      const poly = roofPlanePolygonMm(plane);
-      if (!pointInPolygonOrNearBoundaryMm(foot.x, foot.y, poly, 5)) {
+      if (!pointInPolygonOrNearBoundaryMm(foot.x, foot.y, poly, 8)) {
         return null;
       }
-      const dBeam = distancePointToSegmentMm(
+      const qHit = ridgePlanHitFromFootUphillMm(plane, foot.x, foot.y, ridgeSegs);
+      if (!qHit) {
+        return null;
+      }
+      const zRidgeEl = roofZAtPointMm(plane, base, zAdj, qHit.x, qHit.y) + ridgeLift;
+      const dAlong = distancePointToSegmentMm(
         foot.x,
         foot.y,
         cl.centerStart.x,
@@ -260,12 +337,13 @@ export function generateRoofRaftersForProject(
         cl.centerEnd.x,
         cl.centerEnd.y,
       );
-      if (dBeam > maxDist) {
+      if (dAlong > maxDist) {
         return null;
       }
       const id = newEntityId();
+      const tie = Math.hypot(foot.x - bx, foot.y - by);
       return {
-        distBeamMm: dBeam,
+        distBeamMm: tie,
         rafter: {
           id,
           type: "roofRafter",
@@ -276,9 +354,9 @@ export function generateRoofRaftersForProject(
           pairedRoofRafterId: null,
           roofPlaneId: plane.id,
           footPlanMm: { x: foot.x, y: foot.y },
-          ridgePlanMm: { x: q.x, y: q.y },
+          ridgePlanMm: { x: qHit.x, y: qHit.y },
           footElevationMm: zBeam,
-          ridgeElevationMm: zRidgeAtPlane,
+          ridgeElevationMm: zRidgeEl,
           sectionOrientation: "edge",
           sectionRolled: true,
           createdAt: nowIso,
@@ -287,8 +365,8 @@ export function generateRoofRaftersForProject(
       };
     };
 
-    const rA = mkRafter(planeA, baseA, adjA, zRidgeA);
-    const rB = mkRafter(planeB, baseB, adjB, zRidgeB);
+    const rA = mkRafter(planeA, baseA, adjA);
+    const rB = mkRafter(planeB, baseB, adjB);
 
     if (!rA && !rB) {
       warnings.push(`Балка ${beam.id}: не удалось построить стропило на скаты.`);

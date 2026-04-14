@@ -37,6 +37,7 @@ import { validateProfile } from "@/core/domain/profileValidation";
 import type { Project } from "@/core/domain/project";
 import {
   generateRoofRaftersForProject,
+  repairRoofSystemGeneratedPlaneIds,
   type RoofRafterGeneratorParams,
 } from "@/core/domain/roofRafterGenerator";
 import {
@@ -8813,17 +8814,25 @@ export const useAppStore = create<AppStore>((set, get) => {
     applyGenerateRoofRafters: (input: RoofRafterGeneratorParams) => {
       const nowIso = new Date().toISOString();
       const { currentProject } = get();
+      const roofSystemsRepaired = currentProject.roofSystems.map((s) =>
+        s.id === input.roofSystemId ? repairRoofSystemGeneratedPlaneIds(currentProject, s) : s,
+      );
+      const projectForRafters = { ...currentProject, roofSystems: roofSystemsRepaired };
       const pairedInput =
         input.enablePurlin || input.enablePosts || input.enableStruts
           ? { ...input, enablePurlin: true, enablePosts: true }
           : input;
-      const { entities, purlins, posts, struts, warnings } = generateRoofRaftersForProject(currentProject, pairedInput, nowIso);
-      const kept = currentProject.roofRafters.filter((r) => r.roofSystemId !== input.roofSystemId);
-      const keptPurlins = currentProject.roofPurlins.filter((p) => p.roofSystemId !== input.roofSystemId);
-      const keptPosts = currentProject.roofPosts.filter((p) => p.roofSystemId !== input.roofSystemId);
-      const keptStruts = currentProject.roofStruts.filter((p) => p.roofSystemId !== input.roofSystemId);
+      const { entities, purlins, posts, struts, warnings } = generateRoofRaftersForProject(
+        projectForRafters,
+        pairedInput,
+        nowIso,
+      );
+      const kept = projectForRafters.roofRafters.filter((r) => r.roofSystemId !== input.roofSystemId);
+      const keptPurlins = projectForRafters.roofPurlins.filter((p) => p.roofSystemId !== input.roofSystemId);
+      const keptPosts = projectForRafters.roofPosts.filter((p) => p.roofSystemId !== input.roofSystemId);
+      const keptStruts = projectForRafters.roofStruts.filter((p) => p.roofSystemId !== input.roofSystemId);
       const next = touchProjectMeta({
-        ...currentProject,
+        ...projectForRafters,
         roofRafters: [...kept, ...entities],
         roofPurlins: [...keptPurlins, ...purlins],
         roofPosts: [...keptPosts, ...posts],
