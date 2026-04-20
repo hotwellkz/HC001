@@ -590,6 +590,8 @@ interface AppState {
   readonly cloudSaveError: string | null;
   /** ISO-время последнего успешного облачного сохранения. */
   readonly cloudLastSavedAt: string | null;
+  /** Открыта ли модалка «Сохранить локальный проект в облако». */
+  readonly cloudExportModalOpen: boolean;
   /** Размер canvas 2D для привязки и модалки координат (не персистится). */
   readonly viewportCanvas2dPx: { readonly width: number; readonly height: number } | null;
   /** Режим редактирования смещения выбранного проёма по размерным линиям. */
@@ -711,6 +713,19 @@ interface AppActions {
   ) => void;
   clearCloudWorkspace: () => void;
   saveCurrentProjectToCloud: (userId: string, activeCompanyId: string | undefined | null) => Promise<void>;
+  /**
+   * Импортирует текущий локально открытый проект в облако компании как новый документ.
+   * После успеха переводит редактор в режим облачного проекта (cloudWorkspace),
+   * меняет meta.id на новый projectId и возвращает его, чтобы UI мог обновить URL.
+   */
+  saveCurrentProjectAsNewCloud: (
+    name: string,
+    userId: string,
+    activeCompanyId: string,
+    canSave: boolean,
+  ) => Promise<{ readonly projectId: string; readonly companyId: string } | null>;
+  openCloudExportModal: () => void;
+  closeCloudExportModal: () => void;
   /** Новые сущности плана в будущем создавать на активном слое. */
   getActiveLayerIdForNewEntities: () => string;
   createLayer: (input: { readonly name: string; readonly elevationMm: number; readonly domain?: LayerDomain }) => void;
@@ -1729,6 +1744,7 @@ export const useAppStore = create<AppStore>((set, get) => {
     cloudManualSavePhase: "idle",
     cloudSaveError: null,
     cloudLastSavedAt: null,
+    cloudExportModalOpen: false,
     viewportCanvas2dPx: null,
     openingMoveModeActive: false,
     wallDetailWallId: null,
@@ -9445,6 +9461,63 @@ export const useAppStore = create<AppStore>((set, get) => {
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Ошибка сохранения в облако";
         set({ cloudManualSavePhase: "error", cloudSaveError: msg, lastError: msg });
+      }
+    },
+
+    openCloudExportModal: () => set({ cloudExportModalOpen: true }),
+    closeCloudExportModal: () => set({ cloudExportModalOpen: false }),
+
+    saveCurrentProjectAsNewCloud: async (name, userId, activeCompanyId, canSave) => {
+      if (!activeCompanyId) {
+        set({ lastError: "Не выбрана активная компания." });
+        return null;
+      }
+      if (!userId) {
+        set({ lastError: "Сессия не готова, попробуйте обновить страницу." });
+        return null;
+      }
+      if (!canSave) {
+        set({ lastError: "У вашей роли нет прав на сохранение в облако." });
+        return null;
+      }
+      const { currentProject } = get();
+      const { ok, errors } = validateProjectSchema(currentProject);
+      if (!ok) {
+        const msg = errors?.map((e) => e.message ?? "schema").join("; ") ?? "Ошибка схемы";
+        set({ cloudManualSavePhase: "error", cloudSaveError: msg, lastError: msg });
+        return null;
+      }
+
+      const { createCloudProjectFromCurrent } = await import("@/features/workspace/projectCloudService");
+      set({ cloudManualSavePhase: "saving", cloudSaveError: null, lastError: null });
+      try {
+        const { meta, project } = await createCloudProjectFromCurrent(
+          activeCompanyId,
+          userId,
+          name,
+          currentProject,
+          activeCompanyId,
+        );
+        set({
+          currentProject: project,
+          cloudWorkspace: {
+            companyId: activeCompanyId,
+            projectId: meta.id,
+            userId,
+            canSave: true,
+          },
+          cloudManualSavePhase: "idle",
+          cloudSaveError: null,
+          cloudLastSavedAt: meta.updatedAt,
+          dirty: false,
+          lastError: null,
+          infoMessage: "Проект сохранён в облаке.",
+        });
+        return { projectId: meta.id, companyId: activeCompanyId };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Ошибка сохранения в облако";
+        set({ cloudManualSavePhase: "error", cloudSaveError: msg, lastError: msg });
+        return null;
       }
     },
   };

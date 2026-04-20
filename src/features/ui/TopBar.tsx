@@ -238,11 +238,18 @@ export function TopBar() {
   const cloudStatusTitle =
     cloudManualSavePhase === "error" && cloudSaveError ? cloudSaveError : cloudStatusText ?? undefined;
 
+  const companyIdForCloud = profile?.activeCompanyId ?? null;
+  const canShowCloudControls = isAuthenticated && !isDemo && !!companyIdForCloud;
+
   const onCloudSave = () => {
-    if (!effectiveUid || !canCloudPersist) {
+    if (!effectiveUid || !canCloudPersist || !companyIdForCloud) {
       return;
     }
-    void useAppStore.getState().saveCurrentProjectToCloud(effectiveUid, profile?.activeCompanyId ?? null);
+    if (cloudWorkspace) {
+      void useAppStore.getState().saveCurrentProjectToCloud(effectiveUid, companyIdForCloud);
+      return;
+    }
+    useAppStore.getState().openCloudExportModal();
   };
 
   const onLogout = () => {
@@ -273,10 +280,10 @@ export function TopBar() {
       label: "Демо",
       onClick: () => projectCommands.bootstrapDemo(),
     });
-    if (cloudWorkspace && effectiveUid) {
+    if (canShowCloudControls && effectiveUid) {
       overflowActions.push({
         id: "cloudSave",
-        label: "Сохранить в облако",
+        label: cloudWorkspace ? "Сохранить в облако" : "Сохранить в облако (новый)",
         onClick: onCloudSave,
       });
     }
@@ -349,27 +356,39 @@ export function TopBar() {
             </button>
           </>
         ) : null}
-        {showCloudExtras && cloudWorkspace && cloudStatusText ? (
-          <span
-            className={
-              cloudManualSavePhase === "error"
-                ? "tb-cloud-status tb-cloud-status--error"
-                : "tb-cloud-status"
-            }
-            title={cloudStatusTitle}
-          >
-            {cloudStatusText}
-          </span>
+        {showCloudExtras && canShowCloudControls ? (
+          cloudWorkspace && cloudStatusText ? (
+            <span
+              className={
+                cloudManualSavePhase === "error"
+                  ? "tb-cloud-status tb-cloud-status--error"
+                  : "tb-cloud-status"
+              }
+              title={cloudStatusTitle}
+            >
+              {cloudStatusText}
+            </span>
+          ) : (
+            <span className="tb-cloud-status" title="Проект открыт локально и пока не сохранён в облаке.">
+              Локальный проект
+            </span>
+          )
         ) : null}
-        {showCloudExtras && cloudWorkspace && effectiveUid ? (
+        {showCloudExtras && canShowCloudControls && effectiveUid ? (
           <button
             type="button"
             className="btn tb-cloud-save"
             onClick={onCloudSave}
             disabled={!canCloudPersist || cloudManualSavePhase === "saving"}
-            title={!canCloudPersist ? "У вас роль просмотра. Сохранение недоступно." : "Сохранить сейчас в облако"}
+            title={
+              !canCloudPersist
+                ? "У вас роль просмотра. Сохранение недоступно."
+                : cloudWorkspace
+                  ? "Сохранить сейчас в облако"
+                  : "Сохранить локальный проект как новый облачный"
+            }
           >
-            {cloudManualSavePhase === "saving" ? "Сохраняем…" : "Сохранить"}
+            {cloudManualSavePhase === "saving" ? "Сохраняем…" : cloudWorkspace ? "Сохранить" : "Сохранить в облако"}
           </button>
         ) : null}
         <button

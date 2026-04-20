@@ -52,11 +52,18 @@ export function TopBarMobile() {
     return "Сохранено";
   })();
 
+  const companyIdForCloud = profile?.activeCompanyId ?? null;
+  const canShowCloudControls = isAuthenticated && !isDemo && !!companyIdForCloud;
+
   const onCloudSave = () => {
-    if (!effectiveUid || !canCloudPersist) {
+    if (!effectiveUid || !canCloudPersist || !companyIdForCloud) {
       return;
     }
-    void useAppStore.getState().saveCurrentProjectToCloud(effectiveUid, profile?.activeCompanyId ?? null);
+    if (cloudWorkspace) {
+      void useAppStore.getState().saveCurrentProjectToCloud(effectiveUid, companyIdForCloud);
+      return;
+    }
+    useAppStore.getState().openCloudExportModal();
   };
 
   const onLogout = () => {
@@ -116,12 +123,18 @@ export function TopBarMobile() {
           >
             <LucideToolIcon icon={Redo2} className="tb-keys-icon" />
           </button>
-          {cloudWorkspace && effectiveUid ? (
+          {canShowCloudControls && effectiveUid ? (
             <button
               type="button"
               className="tb-mobile-icon-btn"
-              title={!canCloudPersist ? "У вас роль просмотра. Сохранение недоступно." : "Сохранить в облако"}
-              aria-label="Сохранить в облако"
+              title={
+                !canCloudPersist
+                  ? "У вас роль просмотра. Сохранение недоступно."
+                  : cloudWorkspace
+                    ? "Сохранить в облако"
+                    : "Сохранить локальный проект в облако"
+              }
+              aria-label={cloudWorkspace ? "Сохранить в облако" : "Сохранить локальный проект в облако"}
               disabled={!canCloudPersist}
               onClick={onCloudSave}
             >
@@ -139,18 +152,24 @@ export function TopBarMobile() {
           </button>
         </div>
       </div>
-      {cloudWorkspace && cloudStatusText ? (
-        <div
-          className={
-            cloudManualSavePhase === "error"
-              ? "tb-mobile-cloud-status tb-mobile-cloud-status--error"
-              : "tb-mobile-cloud-status"
-          }
-          aria-live="polite"
-          title={cloudManualSavePhase === "error" && cloudSaveError ? cloudSaveError : undefined}
-        >
-          {cloudStatusText}
-        </div>
+      {canShowCloudControls ? (
+        cloudWorkspace && cloudStatusText ? (
+          <div
+            className={
+              cloudManualSavePhase === "error"
+                ? "tb-mobile-cloud-status tb-mobile-cloud-status--error"
+                : "tb-mobile-cloud-status"
+            }
+            aria-live="polite"
+            title={cloudManualSavePhase === "error" && cloudSaveError ? cloudSaveError : undefined}
+          >
+            {cloudStatusText}
+          </div>
+        ) : (
+          <div className="tb-mobile-cloud-status" aria-live="polite">
+            Локальный проект · не сохранён в облаке
+          </div>
+        )
       ) : null}
     </header>
   );

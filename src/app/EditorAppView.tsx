@@ -6,6 +6,7 @@ import { useAuth } from "@/features/auth/AuthProvider";
 import { EditorCloudAuthBanner } from "@/features/auth/EditorCloudAuthBanner";
 import { EditorNoCompanyBanner } from "@/features/auth/EditorNoCompanyBanner";
 import { canEditCloudProjects } from "@/features/company/companyTeamService";
+import { EditorCloudExportModal } from "@/features/workspace/EditorCloudExportModal";
 import { loadProject } from "@/features/workspace/projectCloudService";
 import { projectCommands } from "@/features/project/commands";
 import { AppShell } from "@/features/ui/AppShell";
@@ -158,6 +159,14 @@ export function EditorAppView() {
       return;
     }
 
+    // Уже открыт нужный облачный проект (например, после "Сохранить локально → в облако"
+    // и replaceState на /app?projectId=newId) — повторно не грузим из Firestore.
+    const existing = useAppStore.getState().cloudWorkspace;
+    if (existing && existing.companyId === companyId && existing.projectId === projectId) {
+      setCloudLoadPhase("idle");
+      return;
+    }
+
     let cancelled = false;
     setCloudLoadPhase("loading");
     setCloudLoadError(null);
@@ -235,6 +244,7 @@ export function EditorAppView() {
       </ThemeRoot>
       <ErrorBanner />
       <InfoBanner />
+      <EditorCloudExportModal />
     </>
   );
 }

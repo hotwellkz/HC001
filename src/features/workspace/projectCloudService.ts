@@ -135,26 +135,13 @@ export async function listProjects(companyId: string, activeCompanyId: string | 
   }
 }
 
-export async function createProject(
+async function persistNewCloudProject(
   companyId: string,
   userId: string,
-  name: string,
-  activeCompanyId: string | undefined | null,
+  project: Project,
 ): Promise<ProjectMeta> {
-  assertCompany(companyId, activeCompanyId);
-  const projectId = newEntityId();
-  const now = new Date().toISOString();
-  const base = createEmptyProject();
-  const project: Project = {
-    ...base,
-    meta: {
-      ...base.meta,
-      id: projectId,
-      name: name.trim() || "Новый проект",
-      createdAt: now,
-      updatedAt: now,
-    },
-  };
+  const projectId = project.meta.id;
+  const now = project.meta.updatedAt ?? new Date().toISOString();
 
   const file = buildCloudProjectFile(project, userId);
   const json = cloudProjectFileJsonString(file);
@@ -165,7 +152,7 @@ export async function createProject(
     name: project.meta.name,
     createdBy: userId,
     updatedBy: userId,
-    createdAt: now,
+    createdAt: project.meta.createdAt ?? now,
     updatedAt: now,
     schemaVersion: 1,
   };
@@ -218,6 +205,58 @@ export async function createProject(
     }
     throw new Error(describeFirebaseError(err));
   }
+}
+
+export async function createProject(
+  companyId: string,
+  userId: string,
+  name: string,
+  activeCompanyId: string | undefined | null,
+): Promise<ProjectMeta> {
+  assertCompany(companyId, activeCompanyId);
+  const projectId = newEntityId();
+  const now = new Date().toISOString();
+  const base = createEmptyProject();
+  const project: Project = {
+    ...base,
+    meta: {
+      ...base.meta,
+      id: projectId,
+      name: name.trim() || "Новый проект",
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+  return persistNewCloudProject(companyId, userId, project);
+}
+
+/**
+ * Импорт текущего (локально открытого) проекта в облако компании как нового документа.
+ * Возвращает обновлённый Project (с новым meta.id/createdAt/updatedAt) и облачную мету.
+ */
+export async function createCloudProjectFromCurrent(
+  companyId: string,
+  userId: string,
+  name: string,
+  sourceProject: Project,
+  activeCompanyId: string | undefined | null,
+): Promise<{ readonly meta: ProjectMeta; readonly project: Project }> {
+  assertCompany(companyId, activeCompanyId);
+  const projectId = newEntityId();
+  const now = new Date().toISOString();
+  const cleanName = name.trim() || sourceProject.meta.name?.trim() || "Новый проект";
+  const project: Project = {
+    ...sourceProject,
+    meta: {
+      ...sourceProject.meta,
+      id: projectId,
+      name: cleanName,
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+  const meta = await persistNewCloudProject(companyId, userId, project);
+  return { meta, project };
 }
 
 export async function loadProject(

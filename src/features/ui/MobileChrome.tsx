@@ -50,11 +50,18 @@ function MainMenuSheet() {
     closeMobileSheet();
   };
 
+  const companyIdForCloud = profile?.activeCompanyId ?? null;
+  const canShowCloudControls = isAuthenticated && !isDemo && !!companyIdForCloud;
+
   const onCloudSave = () => {
-    if (!effectiveUid || !canCloudPersist) {
+    if (!effectiveUid || !canCloudPersist || !companyIdForCloud) {
       return;
     }
-    void useAppStore.getState().saveCurrentProjectToCloud(effectiveUid, profile?.activeCompanyId ?? null);
+    if (cloudWorkspace) {
+      void useAppStore.getState().saveCurrentProjectToCloud(effectiveUid, companyIdForCloud);
+      return;
+    }
+    useAppStore.getState().openCloudExportModal();
   };
 
   const onLogout = () => {
@@ -85,7 +92,7 @@ function MainMenuSheet() {
       <button type="button" className="mobile-menu-btn" onClick={() => run(() => void projectCommands.open())}>
         Открыть…
       </button>
-      {cloudWorkspace && effectiveUid ? (
+      {canShowCloudControls && effectiveUid ? (
         <button
           type="button"
           className="mobile-menu-btn"
@@ -93,7 +100,7 @@ function MainMenuSheet() {
           title={!canCloudPersist ? "У вас роль просмотра. Сохранение недоступно." : undefined}
           onClick={() => run(onCloudSave)}
         >
-          Сохранить в облако
+          {cloudWorkspace ? "Сохранить в облако" : "Сохранить в облако (новый)"}
         </button>
       ) : null}
       <button type="button" className="mobile-menu-btn" onClick={() => run(() => void projectCommands.save())}>
