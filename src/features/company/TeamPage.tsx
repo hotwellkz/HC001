@@ -7,12 +7,17 @@ import { AppWorkspaceNav } from "@/features/workspace/AppWorkspaceNav";
 import {
   buildInviteRegistrationUrl,
   cancelCompanyInvite,
+  canDeleteInvite,
   canInviteEmployees,
   canManageTeam,
+  copyInviteLink,
   createCompanyInvite,
+  deleteCompanyInvite,
   inviteRoleAllowedForActor,
+  inviteStatusLabel,
   listCompanyInvites,
   listCompanyMembers,
+  normalizeInviteStatusKind,
   removeCompanyMember,
   updateMemberRole,
 } from "@/features/company/companyTeamService";
@@ -65,6 +70,10 @@ export function TeamPage() {
   const [inviteRole, setInviteRole] = useState<CompanyInvite["role"]>("designer");
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteDoneUrl, setInviteDoneUrl] = useState<string | null>(null);
+
+  const [inviteActionId, setInviteActionId] = useState<string | null>(null);
+  const [inviteActionInfo, setInviteActionInfo] = useState<string | null>(null);
+  const [showAcceptedHistory, setShowAcceptedHistory] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!companyId || !isAuthenticated) {
@@ -167,16 +176,66 @@ export function TeamPage() {
     }
   };
 
-  const onCancelInvite = async (inviteId: string) => {
+  const onCancelInvite = async (invite: CompanyInvite) => {
     if (!companyId || !manage) {
       return;
     }
+    const ok = window.confirm(
+      "Отменить приглашение? Пользователь больше не сможет присоединиться по этой ссылке.",
+    );
+    if (!ok) {
+      return;
+    }
     setError(null);
+    setInviteActionInfo(null);
+    setInviteActionId(invite.id);
     try {
-      await cancelCompanyInvite(companyId, inviteId);
+      await cancelCompanyInvite(companyId, invite.id, userId ?? undefined);
+      setInviteActionInfo("Приглашение отменено.");
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось отменить приглашение.");
+    } finally {
+      setInviteActionId(null);
+    }
+  };
+
+  const onDeleteInvite = async (invite: CompanyInvite) => {
+    if (!companyId || !manage) {
+      return;
+    }
+    if (!canDeleteInvite(invite)) {
+      setError("Принятое приглашение нельзя удалить — управляйте участником в списке команды.");
+      return;
+    }
+    const ok = window.confirm(
+      "Удалить приглашение? Ссылка перестанет отображаться в списке.",
+    );
+    if (!ok) {
+      return;
+    }
+    setError(null);
+    setInviteActionInfo(null);
+    setInviteActionId(invite.id);
+    try {
+      await deleteCompanyInvite(companyId, invite.id);
+      setInviteActionInfo("Приглашение удалено.");
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось удалить приглашение.");
+    } finally {
+      setInviteActionId(null);
+    }
+  };
+
+  const onCopyInviteLink = async (invite: CompanyInvite) => {
+    setError(null);
+    setInviteActionInfo(null);
+    try {
+      const url = await copyInviteLink(invite);
+      setInviteActionInfo(`Ссылка скопирована: ${url}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось скопировать ссылку.");
     }
   };
 
@@ -280,27 +339,111 @@ export function TeamPage() {
                     ))}
                   </ul>
 
-                  {manage && invites.length > 0 ? (
-                    <section className="team-invites-block" aria-labelledby={`${modalId}-inv`}>
-                      <h2 id={`${modalId}-inv`} className="team-invites-title">
-                        Приглашения
-                      </h2>
-                      <ul className="team-invite-list">
-                        {invites.map((i) => (
-                          <li key={i.id} className="team-invite-row">
-                            <span>{i.email}</span>
-                            <span className="team-invite-role">{INVITE_ROLE_LABELS[i.role]}</span>
-                            <span className="team-invite-status">{i.status}</span>
-                            {i.status === "pending" ? (
-                              <button type="button" className="team-page-btn" onClick={() => void onCancelInvite(i.id)}>
-                                Отменить
-                              </button>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ul>
-                    </section>
-                  ) : null}
+                  {manage && invites.length > 0 ? (() => {
+                    const visible = invites.filter((i) => {
+                      const k = normalizeInviteStatusKind(i.status);
+                      return showAcceptedHistory ? true : k !== "accepted";
+                    });
+                    return (
+                      <section className="team-invites-block" aria-labelledby={`${modalId}-inv`}>
+                        <header className="team-invites-header">
+                          <h2 id={`${modalId}-inv`} className="team-invites-title">
+                            Приглашения
+                          </h2>
+                          <label className="team-invites-toggle">
+                            <input
+                              type="checkbox"
+                              checked={showAcceptedHistory}
+                              onChange={(ev) => setShowAcceptedHistory(ev.target.checked)}
+                            />
+                            <span>Показывать принятые</span>
+                          </label>
+                        </header>
+                        {inviteActionInfo ? (
+                          <p className="team-invites-info" role="status">{inviteActionInfo}</p>
+                        ) : null}
+                        {visible.length === 0 ? (
+                          <p className="team-page-muted">Активных приглашений нет.</p>
+                        ) : (
+                          <ul className="team-invite-list">
+                            {visible.map((i) => {
+                              const k = normalizeInviteStatusKind(i.status);
+                              const busy = inviteActionId === i.id;
+                              const statusClass =
+                                k === "pending"
+                                  ? "team-invite-status team-invite-status--pending"
+                                  : k === "accepted"
+                                    ? "team-invite-status team-invite-status--accepted"
+                                    : k === "cancelled"
+                                      ? "team-invite-status team-invite-status--cancelled"
+                                      : "team-invite-status";
+                              return (
+                                <li key={i.id} className="team-invite-card">
+                                  <div className="team-invite-card-main">
+                                    <div className="team-invite-card-line">
+                                      <span className="team-invite-email" title={i.email}>{i.email}</span>
+                                      <span className="team-invite-role">{INVITE_ROLE_LABELS[i.role]}</span>
+                                      <span className={statusClass}>{inviteStatusLabel(i.status)}</span>
+                                    </div>
+                                    <div className="team-invite-card-meta">
+                                      Создано: {formatRuDate(i.createdAt)}
+                                      {k === "cancelled" && i.cancelledAt
+                                        ? ` · Отменено: ${formatRuDate(i.cancelledAt)}`
+                                        : null}
+                                      {k === "accepted" && i.acceptedAt
+                                        ? ` · Принято: ${formatRuDate(i.acceptedAt)}`
+                                        : null}
+                                    </div>
+                                  </div>
+                                  <div className="team-invite-card-actions">
+                                    {k === "pending" ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="team-page-btn"
+                                          disabled={busy}
+                                          onClick={() => void onCopyInviteLink(i)}
+                                        >
+                                          Скопировать ссылку
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="team-page-btn"
+                                          disabled={busy}
+                                          onClick={() => void onCancelInvite(i)}
+                                        >
+                                          {busy ? "…" : "Отменить"}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="team-page-btn team-page-btn--danger"
+                                          disabled={busy}
+                                          onClick={() => void onDeleteInvite(i)}
+                                        >
+                                          Удалить
+                                        </button>
+                                      </>
+                                    ) : k === "accepted" ? (
+                                      <span className="team-page-muted">В команде</span>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        className="team-page-btn team-page-btn--danger"
+                                        disabled={busy}
+                                        onClick={() => void onDeleteInvite(i)}
+                                      >
+                                        {busy ? "Удаляем…" : "Удалить из списка"}
+                                      </button>
+                                    )}
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </section>
+                    );
+                  })() : null}
                 </>
               )}
 

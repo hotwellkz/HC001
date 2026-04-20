@@ -45,6 +45,8 @@ export interface CompanyInvite {
   readonly expiresAt: string;
   readonly acceptedBy?: string;
   readonly acceptedAt?: string;
+  readonly cancelledAt?: string;
+  readonly cancelledBy?: string;
 }
 
 /** Метаданные облачного проекта (Firestore companies/{companyId}/projects/{projectId}). */

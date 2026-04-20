@@ -83,6 +83,55 @@ export function buildInviteRegistrationUrl(origin: string, companyId: string, in
   return `${origin}/register?invite=${token}`;
 }
 
+/**
+ * Универсальная нормализация статуса приглашения для UI.
+ * Обрабатывает старые/неожиданные значения вроде "canceled" или "revoked".
+ */
+export type InviteStatusKind = "pending" | "accepted" | "cancelled" | "expired" | "unknown";
+
+export function normalizeInviteStatusKind(status: string | undefined | null): InviteStatusKind {
+  const s = (status ?? "").toString().trim().toLowerCase();
+  if (s === "pending") return "pending";
+  if (s === "accepted") return "accepted";
+  if (s === "cancelled" || s === "canceled" || s === "revoked") return "cancelled";
+  if (s === "expired") return "expired";
+  return "unknown";
+}
+
+export function inviteStatusLabel(status: string | undefined | null): string {
+  switch (normalizeInviteStatusKind(status)) {
+    case "pending":
+      return "Ожидает";
+    case "accepted":
+      return "Принято";
+    case "cancelled":
+      return "Отменено";
+    case "expired":
+      return "Истёк";
+    default:
+      return status ?? "—";
+  }
+}
+
+/** Можно ли физически удалить запись приглашения. */
+export function canDeleteInvite(invite: CompanyInvite): boolean {
+  return normalizeInviteStatusKind(invite.status) !== "accepted";
+}
+
+/**
+ * Копирует invite-ссылку в буфер обмена.
+ * Возвращает скопированный URL (или бросает ошибку, если копирование недоступно).
+ */
+export async function copyInviteLink(invite: CompanyInvite, origin?: string): Promise<string> {
+  const o = origin ?? (typeof window !== "undefined" ? window.location.origin : "");
+  const url = buildInviteRegistrationUrl(o, invite.companyId, invite.id);
+  if (typeof navigator === "undefined" || !navigator.clipboard) {
+    throw new Error("Копирование недоступно в этом окружении.");
+  }
+  await navigator.clipboard.writeText(url);
+  return url;
+}
+
 export function inviteRoleAllowedForActor(
   actorRole: CompanyMember["role"],
   targetRole: CompanyInvite["role"],
@@ -210,19 +259,62 @@ export async function createCompanyInvite(
   return row;
 }
 
-export async function cancelCompanyInvite(companyId: string, inviteId: string): Promise<void> {
+export async function cancelCompanyInvite(
+  companyId: string,
+  inviteId: string,
+  cancelledByUid?: string,
+): Promise<void> {
+  const now = new Date().toISOString();
   if (!useFirebase()) {
     const bucket = mockReadBucket(companyId);
     mockWriteBucket(companyId, {
       ...bucket,
-      invites: bucket.invites.map((i) => (i.id === inviteId ? { ...i, status: "cancelled" as const } : i)),
+      invites: bucket.invites.map((i) =>
+        i.id === inviteId
+          ? { ...i, status: "cancelled" as const, cancelledAt: now, cancelledBy: cancelledByUid }
+          : i,
+      ),
     });
     return;
   }
   const db = tryGetFirestoreDb() as Firestore;
-  await updateDoc(doc(db, "companies", companyId, "invites", inviteId), {
+  const patch: { status: string; cancelledAt: string; cancelledBy?: string } = {
     status: "cancelled",
-  });
+    cancelledAt: now,
+  };
+  if (cancelledByUid) {
+    patch.cancelledBy = cancelledByUid;
+  }
+  await updateDoc(doc(db, "companies", companyId, "invites", inviteId), patch);
+}
+
+/**
+ * Физически удаляет запись приглашения (pending/cancelled/expired).
+ * Не используется для accepted: участник управляется отдельно в списке команды.
+ */
+export async function deleteCompanyInvite(companyId: string, inviteId: string): Promise<void> {
+  if (!useFirebase()) {
+    const bucket = mockReadBucket(companyId);
+    const target = bucket.invites.find((i) => i.id === inviteId);
+    if (target && !canDeleteInvite(target)) {
+      throw new Error("Принятое приглашение нельзя удалить — управляйте участником в списке команды.");
+    }
+    mockWriteBucket(companyId, {
+      ...bucket,
+      invites: bucket.invites.filter((i) => i.id !== inviteId),
+    });
+    return;
+  }
+  const db = tryGetFirestoreDb() as Firestore;
+  const ref = doc(db, "companies", companyId, "invites", inviteId);
+  const snap = await getDoc(ref);
+  if (snap.exists()) {
+    const data = snap.data() as CompanyInvite;
+    if (!canDeleteInvite(data)) {
+      throw new Error("Принятое приглашение нельзя удалить — управляйте участником в списке команды.");
+    }
+  }
+  await deleteDoc(ref);
 }
 
 export async function acceptCompanyInvite(
