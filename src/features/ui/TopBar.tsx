@@ -9,9 +9,8 @@ import { TopBarMobile } from "@/features/ui/TopBarMobile";
 import { WorkspaceModeTabs } from "@/features/ui/WorkspaceModeTabs";
 import { CloudSaveButton } from "@/features/ui/topbar/CloudSaveButton";
 import { FileActionsMenu, FileMenuIcons } from "@/features/ui/topbar/FileActionsMenu";
-import { SaveStatusBadge } from "@/features/ui/topbar/SaveStatusBadge";
+import { ProjectIdentityBlock, type StatusDensity } from "@/features/ui/topbar/ProjectIdentityBlock";
 import { useTopBarController } from "@/features/ui/topbar/useTopBarController";
-import { APP_NAME } from "@/shared/constants";
 import { LucideToolIcon } from "@/shared/ui/LucideToolIcon";
 import { useMobileLayout } from "@/shared/hooks/useMobileLayout";
 import { useAppStore } from "@/store/useAppStore";
@@ -49,8 +48,6 @@ export function TopBar() {
 
 function TopBarDesktop() {
   const { state, actions } = useTopBarController();
-  const projectName = state.projectName;
-  const dirty = state.dirty;
 
   const activeTab = useAppStore((s) => s.activeTab);
   const openProfiles = useAppStore((s) => s.openProfilesModal);
@@ -86,6 +83,14 @@ function TopBarDesktop() {
   const wide = mode === "wide" || mode === "comfortable";
   const compact = mode === "compact";
   const cloudSaveIconOnly = mode === "narrow" || mode === "compact";
+
+  // Плотность подписи статуса в левом блоке: чем уже шапка — тем короче подпись.
+  const statusDensity: StatusDensity =
+    mode === "wide" || mode === "comfortable"
+      ? "full"
+      : mode === "compact"
+        ? "micro"
+        : "compact";
 
   // Определяем кнопки навигации, которые видны напрямую vs. уходят в File menu.
   const navInline = wide;
@@ -192,22 +197,16 @@ function TopBarDesktop() {
     <header className="shell-top shell-top--with-mode-tabs" data-topbar-mode={mode}>
       <div className="shell-top-main">
         {/* === ЛЕВАЯ ЧАСТЬ: бренд / проект / статус === */}
-        <div className="shell-top-left row tb-group tb-group--left">
-          <strong className="tb-brand">{APP_NAME}</strong>
-          <span className="muted">·</span>
-          <span className="tb-project-name" title={projectName}>
-            {projectName}
-            {dirty ? " *" : ""}
-          </span>
-          {state.isViewerRole ? (
-            <span
-              className="tb-readonly-badge"
-              title="У вашей роли только просмотр. Сохранение и редактирование облачного проекта недоступны."
-            >
-              Только просмотр
-            </span>
-          ) : null}
-          <SaveStatusBadge kind={state.statusKind} text={state.statusText} title={state.statusTitle} />
+        <div className="shell-top-left tb-group tb-group--left">
+          <ProjectIdentityBlock
+            projectName={state.projectName}
+            dirty={state.dirty}
+            statusKind={state.statusKind}
+            statusTitle={state.statusTitle}
+            isViewerRole={state.isViewerRole}
+            statusDensity={statusDensity}
+            hideViewerBadge={compact}
+          />
         </div>
 
         {/* === ЦЕНТР: инструменты текущего режима (отдельный слой) === */}

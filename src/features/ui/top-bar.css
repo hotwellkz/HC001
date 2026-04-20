@@ -29,8 +29,10 @@
 }
 
 .tb-group--left {
-  overflow: hidden;
-  white-space: nowrap;
+  /* Левый блок может ужиматься, но имя проекта ВНУТРИ обрезается ellipsis-ом
+     внутри .editor-project-title — overflow: hidden на самом контейнере
+     не нужен, иначе бейдж статуса срежется на узком экране. */
+  min-width: 0;
 }
 
 .tb-group--center {
@@ -44,6 +46,91 @@
   align-items: center;
   gap: var(--content-gap, var(--space-sm));
   white-space: nowrap;
+}
+
+/* === ProjectIdentityBlock: бренд · имя · статус === */
+.editor-project-identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  /* На узких экранах разрешаем перенос: бренд+имя остаются в строке,
+     а бейдж может встать ниже — без наложений. */
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.editor-project-brand {
+  flex-shrink: 0;
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.editor-project-separator {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+  user-select: none;
+}
+
+.editor-project-title {
+  min-width: 0;
+  /* Главная защита от наложений: имя проекта получает ограниченную ширину
+     и аккуратно режется ellipsis-ом, освобождая место бейджу справа. */
+  max-width: clamp(120px, 22vw, 360px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  flex: 0 1 auto;
+}
+
+.editor-project-dirty {
+  margin-left: 2px;
+  color: var(--color-text-muted);
+}
+
+.editor-project-readonly {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #b45309;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+html[data-theme="dark"] .editor-project-readonly {
+  color: #fde68a;
+}
+
+.editor-project-status {
+  /* Бейдж статуса не сжимается и не имеет лишнего margin-left:
+     отступ задаёт gap самого .editor-project-identity. */
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
+/* На средней плотности — чуть короче имя проекта (статус «Сохранено»). */
+.editor-project-identity[data-status-density="compact"] .editor-project-title {
+  max-width: clamp(100px, 18vw, 280px);
+}
+
+/* На очень узких экранах — самое короткое имя (статус «В облаке»). */
+.editor-project-identity[data-status-density="micro"] .editor-project-title {
+  max-width: clamp(80px, 14vw, 200px);
+  font-size: 0.86rem;
 }
 
 .tb-cloud-link {
@@ -70,12 +157,12 @@
   gap: 6px;
   height: 24px;
   padding: 0 10px;
-  margin-left: 8px;
   border-radius: 999px;
   font-size: 0.74rem;
   font-weight: 600;
   letter-spacing: 0.01em;
   white-space: nowrap;
+  flex-shrink: 0;
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -414,10 +501,6 @@ html[data-theme="dark"] .tb-file-popover {
   flex-shrink: 0;
 }
 
-.tb-brand {
-  flex-shrink: 0;
-}
-
 .tb-readonly-badge {
   display: inline-flex;
   align-items: center;
@@ -443,12 +526,6 @@ html[data-theme="dark"] .tb-file-popover {
 
 .tb-ws-logout {
   font-size: var(--text-body-sm, 0.875rem);
-}
-
-.tb-project-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .shell-top[data-topbar-mode="narrow"] .tb-group--right .btn,
@@ -486,34 +563,20 @@ html[data-theme="dark"] .tb-file-popover {
 }
 
 @media (max-width: 780px) {
-  .shell-top-main {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: auto auto;
-  }
-
-  .shell-top-left {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .shell-top-right {
-    grid-column: 2;
-    grid-row: 1;
-    justify-content: flex-end;
-    overflow-x: auto;
-    max-width: 100%;
-    min-width: 0;
-    justify-self: stretch;
-    padding-bottom: 2px;
-    scrollbar-width: thin;
-  }
-
+  /* На очень узких desktop-окнах (но не mobile-layout) принудительно
+     отправляем center-полосу инструментов во вторую строку и подрисовываем
+     её разделителем — flex-wrap делает это автоматически, здесь только
+     визуальное оформление. */
   .shell-top-center {
-    grid-column: 1 / -1;
-    grid-row: 2;
+    flex: 1 1 100%;
     border-top: 1px solid color-mix(in srgb, var(--color-border-subtle) 70%, transparent);
     padding-top: 4px;
     margin-top: 2px;
+    overflow-x: auto;
+  }
+
+  .shell-top-right {
+    margin-left: auto;
   }
 }
 

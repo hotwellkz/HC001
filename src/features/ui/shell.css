@@ -37,9 +37,19 @@
   overflow: visible;
 }
 
+/*
+ * Шапка редактора: flex + flex-wrap, без жёсткого grid 3-в-ряд.
+ * Это позволяет на узких экранах перенести центр (инструменты)
+ * во вторую строку, а левый блок (бренд + проект + статус) и правый блок
+ * (Проекты/Команда/Файл/системные) всегда оставлять рядом и читаемыми.
+ *
+ *  - shell-top-left  — flex: 0 1 auto (имя проекта внутри ужимается ellipsis-ом);
+ *  - shell-top-right — flex: 0 0 auto, прижат вправо;
+ *  - shell-top-center — flex: 1 1 360px, при нехватке места переносится ниже.
+ */
 .shell-top-main {
-  display: grid;
-  grid-template-columns: minmax(0, min(260px, 28vw)) minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   column-gap: var(--content-gap, var(--space-md));
   row-gap: var(--space-xs);
@@ -64,22 +74,31 @@
 }
 
 .shell-top-left {
-  grid-column: 1;
-  grid-row: 1;
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+  /* В широком режиме левый блок может занять до 60% ширины шапки,
+     остальное достанется центру и правому блоку. */
+  max-width: 100%;
+}
+
+.shell-top-center {
+  flex: 1 1 360px;
+  display: flex;
+  align-items: center;
   justify-content: flex-start;
   min-width: 0;
 }
 
-.shell-top-center {
-  grid-column: 2;
-  grid-row: 1;
-  justify-content: flex-start;
-}
-
 .shell-top-right {
-  grid-column: 3;
-  grid-row: 1;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
+  margin-left: auto;
+  min-width: 0;
 }
 
 /* Центр шапки: инструменты не сжимаются до нуля — при нехватке места горизонтальный скролл */
