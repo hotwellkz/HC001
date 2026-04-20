@@ -247,6 +247,26 @@ html[data-mobile-shell="true"] #root {
   padding-bottom: var(--space-md);
 }
 
+.mobile-menu-section-title {
+  margin: 8px 4px 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+
+.mobile-menu-section-title:first-child {
+  margin-top: 0;
+}
+
+.mobile-menu-btn--accent {
+  border-color: color-mix(in srgb, var(--color-accent) 50%, var(--color-border-subtle));
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-raised));
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
 .mobile-menu-btn {
   width: 100%;
   min-height: 48px;

@@ -69,10 +69,9 @@ function MainMenuSheet() {
     closeMobileSheet();
   };
 
-  const saveFileLabel = cloudWorkspace ? "Сохранить файл" : "Сохранить…";
-
   return (
     <div className="mobile-menu-list">
+      <div className="mobile-menu-section-title">Кабинет</div>
       <Link className="mobile-menu-btn mobile-menu-link" to="/app/projects" onClick={() => closeMobileSheet()}>
         Проекты
       </Link>
@@ -81,34 +80,53 @@ function MainMenuSheet() {
           Команда
         </Link>
       ) : null}
-      {showWorkspaceNav ? (
-        <button type="button" className="mobile-menu-btn" onClick={onLogout}>
-          Выйти
-        </button>
-      ) : null}
+
+      <div className="mobile-menu-section-title">Проект</div>
       <button type="button" className="mobile-menu-btn" onClick={() => run(() => projectCommands.createNew())}>
         Новый проект
       </button>
       <button type="button" className="mobile-menu-btn" onClick={() => run(() => void projectCommands.open())}>
-        Открыть…
+        Открыть .sipproj
       </button>
+      <button type="button" className="mobile-menu-btn" onClick={() => run(() => void projectCommands.save())}>
+        Скачать .sipproj
+      </button>
+
+      <div className="mobile-menu-section-title">Облако</div>
       {canShowCloudControls && effectiveUid ? (
         <button
           type="button"
-          className="mobile-menu-btn"
+          className="mobile-menu-btn mobile-menu-btn--accent"
           disabled={!canCloudPersist}
           title={!canCloudPersist ? "У вас роль просмотра. Сохранение недоступно." : undefined}
           onClick={() => run(onCloudSave)}
         >
           {cloudWorkspace ? "Сохранить в облако" : "Сохранить в облако (новый)"}
         </button>
-      ) : null}
-      <button type="button" className="mobile-menu-btn" onClick={() => run(() => void projectCommands.save())}>
-        {saveFileLabel}
-      </button>
+      ) : (
+        <button
+          type="button"
+          className="mobile-menu-btn mobile-menu-btn--accent"
+          onClick={() => {
+            navigate("/login");
+            closeMobileSheet();
+          }}
+        >
+          Войти и сохранить в облако
+        </button>
+      )}
+
+      <div className="mobile-menu-section-title">Прочее</div>
       <button type="button" className="mobile-menu-btn" onClick={() => run(() => projectCommands.bootstrapDemo())}>
-        Демо-проект
+        Демо
       </button>
+      {showWorkspaceNav ? (
+        <button type="button" className="mobile-menu-btn" onClick={onLogout}>
+          Выйти
+        </button>
+      ) : null}
+
+      <div className="mobile-menu-section-title">Интерфейс</div>
       <div className="mobile-menu-row">
         <span className="mobile-menu-label">Тема</span>
         <ThemeMenu />
