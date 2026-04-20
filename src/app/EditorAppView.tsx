@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { initProjectPersistence } from "@/data/projectPersistence";
+import { initProjectPersistence, setCloudHydrating } from "@/data/projectPersistence";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { EditorCloudAuthBanner } from "@/features/auth/EditorCloudAuthBanner";
 import { EditorNoCompanyBanner } from "@/features/auth/EditorNoCompanyBanner";
+import { canEditCloudProjects } from "@/features/company/companyTeamService";
 import { loadProject } from "@/features/workspace/projectCloudService";
 import { projectCommands } from "@/features/project/commands";
 import { AppShell } from "@/features/ui/AppShell";
@@ -101,11 +102,13 @@ function useDemoQueryBootstrap(isDemo: boolean) {
 
 export function EditorAppView() {
   const navigate = useNavigate();
-  const { status: authStatus, isAuthenticated, profile } = useAuth();
+  const { status: authStatus, isAuthenticated, profile, user, activeCompanyMember } = useAuth();
   const [searchParams] = useSearchParams();
   const isDemo = searchParams.get("demo") === "true";
   const projectId = searchParams.get("projectId");
   const persistenceReady = useAppStore((s) => s.persistenceReady);
+  const userId = user?.uid ?? profile?.id ?? null;
+  const canSave = canEditCloudProjects(activeCompanyMember?.role);
 
   const [cloudLoadPhase, setCloudLoadPhase] = useState<"idle" | "loading" | "error">("idle");
   const [cloudLoadError, setCloudLoadError] = useState<string | null>(null);
@@ -137,7 +140,7 @@ export function EditorAppView() {
     void initProjectPersistence();
   }, [authStatus, isDemo, projectId, isAuthenticated]);
 
-  const cloudLoadKey = `${projectId ?? ""}|${profile?.activeCompanyId ?? ""}`;
+  const cloudLoadKey = `${projectId ?? ""}|${profile?.activeCompanyId ?? ""}|${userId ?? ""}`;
 
   useEffect(() => {
     if (!persistenceReady || isDemo || !projectId || !isAuthenticated) {
@@ -149,10 +152,16 @@ export function EditorAppView() {
       setCloudLoadError("Не выбрана активная компания.");
       return;
     }
+    if (!userId) {
+      setCloudLoadPhase("error");
+      setCloudLoadError("Сессия не готова, попробуйте обновить страницу.");
+      return;
+    }
 
     let cancelled = false;
     setCloudLoadPhase("loading");
     setCloudLoadError(null);
+    setCloudHydrating(true);
 
     void (async () => {
       try {
@@ -163,7 +172,12 @@ export function EditorAppView() {
         if (meta.id !== projectId || meta.companyId !== companyId) {
           throw new Error("Проект не найден или у вас нет доступа.");
         }
-        useAppStore.getState().applyCloudLoadedProject(project, { companyId, projectId: meta.id });
+        useAppStore.getState().applyCloudLoadedProject(project, {
+          companyId,
+          projectId: meta.id,
+          userId,
+          canSave,
+        });
         setCloudLoadPhase("idle");
       } catch (e) {
         if (cancelled) {
@@ -177,13 +191,20 @@ export function EditorAppView() {
               : e.message
             : "Не удалось загрузить проект.",
         );
+      } finally {
+        if (!cancelled) {
+          queueMicrotask(() => setCloudHydrating(false));
+        } else {
+          setCloudHydrating(false);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
+      setCloudHydrating(false);
     };
-  }, [persistenceReady, isDemo, projectId, isAuthenticated, profile?.activeCompanyId, cloudLoadKey]);
+  }, [persistenceReady, isDemo, projectId, isAuthenticated, profile?.activeCompanyId, userId, canSave, cloudLoadKey]);
 
   useDemoQueryBootstrap(isDemo);
 

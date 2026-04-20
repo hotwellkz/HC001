@@ -578,9 +578,18 @@ interface AppState {
   readonly persistenceStatus: "idle" | "loading" | "saving" | "saved" | "error";
   readonly firestoreEnabled: boolean;
   /** Открытый облачный проект (companies/.../projects). */
-  readonly cloudWorkspace: { readonly companyId: string; readonly projectId: string } | null;
-  /** Ручное сохранение в облако (не автосейв). */
+  readonly cloudWorkspace: {
+    readonly companyId: string;
+    readonly projectId: string;
+    readonly userId: string;
+    readonly canSave: boolean;
+  } | null;
+  /** Текущая фаза сохранения в облако (общая для ручного и автосейва). */
   readonly cloudManualSavePhase: "idle" | "saving" | "error";
+  /** Сообщение об ошибке последнего облачного сохранения. */
+  readonly cloudSaveError: string | null;
+  /** ISO-время последнего успешного облачного сохранения. */
+  readonly cloudLastSavedAt: string | null;
   /** Размер canvas 2D для привязки и модалки координат (не персистится). */
   readonly viewportCanvas2dPx: { readonly width: number; readonly height: number } | null;
   /** Режим редактирования смещения выбранного проёма по размерным линиям. */
@@ -693,7 +702,12 @@ interface AppActions {
   importProjectJson: (json: string, opts?: { readonly skipLegacyFirestoreSync?: boolean }) => void;
   applyCloudLoadedProject: (
     project: Project,
-    ctx: { readonly companyId: string; readonly projectId: string },
+    ctx: {
+      readonly companyId: string;
+      readonly projectId: string;
+      readonly userId: string;
+      readonly canSave: boolean;
+    },
   ) => void;
   clearCloudWorkspace: () => void;
   saveCurrentProjectToCloud: (userId: string, activeCompanyId: string | undefined | null) => Promise<void>;
@@ -1713,6 +1727,8 @@ export const useAppStore = create<AppStore>((set, get) => {
     firestoreEnabled: false,
     cloudWorkspace: null,
     cloudManualSavePhase: "idle",
+    cloudSaveError: null,
+    cloudLastSavedAt: null,
     viewportCanvas2dPx: null,
     openingMoveModeActive: false,
     wallDetailWallId: null,
@@ -9375,11 +9391,19 @@ export const useAppStore = create<AppStore>((set, get) => {
       set({
         cloudWorkspace: ctx,
         cloudManualSavePhase: "idle",
+        cloudSaveError: null,
+        cloudLastSavedAt: project.meta.updatedAt ?? null,
         dirty: false,
       });
     },
 
-    clearCloudWorkspace: () => set({ cloudWorkspace: null, cloudManualSavePhase: "idle" }),
+    clearCloudWorkspace: () =>
+      set({
+        cloudWorkspace: null,
+        cloudManualSavePhase: "idle",
+        cloudSaveError: null,
+        cloudLastSavedAt: null,
+      }),
 
     saveCurrentProjectToCloud: async (userId, activeCompanyId) => {
       const ws = get().cloudWorkspace;
@@ -9391,23 +9415,36 @@ export const useAppStore = create<AppStore>((set, get) => {
         set({ lastError: "Нет доступа к компании для сохранения." });
         return;
       }
+      if (!ws.canSave) {
+        set({ lastError: "У вашей роли нет прав на сохранение проекта." });
+        return;
+      }
       const { saveProject: saveCloud } = await import("@/features/workspace/projectCloudService");
-      set({ cloudManualSavePhase: "saving", lastError: null });
+      set({ cloudManualSavePhase: "saving", cloudSaveError: null, lastError: null });
       try {
         const { currentProject } = get();
         const { ok, errors } = validateProjectSchema(currentProject);
         if (!ok) {
+          const msg = errors?.map((e) => e.message ?? "schema").join("; ") ?? "Ошибка схемы";
           set({
             cloudManualSavePhase: "error",
-            lastError: errors?.map((e) => e.message ?? "schema").join("; ") ?? "Ошибка схемы",
+            cloudSaveError: msg,
+            lastError: msg,
           });
           return;
         }
-        await saveCloud(ws.companyId, ws.projectId, userId, currentProject, activeCompanyId);
-        set({ dirty: false, cloudManualSavePhase: "idle", lastError: null, infoMessage: "Проект сохранён в облаке." });
+        const meta = await saveCloud(ws.companyId, ws.projectId, userId, currentProject, activeCompanyId);
+        set({
+          dirty: false,
+          cloudManualSavePhase: "idle",
+          cloudSaveError: null,
+          cloudLastSavedAt: meta.updatedAt,
+          lastError: null,
+          infoMessage: "Проект сохранён в облаке.",
+        });
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Ошибка сохранения в облако";
-        set({ cloudManualSavePhase: "error", lastError: msg });
+        set({ cloudManualSavePhase: "error", cloudSaveError: msg, lastError: msg });
       }
     },
   };

@@ -15,13 +15,34 @@ import {
 import { getLastOpenedProjectId, setLastOpenedProjectId } from "./lastOpenedProjectId";
 
 const DEBOUNCE_MS = 800;
+/** Дебаунс автосохранения для облачных проектов: пользователь должен «отстояться». */
+const CLOUD_AUTOSAVE_DEBOUNCE_MS = 1800;
 
 let initStarted = false;
 let autosaveSubscribed = false;
 /** Пропуск автосохранения при первичной гидрации из Firestore. */
 let isPersistenceHydrating = false;
+/**
+ * Внешний флаг гидрации облачного проекта (включает EditorAppView пока идёт загрузка
+ * project.json из Firestore/Storage). Запрещает любые автосейвы, чтобы не записать
+ * пустой стартовый currentProject поверх реального содержимого.
+ */
+let isCloudHydrating = false;
+
+export function setCloudHydrating(v: boolean): void {
+  isCloudHydrating = v;
+  if (v) {
+    if (cloudDebounceTimer) {
+      clearTimeout(cloudDebounceTimer);
+      cloudDebounceTimer = null;
+    }
+  }
+}
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let cloudDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let cloudSaveInFlight = false;
+let cloudPendingResave = false;
 
 function scheduleAutosave(): void {
   if (debounceTimer) {
@@ -62,22 +83,100 @@ async function flushAutosave(): Promise<void> {
   }
 }
 
+function scheduleCloudAutosave(): void {
+  if (cloudDebounceTimer) {
+    clearTimeout(cloudDebounceTimer);
+  }
+  cloudDebounceTimer = setTimeout(() => {
+    cloudDebounceTimer = null;
+    void flushCloudAutosave();
+  }, CLOUD_AUTOSAVE_DEBOUNCE_MS);
+}
+
+async function flushCloudAutosave(): Promise<void> {
+  if (isCloudHydrating || isPersistenceHydrating) {
+    return;
+  }
+  if (cloudSaveInFlight) {
+    cloudPendingResave = true;
+    return;
+  }
+  const state = useAppStore.getState();
+  const ws = state.cloudWorkspace;
+  if (!ws || !state.persistenceReady) {
+    return;
+  }
+  if (!ws.canSave) {
+    return;
+  }
+  if (!state.dirty) {
+    return;
+  }
+  const project = state.currentProject;
+  if (project.meta.id !== ws.projectId) {
+    if (import.meta.env.DEV) {
+      console.warn("[cloud autosave] project id != workspace id, пропускаем", {
+        project: project.meta.id,
+        workspace: ws.projectId,
+      });
+    }
+    return;
+  }
+  cloudSaveInFlight = true;
+  useAppStore.setState({ cloudManualSavePhase: "saving", cloudSaveError: null });
+
+  try {
+    const { saveProject: saveCloud } = await import("@/features/workspace/projectCloudService");
+    const meta = await saveCloud(ws.companyId, ws.projectId, ws.userId, project, ws.companyId);
+    const next = useAppStore.getState();
+    const stillSame = next.currentProject === project;
+    useAppStore.setState({
+      cloudManualSavePhase: "idle",
+      cloudSaveError: null,
+      cloudLastSavedAt: meta.updatedAt,
+      ...(stillSame ? { dirty: false } : {}),
+    });
+    if (import.meta.env.DEV) {
+      console.debug("[cloud autosave] saved", { projectId: ws.projectId, updatedAt: meta.updatedAt });
+    }
+  } catch (e) {
+    if (import.meta.env.DEV) {
+      console.error("[cloud autosave] failed", e);
+    }
+    const msg = e instanceof Error ? e.message : "Ошибка автосохранения в облако";
+    useAppStore.setState({ cloudManualSavePhase: "error", cloudSaveError: msg });
+  } finally {
+    cloudSaveInFlight = false;
+    if (cloudPendingResave) {
+      cloudPendingResave = false;
+      scheduleCloudAutosave();
+    }
+  }
+}
+
 function subscribeAutosave(): void {
   if (autosaveSubscribed) {
     return;
   }
   autosaveSubscribed = true;
   useAppStore.subscribe((state, prev) => {
-    if (isPersistenceHydrating) {
+    if (isPersistenceHydrating || isCloudHydrating) {
       return;
     }
-    if (!state.persistenceReady || !state.firestoreEnabled) {
-      return;
-    }
-    if (state.cloudWorkspace != null) {
+    if (!state.persistenceReady) {
       return;
     }
     if (state.currentProject === prev.currentProject) {
+      return;
+    }
+    if (state.cloudWorkspace != null) {
+      if (!state.dirty) {
+        return;
+      }
+      scheduleCloudAutosave();
+      return;
+    }
+    if (!state.firestoreEnabled) {
       return;
     }
     scheduleAutosave();

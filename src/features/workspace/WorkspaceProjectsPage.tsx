@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import type { ProjectMeta } from "@/core/company/orgTypes";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { canEditCloudProjects } from "@/features/company/companyTeamService";
 import { AppWorkspaceNav } from "@/features/workspace/AppWorkspaceNav";
 import {
   createProject,
@@ -44,11 +45,13 @@ function editorLabel(updatedBy: string, currentUserId: string | null): string {
 export function WorkspaceProjectsPage() {
   const navigate = useNavigate();
   const modalTitleId = useId();
-  const { profile, activeCompany, isAuthenticated, status, user } = useAuth();
+  const { profile, activeCompany, activeCompanyMember, isAuthenticated, status, user } = useAuth();
 
   const companyId = profile?.activeCompanyId ?? null;
   const userId = user?.uid ?? profile?.id ?? null;
   const companyName = activeCompany?.name ?? "—";
+  const memberRole = activeCompanyMember?.role ?? null;
+  const canCreateProject = canEditCloudProjects(memberRole ?? undefined);
 
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [listLoading, setListLoading] = useState(true);
@@ -57,6 +60,7 @@ export function WorkspaceProjectsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("Новый проект");
   const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameTarget, setRenameTarget] = useState<ProjectMeta | null>(null);
@@ -87,22 +91,52 @@ export function WorkspaceProjectsPage() {
 
   const openCreate = () => {
     setCreateName("Новый проект");
+    setCreateError(null);
     setCreateOpen(true);
   };
 
   const onSubmitCreate = async (e: FormEvent) => {
     e.preventDefault();
-    if (!companyId || !userId) {
+    if (createBusy) {
       return;
     }
+    setCreateError(null);
+
+    if (!isAuthenticated) {
+      setCreateError("Войдите в аккаунт, чтобы создавать облачные проекты.");
+      return;
+    }
+    if (!companyId) {
+      setCreateError("Не найдено рабочее пространство. Обновите страницу или войдите заново.");
+      return;
+    }
+    if (!userId) {
+      setCreateError("Сессия не готова, попробуйте через несколько секунд.");
+      return;
+    }
+    if (!canCreateProject) {
+      setCreateError("У вашей роли нет прав на создание проектов.");
+      return;
+    }
+    const trimmed = createName.trim() || "Новый проект";
+
+    if (import.meta.env.DEV) {
+      console.debug("[projects] create start", { companyId, userId, email: profile?.email, role: memberRole });
+    }
+
     setCreateBusy(true);
-    setListError(null);
     try {
-      const meta = await createProject(companyId, userId, createName.trim() || "Новый проект", companyId);
+      const meta = await createProject(companyId, userId, trimmed, companyId);
+      if (import.meta.env.DEV) {
+        console.debug("[projects] create success", meta.id);
+      }
       setCreateOpen(false);
       navigate(`/app?projectId=${encodeURIComponent(meta.id)}`);
     } catch (err) {
-      setListError(err instanceof Error ? err.message : "Не удалось создать проект.");
+      if (import.meta.env.DEV) {
+        console.error("[projects] create failed", err);
+      }
+      setCreateError(err instanceof Error ? err.message : "Не удалось создать проект.");
     } finally {
       setCreateBusy(false);
     }
@@ -167,7 +201,13 @@ export function WorkspaceProjectsPage() {
               <p className="ws-projects-subtitle">Рабочее пространство: {companyName}</p>
             </div>
             {isAuthenticated && companyId && userId ? (
-              <button type="button" className="ws-projects-btn ws-projects-btn--primary" onClick={openCreate}>
+              <button
+                type="button"
+                className="ws-projects-btn ws-projects-btn--primary"
+                onClick={openCreate}
+                disabled={!canCreateProject}
+                title={canCreateProject ? undefined : "У вашей роли нет прав на создание проектов."}
+              >
                 Новый проект
               </button>
             ) : null}
@@ -272,11 +312,20 @@ export function WorkspaceProjectsPage() {
                   disabled={createBusy}
                 />
               </label>
+              {createError ? (
+                <div className="ws-projects-alert" role="alert">
+                  {createError}
+                </div>
+              ) : null}
               <div className="ws-modal-actions">
                 <button type="button" className="ws-projects-btn" onClick={() => setCreateOpen(false)} disabled={createBusy}>
                   Отмена
                 </button>
-                <button type="submit" className="ws-projects-btn ws-projects-btn--primary" disabled={createBusy}>
+                <button
+                  type="submit"
+                  className="ws-projects-btn ws-projects-btn--primary"
+                  disabled={createBusy || !canCreateProject || createName.trim().length === 0}
+                >
                   {createBusy ? "Создаём…" : "Создать"}
                 </button>
               </div>

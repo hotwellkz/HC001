@@ -178,6 +178,7 @@ export function TopBar() {
   const { user, profile, isAuthenticated, activeCompanyMember } = useAuth();
   const cloudWorkspace = useAppStore((s) => s.cloudWorkspace);
   const cloudManualSavePhase = useAppStore((s) => s.cloudManualSavePhase);
+  const cloudSaveError = useAppStore((s) => s.cloudSaveError);
   const isMobile = useMobileLayout();
   const showWorkspaceNav = isAuthenticated && !isDemo;
   const canCloudPersist = canEditCloudProjects(activeCompanyMember?.role);
@@ -234,6 +235,8 @@ export function TopBar() {
     }
     return "Сохранено";
   })();
+  const cloudStatusTitle =
+    cloudManualSavePhase === "error" && cloudSaveError ? cloudSaveError : cloudStatusText ?? undefined;
 
   const onCloudSave = () => {
     if (!effectiveUid || !canCloudPersist) {
@@ -347,7 +350,14 @@ export function TopBar() {
           </>
         ) : null}
         {showCloudExtras && cloudWorkspace && cloudStatusText ? (
-          <span className="tb-cloud-status" title={cloudStatusText}>
+          <span
+            className={
+              cloudManualSavePhase === "error"
+                ? "tb-cloud-status tb-cloud-status--error"
+                : "tb-cloud-status"
+            }
+            title={cloudStatusTitle}
+          >
             {cloudStatusText}
           </span>
         ) : null}
@@ -357,9 +367,9 @@ export function TopBar() {
             className="btn tb-cloud-save"
             onClick={onCloudSave}
             disabled={!canCloudPersist || cloudManualSavePhase === "saving"}
-            title={!canCloudPersist ? "У вас роль просмотра. Сохранение недоступно." : undefined}
+            title={!canCloudPersist ? "У вас роль просмотра. Сохранение недоступно." : "Сохранить сейчас в облако"}
           >
-            Сохранить в облако
+            {cloudManualSavePhase === "saving" ? "Сохраняем…" : "Сохранить"}
           </button>
         ) : null}
         <button

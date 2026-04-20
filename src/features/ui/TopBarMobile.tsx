@@ -26,6 +26,7 @@ export function TopBarMobile() {
   const dirty = useAppStore((s) => s.dirty);
   const cloudWorkspace = useAppStore((s) => s.cloudWorkspace);
   const cloudManualSavePhase = useAppStore((s) => s.cloudManualSavePhase);
+  const cloudSaveError = useAppStore((s) => s.cloudSaveError);
   const canUndo = useAppStore((s) => s.history.past.length > 0);
   const canRedo = useAppStore((s) => s.history.future.length > 0);
   const undo = useAppStore((s) => s.undo);
@@ -139,7 +140,15 @@ export function TopBarMobile() {
         </div>
       </div>
       {cloudWorkspace && cloudStatusText ? (
-        <div className="tb-mobile-cloud-status" aria-live="polite">
+        <div
+          className={
+            cloudManualSavePhase === "error"
+              ? "tb-mobile-cloud-status tb-mobile-cloud-status--error"
+              : "tb-mobile-cloud-status"
+          }
+          aria-live="polite"
+          title={cloudManualSavePhase === "error" && cloudSaveError ? cloudSaveError : undefined}
+        >
           {cloudStatusText}
         </div>
       ) : null}
